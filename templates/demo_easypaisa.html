@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+
+{% block title %}Demo Easypaisa Payment | {{ business_name|default("Restaurant", true) }}{% endblock %}
+
+{% block head %}
+{{ super() }}
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="same-origin">
+{% endblock %}
+
+{% block styles %}
+<style>
+.demo-pay{
+    min-height:72vh;
+    padding:clamp(1rem,4vw,3rem) 0;
+    color:var(--text-color,#f7f1e7)
+}
+.demo-pay__shell{
+    width:min(100% - 1.25rem,720px);
+    margin-inline:auto
+}
+.demo-pay__card{
+    overflow:hidden;
+    border:1px solid var(--border-color,#403624);
+    border-radius:20px;
+    background:var(--surface-color,#151510);
+    box-shadow:0 20px 55px rgba(0,0,0,.22)
+}
+.demo-pay__head{
+    padding:1.2rem 1.25rem;
+    border-bottom:1px solid var(--border-color,#403624);
+    background:linear-gradient(135deg,rgba(223,169,55,.12),transparent)
+}
+.demo-pay__badge{
+    display:inline-flex;
+    align-items:center;
+    gap:.35rem;
+    padding:.32rem .5rem;
+    border:1px solid #b88727;
+    border-radius:999px;
+    color:#e0ac43;
+    font-size:.74rem;
+    font-weight:850;
+    letter-spacing:.05em;
+    text-transform:uppercase
+}
+.demo-pay h1{
+    margin:.8rem 0 .25rem;
+    font-size:clamp(1.6rem,5vw,2.35rem);
+    line-height:1.05
+}
+.demo-pay__muted{
+    margin:0;
+    color:var(--muted-text,#b9ae9d);
+    line-height:1.55
+}
+.demo-pay__body{
+    padding:1.2rem 1.25rem
+}
+.demo-pay__status{
+    display:flex;
+    align-items:flex-start;
+    gap:.7rem;
+    margin:0 0 1rem;
+    padding:.85rem;
+    border:1px solid rgba(224,172,67,.35);
+    border-radius:12px;
+    background:rgba(224,172,67,.08)
+}
+.demo-pay__status-icon{
+    width:38px;
+    height:38px;
+    flex:0 0 auto;
+    display:grid;
+    place-items:center;
+    border-radius:50%;
+    background:rgba(224,172,67,.14);
+    color:#e0ac43
+}
+.demo-pay__status-icon svg{
+    width:20px;
+    height:20px;
+    fill:none;
+    stroke:currentColor;
+    stroke-width:1.8;
+    stroke-linecap:round;
+    stroke-linejoin:round
+}
+.demo-pay__status strong{
+    display:block;
+    margin:0;
+    font-size:.95rem
+}
+.demo-pay__status p{
+    margin:.18rem 0 0;
+    color:var(--muted-text,#c4b7a4);
+    line-height:1.5
+}
+.demo-pay__rows{
+    display:grid;
+    gap:.6rem;
+    margin:0
+}
+.demo-pay__row{
+    display:flex;
+    justify-content:space-between;
+    gap:1rem;
+    padding:.72rem .8rem;
+    border:1px solid var(--border-color,#403624);
+    border-radius:12px;
+    background:var(--surface-muted,#10100d)
+}
+.demo-pay__row dt{
+    color:var(--muted-text,#b9ae9d);
+    font-weight:700
+}
+.demo-pay__row dd{
+    margin:0;
+    text-align:right;
+    font-weight:850;
+    overflow-wrap:anywhere
+}
+.demo-pay__amount{
+    font-size:1.2rem;
+    color:#e0ac43
+}
+.demo-pay__note{
+    margin:1rem 0;
+    padding:.8rem;
+    border:1px solid rgba(224,172,67,.25);
+    border-radius:12px;
+    background:rgba(224,172,67,.06);
+    color:var(--muted-text,#c4b7a4);
+    line-height:1.55
+}
+.demo-pay__note strong{
+    color:var(--text-color,#f7f1e7)
+}
+.demo-pay__actions{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:.65rem;
+    margin-top:1rem
+}
+.demo-pay__btn{
+    min-height:48px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    border-radius:11px;
+    padding:.7rem .9rem;
+    font:inherit;
+    font-weight:850;
+    text-decoration:none;
+    cursor:pointer;
+    transition:transform .16s ease,opacity .16s ease
+}
+.demo-pay__btn--primary{
+    border:1px solid #d5a536;
+    background:#d5a536;
+    color:#17120a
+}
+.demo-pay__btn--danger{
+    border:1px solid #7a3b34;
+    background:#2a1715;
+    color:#ffd7d2
+}
+.demo-pay__btn--secondary{
+    border:1px solid var(--border-color,#403624);
+    background:transparent;
+    color:inherit
+}
+.demo-pay__btn:hover{
+    transform:translateY(-1px)
+}
+.demo-pay__btn:focus-visible{
+    outline:3px solid rgba(224,172,67,.28);
+    outline-offset:2px
+}
+.demo-pay__btn[disabled]{
+    opacity:.6;
+    cursor:not-allowed;
+    transform:none
+}
+.demo-pay__foot{
+    margin:.9rem 0 0;
+    color:var(--muted-text,#9f9587);
+    font-size:.78rem;
+    line-height:1.5;
+    text-align:center
+}
+.demo-pay__foot strong{
+    color:var(--text-color,#f7f1e7)
+}
+@media(max-width:560px){
+    .demo-pay__actions{grid-template-columns:1fr}
+    .demo-pay__row{
+        align-items:flex-start;
+        flex-direction:column
+    }
+    .demo-pay__row dd{text-align:left}
+}
+</style>
+{% endblock %}
+
+{% block content %}
+{% set payment_data = payment|default({}, true) %}
+{% if payment_data is not mapping %}{% set payment_data = {} %}{% endif %}
+{% set order_data = order|default({}, true) %}
+{% if order_data is not mapping %}{% set order_data = {} %}{% endif %}
+
+{% set payment_status = payment_data.get("status", "pending")|default("pending", true)|string|lower %}
+{% set request_status = payment_request_status|default(payment_data.get("payment_request_status", "sent"), true)|string|lower %}
+{% set masked_phone = payer_phone_masked|default("", true)|string %}
+{% set request_id = provider_request_id|default("", true)|string %}
+
+<section class="demo-pay">
+    <div class="demo-pay__shell">
+        <div class="demo-pay__card">
+            <header class="demo-pay__head">
+                <span class="demo-pay__badge">Demo Payment</span>
+                <h1>Easypaisa Payment Request</h1>
+                <p class="demo-pay__muted">
+                    This is a realistic demo of the redirect-and-approval flow.
+                    No real Easypaisa request is sent and no real money is moved.
+                </p>
+            </header>
+
+            <div class="demo-pay__body">
+                {% if payment_status == "paid" or request_status == "approved" %}
+                    <div class="demo-pay__status">
+                        <span class="demo-pay__status-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="m8 12 2.6 2.6L16.5 9"></path></svg>
+                        </span>
+                        <div>
+                            <strong>Payment approved</strong>
+                            <p>The demo provider has confirmed this payment. The order payment status is Paid.</p>
+                        </div>
+                    </div>
+                {% elif payment_status in ["cancelled", "failed", "rejected"] or request_status == "declined" %}
+                    <div class="demo-pay__status">
+                        <span class="demo-pay__status-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="m9 9 6 6M15 9l-6 6"></path></svg>
+                        </span>
+                        <div>
+                            <strong>Payment not completed</strong>
+                            <p>The demo Easypaisa request was declined or cancelled.</p>
+                        </div>
+                    </div>
+                {% else %}
+                    <div class="demo-pay__status">
+                        <span class="demo-pay__status-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><path d="M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"></path><path d="M9 7h6M9 11h6M10 17h4"></path></svg>
+                        </span>
+                        <div>
+                            <strong>Payment request sent</strong>
+                            <p>
+                                A demo Easypaisa payment request is waiting for customer approval
+                                {% if masked_phone %}on wallet {{ masked_phone }}{% endif %}.
+                            </p>
+                        </div>
+                    </div>
+                {% endif %}
+
+                <dl class="demo-pay__rows">
+                    <div class="demo-pay__row">
+                        <dt>Order</dt>
+                        <dd>{{ order_data.get("order_reference", order_data.get("id", "—")) }}</dd>
+                    </div>
+
+                    <div class="demo-pay__row">
+                        <dt>Customer Wallet</dt>
+                        <dd>{{ masked_phone if masked_phone else "—" }}</dd>
+                    </div>
+
+                    {% if request_id %}
+                        <div class="demo-pay__row">
+                            <dt>Payment Request</dt>
+                            <dd>{{ request_id }}</dd>
+                        </div>
+                    {% endif %}
+
+                    <div class="demo-pay__row">
+                        <dt>Total Amount</dt>
+                        <dd class="demo-pay__amount">
+                            Rs. {{ "{:,.2f}".format((payment_data.get("amount_minor", 0)|int) / 100) }}
+                        </dd>
+                    </div>
+
+                    <div class="demo-pay__row">
+                        <dt>Payment Status</dt>
+                        <dd>{{ payment_status|replace("_", " ")|title }}</dd>
+                    </div>
+                </dl>
+
+                {% if payment_status == "pending" and request_status == "sent" %}
+                    <div class="demo-pay__note">
+                        In a real merchant integration, the customer would approve or reject this request
+                        inside the Easypaisa/provider flow. For this demo, use the buttons below to simulate
+                        that provider response. <strong>Never enter a PIN, OTP or wallet password here.</strong>
+                    </div>
+
+                    <div class="demo-pay__actions">
+                        <form method="post" action="{{ confirm_url }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button class="demo-pay__btn demo-pay__btn--primary" type="submit">
+                                Approve Payment
+                            </button>
+                        </form>
+
+                        <form method="post" action="{{ cancel_url }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button class="demo-pay__btn demo-pay__btn--danger" type="submit">
+                                Decline Payment
+                            </button>
+                        </form>
+                    </div>
+                {% else %}
+                    <div class="demo-pay__actions">
+                        <a class="demo-pay__btn demo-pay__btn--primary" href="{{ order_url }}">
+                            View Order
+                        </a>
+                        <a class="demo-pay__btn demo-pay__btn--secondary" href="{{ url_for('orders_page') }}">
+                            My Orders
+                        </a>
+                    </div>
+                {% endif %}
+
+                <p class="demo-pay__foot">
+                    <strong>Demo only:</strong> this page does not contact the real Easypaisa network.
+                </p>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

@@ -1,0 +1,2906 @@
+{% extends "base.html" %}
+
+{% block title %}Home | {{ business_name|default('Mr. Italiano Pizza & Burger', true) }}{% endblock %}
+
+{% block meta_description %}Order premium pizza, juicy burgers, hot deals, delivery, pickup and dine-in from {{ business_name|default('Mr. Italiano Pizza & Burger', true) }}.{% endblock %}
+
+{% block styles %}
+<style>
+    /* ================================================================
+       MR. ITALIANO — PREMIUM DARK/GOLD HOMEPAGE
+       VERSION 2.0 — Enhanced 3D, Animations, Professional UI/UX
+       Final direction: luxury black base + controlled gold + limited cream
+       Inspired by the selected reference image. Built for Flask/Jinja.
+    ================================================================= */
+
+    :root {
+        --mi-black: #050403;
+        --mi-ink: #0a0806;
+        --mi-ink-2: #100d0a;
+        --mi-card: rgba(21, 17, 13, 0.88);
+        --mi-card-2: rgba(31, 24, 18, 0.92);
+        --mi-cream: #fbefdc;
+        --mi-cream-2: #f5dfbf;
+        --mi-gold: #dca33a;
+        --mi-gold-2: #ffca61;
+        --mi-gold-deep: #96631a;
+        --mi-red: #de3b24;
+        --mi-red-2: #f25a36;
+        --mi-green: #7bb35b;
+        --mi-white: #fff8ec;
+        --mi-muted: #bdb0a0;
+        --mi-muted-2: #7c7168;
+        --mi-border: rgba(255, 202, 97, 0.18);
+        --mi-border-strong: rgba(255, 202, 97, 0.38);
+        --mi-shadow: 0 28px 80px rgba(0, 0, 0, 0.56);
+        --mi-soft-shadow: 0 18px 44px rgba(0, 0, 0, 0.36);
+        --mi-radius: 26px;
+        --mi-radius-sm: 16px;
+        --mi-ease: cubic-bezier(.16, 1, .3, 1);
+        --mi-ease-2: cubic-bezier(.2, .72, .2, 1);
+        --hero-shift-x: 0px;
+        --hero-shift-y: 0px;
+        --hero-scroll-y: 0px;
+        --tilt-x: 0deg;
+        --tilt-y: 0deg;
+    }
+
+    * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+    }
+
+    /* ================================================================
+       SCROLLBAR STYLING
+    ================================================================= */
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+        background: var(--mi-ink);
+    }
+    ::-webkit-scrollbar-thumb {
+        background: var(--mi-gold);
+        border-radius: 10px;
+        border: 2px solid var(--mi-ink);
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: var(--mi-gold-2);
+    }
+
+    /* ================================================================
+       BASE HOME PAGE
+    ================================================================= */
+    .home-page {
+        position: relative;
+        isolation: isolate;
+        overflow: clip;
+        margin-top: calc(var(--header-height, 106px) * -1);
+        padding-top: var(--header-height, 106px);
+        background:
+            radial-gradient(circle at 73% 4%, rgba(220, 163, 58, 0.16), transparent 26rem),
+            radial-gradient(circle at 13% 18%, rgba(222, 59, 36, 0.12), transparent 22rem),
+            linear-gradient(180deg, #040302 0%, #080604 36%, #050403 72%, #080604 100%);
+        color: var(--mi-white);
+        min-height: 100vh;
+    }
+
+    .home-page::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: -1;
+        opacity: 0.52;
+        background-image:
+            linear-gradient(rgba(255,255,255,.026) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,.022) 1px, transparent 1px);
+        background-size: 54px 54px;
+        mask-image: linear-gradient(180deg, #000 0%, transparent 82%);
+    }
+
+    .home-page::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: min(58vw, 780px);
+        height: 940px;
+        pointer-events: none;
+        z-index: -1;
+        background:
+            radial-gradient(ellipse at 64% 28%, rgba(255, 202, 97, 0.18), transparent 42%),
+            radial-gradient(ellipse at 77% 43%, rgba(222, 59, 36, 0.16), transparent 35%);
+        filter: blur(4px);
+        opacity: 0.8;
+        animation: mi-ambient-glow 8s ease-in-out infinite alternate;
+    }
+
+    @keyframes mi-ambient-glow {
+        0% { opacity: 0.6; transform: scale(1) translateX(0); }
+        100% { opacity: 1; transform: scale(1.1) translateX(-20px); }
+    }
+
+    /* ================================================================
+       CONTAINER & UTILITY
+    ================================================================= */
+    .mi-container {
+        width: min(calc(100% - 2rem), 1240px);
+        margin-inline: auto;
+        position: relative;
+        z-index: 1;
+    }
+
+    .mi-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: .65rem;
+        min-height: 48px;
+        padding: .8rem 1.35rem;
+        border: 1px solid transparent;
+        border-radius: 12px;
+        color: var(--mi-white);
+        font-size: .92rem;
+        font-weight: 900;
+        line-height: 1;
+        text-decoration: none;
+        cursor: pointer;
+        transform: translateY(0);
+        transition: transform 190ms var(--mi-ease-2), border-color 190ms ease, background 190ms ease, color 190ms ease, box-shadow 190ms ease;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .mi-btn::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(135deg, rgba(255,255,255,0.1), transparent 60%);
+        opacity: 0;
+        transition: opacity 300ms ease;
+    }
+
+    .mi-btn:hover::after {
+        opacity: 1;
+    }
+
+    .mi-btn:hover {
+        text-decoration: none;
+        transform: translateY(-3px);
+    }
+
+    .mi-btn:active {
+        transform: translateY(1px);
+    }
+
+    .mi-btn-primary {
+        background: linear-gradient(135deg, var(--mi-gold-2), var(--mi-gold) 52%, #b06f1c);
+        border-color: rgba(255, 202, 97, .66);
+        color: #160d05;
+        box-shadow: 0 7px 0 #82530f, 0 22px 42px rgba(220, 163, 58, .22), inset 0 1px 0 rgba(255,255,255,.34);
+    }
+
+    .mi-btn-primary:hover {
+        color: #120a04;
+        box-shadow: 0 10px 0 #82530f, 0 29px 54px rgba(220, 163, 58, .28), inset 0 1px 0 rgba(255,255,255,.42);
+    }
+
+    .mi-btn-red {
+        background: linear-gradient(135deg, var(--mi-red-2), var(--mi-red));
+        border-color: rgba(242, 90, 54, .6);
+        box-shadow: 0 7px 0 #9e2415, 0 20px 40px rgba(222, 59, 36, .25), inset 0 1px 0 rgba(255,255,255,.25);
+    }
+
+    .mi-btn-outline {
+        background: rgba(255,255,255,.035);
+        border-color: var(--mi-border-strong);
+        color: var(--mi-white);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 18px 36px rgba(0,0,0,.18);
+        backdrop-filter: blur(4px);
+    }
+
+    .mi-btn-outline:hover {
+        background: rgba(220, 163, 58, .12);
+        color: var(--mi-gold-2);
+    }
+
+    /* ================================================================
+       SECTION TITLES
+    ================================================================= */
+    .mi-section-title {
+        margin: 0;
+        color: var(--mi-white);
+        font-size: clamp(2rem, 3.5vw, 3.15rem);
+        font-weight: 950;
+        line-height: .96;
+        letter-spacing: -.055em;
+        text-wrap: balance;
+    }
+
+    .mi-section-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: .55rem;
+        margin-bottom: .7rem;
+        color: var(--mi-gold-2);
+        font-size: .78rem;
+        font-weight: 950;
+        letter-spacing: .13em;
+        text-transform: uppercase;
+    }
+
+    .mi-section-kicker::before,
+    .mi-section-kicker::after {
+        content: "";
+        width: 34px;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--mi-gold));
+    }
+
+    .mi-section-kicker::after {
+        background: linear-gradient(90deg, var(--mi-gold), transparent);
+    }
+
+    .mi-section-copy {
+        margin: .55rem 0 0;
+        color: var(--mi-muted);
+        font-size: .98rem;
+        line-height: 1.7;
+    }
+
+    /* ================================================================
+       SERVICE MODAL (Enhanced)
+    ================================================================= */
+    .service-modal-shell {
+        position: fixed;
+        inset: 0;
+        z-index: var(--z-modal, 500);
+        display: grid;
+        place-items: center;
+        padding: clamp(.8rem, 2.5vw, 1.8rem);
+        background: rgba(3, 2, 1, .72);
+        backdrop-filter: blur(20px) saturate(120%);
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transition: opacity 360ms ease, visibility 360ms ease;
+    }
+
+    .service-modal-shell.is-open {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+    }
+
+    .service-dialog {
+        width: min(980px, 100%);
+        max-height: min(91vh, 900px);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        border: 1px solid var(--mi-border-strong);
+        border-radius: 28px;
+        background:
+            radial-gradient(circle at 18% 0%, rgba(220, 163, 58, .17), transparent 17rem),
+            linear-gradient(145deg, rgba(26, 22, 18, .98), rgba(9, 7, 5, .98));
+        color: var(--mi-white);
+        box-shadow: 0 45px 120px rgba(0,0,0,.62), inset 0 1px 0 rgba(255,255,255,.12);
+        transform: perspective(1200px) translateY(28px) rotateX(2.4deg) scale(.982);
+        transform-origin: center 72%;
+        transition: transform 440ms var(--mi-ease), opacity 320ms ease;
+    }
+
+    .service-modal-shell.is-open .service-dialog {
+        transform: perspective(1200px) translateY(0) rotateX(0deg) scale(1);
+    }
+
+    .service-dialog-header,
+    .service-dialog-footer {
+        padding: clamp(1rem, 2.5vw, 1.6rem);
+        border-color: rgba(255, 202, 97, .14);
+    }
+
+    .service-dialog-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        border-bottom: 1px solid rgba(255, 202, 97, .14);
+    }
+
+    .service-dialog-heading h2 {
+        margin: 0;
+        color: var(--mi-white);
+        font-size: clamp(1.7rem, 3vw, 2.65rem);
+        font-weight: 950;
+        letter-spacing: -.055em;
+        line-height: 1;
+    }
+
+    .service-dialog-heading p {
+        margin: .55rem 0 0;
+        color: var(--mi-muted);
+    }
+
+    .service-dialog-body {
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: clamp(1rem, 2.5vw, 1.65rem);
+    }
+
+    .service-options,
+    .outlet-list {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: .85rem;
+        perspective: 1100px;
+    }
+
+    .outlet-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .service-option,
+    .outlet-card {
+        position: relative;
+        min-height: 126px;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        align-content: center;
+        gap: .9rem;
+        width: 100%;
+        padding: 1rem;
+        border: 1px solid rgba(255, 202, 97, .17);
+        border-radius: 17px;
+        background: rgba(255, 255, 255, .035);
+        color: var(--mi-white);
+        text-align: left;
+        cursor: pointer;
+        transform: perspective(900px) rotateX(var(--service-tilt-x, 0deg)) rotateY(var(--service-tilt-y, 0deg));
+        transform-style: preserve-3d;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 16px 36px rgba(0,0,0,.22);
+        transition: transform 210ms var(--mi-ease-2), border-color 190ms ease, background 190ms ease, box-shadow 210ms ease;
+    }
+
+    .service-option:hover,
+    .outlet-card:hover {
+        transform: perspective(900px) rotateX(var(--service-tilt-x, 0deg)) rotateY(var(--service-tilt-y, 0deg)) translateY(-5px);
+        border-color: rgba(255, 202, 97, .48);
+        background: rgba(220, 163, 58, .08);
+    }
+
+    .service-option[aria-pressed="true"],
+    .outlet-choice input:checked + .outlet-card {
+        border-color: var(--mi-gold-2);
+        background: linear-gradient(145deg, rgba(220, 163, 58, .18), rgba(255,255,255,.035));
+        box-shadow: 0 0 0 1px rgba(255, 202, 97, .14), 0 22px 48px rgba(220, 163, 58, .1), inset 0 1px 0 rgba(255,255,255,.12);
+    }
+
+    .service-option-icon {
+        width: 50px;
+        height: 50px;
+        display: grid;
+        place-items: center;
+        border-radius: 15px;
+        background: linear-gradient(135deg, var(--mi-gold-2), var(--mi-gold));
+        color: #150d05;
+        box-shadow: 0 7px 18px rgba(220, 163, 58, .18);
+        transform: translateZ(22px);
+    }
+
+    .service-option-title,
+    .outlet-name {
+        display: block;
+        color: var(--mi-white);
+        font-weight: 900;
+        line-height: 1.2;
+    }
+
+    .service-option-copy,
+    .outlet-address,
+    .outlet-meta,
+    .service-field-note,
+    .location-status {
+        display: block;
+        margin-top: .26rem;
+        color: var(--mi-muted);
+        font-size: .82rem;
+        line-height: 1.45;
+    }
+
+    .service-option-check,
+    .outlet-check {
+        position: absolute;
+        top: .7rem;
+        right: .7rem;
+        width: 24px;
+        height: 24px;
+        display: grid;
+        place-items: center;
+        border: 1px solid rgba(255, 202, 97, .24);
+        border-radius: 50%;
+        color: transparent;
+    }
+
+    .service-option[aria-pressed="true"] .service-option-check,
+    .outlet-choice input:checked + .outlet-card .outlet-check {
+        background: var(--mi-gold);
+        border-color: var(--mi-gold);
+        color: #160d05;
+    }
+
+    .service-panel {
+        margin-top: 1.35rem;
+        padding-top: 1.25rem;
+        border-top: 1px solid rgba(255, 202, 97, .14);
+    }
+
+    .service-panel[hidden] {
+        display: none !important;
+    }
+
+    .service-panel-head h3 {
+        margin: 0;
+        color: var(--mi-white);
+        font-size: 1.12rem;
+        font-weight: 900;
+    }
+
+    .service-panel-head p {
+        margin: .3rem 0 1rem;
+        color: var(--mi-muted);
+        font-size: .88rem;
+    }
+
+    .delivery-location-tools {
+        display: flex;
+        gap: .75rem;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+
+    .service-form-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1rem;
+    }
+
+    .service-form-grid .span-2 {
+        grid-column: span 2;
+    }
+
+    .service-form-grid input,
+    .service-form-grid textarea,
+    .service-form-grid select {
+        background: rgba(255,255,255,.055);
+        color: var(--mi-white);
+        border-color: rgba(255, 202, 97, .22);
+        border-radius: 10px;
+        padding: .7rem .9rem;
+        width: 100%;
+        font-family: inherit;
+        transition: border-color 200ms ease, box-shadow 200ms ease;
+    }
+
+    .service-form-grid input:focus,
+    .service-form-grid textarea:focus,
+    .service-form-grid select:focus {
+        border-color: var(--mi-gold-2);
+        box-shadow: 0 0 0 3px rgba(255, 202, 97, .15);
+        outline: none;
+    }
+
+    .service-form-grid label {
+        display: block;
+        margin-bottom: .3rem;
+        color: var(--mi-muted);
+        font-size: .82rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+    }
+
+    .service-error {
+        display: none;
+        margin-top: 1rem;
+        padding: .8rem .9rem;
+        border: 1px solid rgba(242, 90, 54, .42);
+        border-radius: 13px;
+        background: rgba(222, 59, 36, .11);
+        color: #ffb1a1;
+        font-size: .88rem;
+        font-weight: 800;
+    }
+
+    .service-error.is-visible {
+        display: block;
+    }
+
+    .outlet-choice {
+        position: relative;
+        display: block;
+    }
+
+    .outlet-choice input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .outlet-card {
+        min-height: 122px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+    }
+
+    .service-dialog-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        border-top: 1px solid rgba(255, 202, 97, .14);
+        background: rgba(0,0,0,.18);
+    }
+
+    .service-auth-area {
+        color: var(--mi-muted);
+        font-size: .84rem;
+    }
+
+    .service-auth-links {
+        display: inline-flex;
+        gap: .4rem;
+        flex-wrap: wrap;
+    }
+
+    .service-auth-links a {
+        color: var(--mi-gold-2);
+        text-decoration: none;
+        font-weight: 900;
+        transition: color 200ms ease;
+    }
+
+    .service-auth-links a:hover {
+        color: var(--mi-white);
+    }
+
+    .service-dialog-actions {
+        display: flex;
+        gap: .6rem;
+        flex: 0 0 auto;
+    }
+
+    .service-submit-spinner {
+        width: 1rem;
+        height: 1rem;
+        display: none;
+        border: 2px solid currentColor;
+        border-right-color: transparent;
+        border-radius: 50%;
+        animation: mi-spin 750ms linear infinite;
+    }
+
+    .service-submit.is-loading .service-submit-spinner {
+        display: inline-block;
+    }
+
+    .service-submit.is-loading .service-submit-text {
+        opacity: 0.7;
+    }
+
+    @keyframes mi-spin { to { transform: rotate(360deg); } }
+
+    /* ================================================================
+       HERO (Compact / Zoom-friendly)
+    ================================================================= */
+    .mi-hero {
+        position: relative;
+        padding: clamp(1rem, 1.8vw, 1.6rem) 0 clamp(1.6rem, 2.5vw, 2.4rem);
+        min-height: clamp(680px, 66vw, 840px);
+    }
+
+    .mi-hero-shell {
+        position: relative;
+        overflow: hidden;
+        min-height: clamp(620px, 62vw, 760px);
+        border: 1px solid var(--mi-border-strong);
+        border-radius: 0 0 34px 34px;
+        background:
+            radial-gradient(circle at 73% 31%, rgba(220, 163, 58, .15), transparent 28rem),
+            radial-gradient(circle at 77% 57%, rgba(222, 59, 36, .12), transparent 22rem),
+            linear-gradient(135deg, #080604, #0e0b08 48%, #050403);
+        box-shadow: var(--mi-shadow), inset 0 1px 0 rgba(255,255,255,.08);
+        transform-style: preserve-3d;
+        perspective: 1200px;
+    }
+
+    .mi-hero-shell::before {
+        content: "";
+        position: absolute;
+        inset: 18px;
+        z-index: 7;
+        border: 1px solid rgba(255, 202, 97, .11);
+        border-radius: 0 0 24px 24px;
+        pointer-events: none;
+    }
+
+    .mi-hero-track,
+    .mi-hero-slide {
+        position: absolute;
+        inset: 0;
+    }
+
+    .mi-hero-slide {
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 900ms var(--mi-ease), visibility 900ms var(--mi-ease);
+    }
+
+    .mi-hero-slide.is-active {
+        opacity: 1;
+        visibility: visible;
+    }
+
+    .mi-hero-bg {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        transform: translate3d(var(--hero-shift-x), calc(var(--hero-shift-y) + var(--hero-scroll-y)), 0) scale(1.045);
+        transition: transform 460ms var(--mi-ease-2);
+        will-change: transform;
+    }
+
+    .mi-hero-bg img,
+    .mi-hero-bg video {
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: cover;
+        object-position: center;
+        filter: saturate(1.08) contrast(1.07) brightness(.84);
+        transform: scale(1.05);
+        transition: transform 1200ms var(--mi-ease), filter 500ms ease;
+    }
+
+    .mi-hero-slide.is-active .mi-hero-bg img,
+    .mi-hero-slide.is-active .mi-hero-bg video {
+        animation: mi-hero-arrive 1.4s var(--mi-ease) both;
+    }
+
+    @keyframes mi-hero-arrive {
+        from { transform: scale(1.12); }
+        to { transform: scale(1.035); }
+    }
+
+    .mi-hero-bg::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+            linear-gradient(90deg, rgba(5,4,3,.94) 0%, rgba(5,4,3,.86) 28%, rgba(5,4,3,.38) 56%, rgba(5,4,3,.1) 100%),
+            linear-gradient(0deg, rgba(5,4,3,.52), transparent 42%);
+    }
+
+    .mi-hero-content {
+        position: relative;
+        z-index: 5;
+        min-height: clamp(620px, 62vw, 760px);
+        display: grid;
+        grid-template-columns: minmax(0, .82fr) minmax(390px, 1.18fr);
+        align-items: center;
+        gap: clamp(1.2rem, 4vw, 3rem);
+        padding: clamp(2.8rem, 6.2vw, 5.6rem) clamp(1.2rem, 5.4vw, 5rem) clamp(6.5rem, 9vw, 8.2rem);
+        pointer-events: none;
+    }
+
+    .mi-hero-copy,
+    .mi-hero-visual {
+        pointer-events: auto;
+    }
+
+    .mi-hotline {
+        display: inline-flex;
+        align-items: center;
+        gap: .6rem;
+        margin-bottom: 1.2rem;
+        color: var(--mi-gold-2);
+        font-size: .82rem;
+        font-weight: 950;
+        letter-spacing: .15em;
+        text-transform: uppercase;
+        animation: mi-hotline-pulse 2.4s ease-in-out infinite;
+    }
+
+    @keyframes mi-hotline-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
+    }
+
+    .mi-hotline span:nth-child(2) { color: var(--mi-white); }
+    .mi-hotline b { width: 5px; height: 5px; border-radius: 50%; background: var(--mi-red); box-shadow: 0 0 0 4px rgba(222,59,36,.12); }
+
+    .mi-hero-title {
+        max-width: 10ch;
+        margin: 0;
+        color: var(--mi-white);
+        font-size: clamp(3.75rem, 7.8vw, 7.2rem);
+        font-weight: 950;
+        line-height: .82;
+        letter-spacing: -.08em;
+        text-transform: uppercase;
+        text-shadow: 0 10px 28px rgba(0,0,0,.38);
+    }
+
+    .mi-hero-title .gold {
+        display: block;
+        color: var(--mi-gold-2);
+        background: linear-gradient(180deg, #ffe4a1, #dba23a 64%, #8a5412);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        text-shadow: none;
+        filter: drop-shadow(0 12px 23px rgba(220,163,58,.14));
+    }
+
+    .mi-hero-script {
+        display: block;
+        margin-top: -.08em;
+        color: #fff;
+        font-size: clamp(2.45rem, 5vw, 5.1rem);
+        font-family: "Brush Script MT", "Segoe Script", cursive;
+        font-weight: 400;
+        line-height: .82;
+        letter-spacing: -.03em;
+        text-transform: none;
+    }
+
+    .mi-hero-text {
+        max-width: 36ch;
+        margin: 1.35rem 0 0;
+        color: rgba(255, 248, 236, .88);
+        font-size: clamp(1.03rem, 1.5vw, 1.2rem);
+        line-height: 1.58;
+    }
+
+    .mi-hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .8rem;
+        margin-top: 1.55rem;
+    }
+
+    .mi-trust-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        margin-top: clamp(1.8rem, 3vw, 2.5rem);
+    }
+
+    .mi-trust-item {
+        display: inline-grid;
+        grid-template-columns: auto 1fr;
+        gap: .6rem;
+        align-items: center;
+        min-width: 142px;
+        color: var(--mi-white);
+        padding: .5rem .7rem;
+        border-radius: 12px;
+        background: rgba(255,255,255,.035);
+        border: 1px solid rgba(255,255,255,.05);
+        transition: background 200ms ease, border-color 200ms ease, transform 200ms ease;
+        cursor: default;
+    }
+
+    .mi-trust-item:hover {
+        background: rgba(220, 163, 58, .08);
+        border-color: rgba(255, 202, 97, .2);
+        transform: translateY(-2px);
+    }
+
+    .mi-trust-icon {
+        width: 32px;
+        height: 32px;
+        display: grid;
+        place-items: center;
+        color: var(--mi-gold-2);
+        font-size: 1.3rem;
+    }
+
+    .mi-trust-item strong {
+        display: block;
+        color: var(--mi-gold-2);
+        font-size: .82rem;
+        line-height: 1.1;
+    }
+
+    .mi-trust-item span:last-child {
+        display: block;
+        color: var(--mi-muted);
+        font-size: .76rem;
+        line-height: 1.25;
+    }
+
+    .mi-hero-visual {
+        position: relative;
+        min-height: 540px;
+        transform-style: preserve-3d;
+        perspective: 1200px;
+    }
+
+    /* Hero visual intentionally left clean so the background artwork remains the focus. */
+
+    .mi-hero-service-band {
+        position: absolute;
+        z-index: 9;
+        left: 50%;
+        bottom: clamp(1.4rem, 4vw, 3.8rem);
+        width: min(calc(100% - 2rem), 980px);
+        display: grid;
+        grid-template-columns: 1.1fr repeat(3, 1fr);
+        gap: .65rem;
+        padding: .85rem;
+        border: 1px solid var(--mi-border-strong);
+        border-radius: 24px;
+        background: rgba(14, 11, 8, .78);
+        backdrop-filter: blur(18px) saturate(118%);
+        box-shadow: 0 28px 75px rgba(0,0,0,.44), inset 0 1px 0 rgba(255,255,255,.08);
+        transform: translateX(-50%);
+    }
+
+    .mi-service-heading {
+        display: flex;
+        align-items: center;
+        padding: .75rem 1rem;
+        color: var(--mi-white);
+        font-size: 1.05rem;
+        font-weight: 950;
+        line-height: 1.1;
+        text-transform: uppercase;
+    }
+
+    .mi-service-heading span {
+        color: var(--mi-gold-2);
+    }
+
+    .mi-service-pill {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: .75rem;
+        align-items: center;
+        min-height: 78px;
+        padding: .78rem 1rem;
+        border: 1px solid rgba(255, 202, 97, .14);
+        border-radius: 16px;
+        background: rgba(255,255,255,.035);
+        color: var(--mi-white);
+        text-align: left;
+        cursor: pointer;
+        transition: transform 180ms var(--mi-ease-2), border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
+    }
+
+    .mi-service-pill:hover {
+        transform: translateY(-4px);
+        border-color: rgba(255, 202, 97, .5);
+        background: rgba(220, 163, 58, .1);
+        box-shadow: 0 12px 30px rgba(0,0,0,.2);
+    }
+
+    .mi-service-pill .icon,
+    .mi-service-icon {
+        width: 34px;
+        height: 34px;
+        color: var(--mi-gold-2);
+        font-size: 1.5rem;
+        display: grid;
+        place-items: center;
+    }
+
+    .mi-service-pill strong {
+        display: block;
+        color: var(--mi-white);
+        font-size: .95rem;
+        line-height: 1.1;
+    }
+
+    .mi-service-pill span:last-child {
+        display: block;
+        margin-top: .15rem;
+        color: var(--mi-muted);
+        font-size: .78rem;
+    }
+
+    .mi-hero-nav {
+        position: absolute;
+        z-index: 10;
+        right: clamp(1.4rem, 3vw, 2.4rem);
+        bottom: clamp(1rem, 2vw, 1.5rem);
+        display: flex;
+        gap: .55rem;
+    }
+
+    .mi-hero-arrow,
+    .mi-cat-arrow {
+        width: 44px;
+        height: 44px;
+        display: grid;
+        place-items: center;
+        border: 1px solid rgba(255, 202, 97, .25);
+        border-radius: 50%;
+        background: rgba(255,255,255,.04);
+        color: var(--mi-white);
+        cursor: pointer;
+        backdrop-filter: blur(8px);
+        transition: transform 180ms var(--mi-ease-2), background 180ms ease, color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+    }
+
+    .mi-hero-arrow:hover,
+    .mi-cat-arrow:hover {
+        transform: translateY(-3px);
+        background: var(--mi-gold);
+        color: #120a04;
+        border-color: var(--mi-gold);
+        box-shadow: 0 8px 25px rgba(220, 163, 58, .3);
+    }
+
+    .mi-hero-dots {
+        position: absolute;
+        z-index: 10;
+        left: clamp(1.4rem, 3vw, 2.4rem);
+        bottom: clamp(1.2rem, 2vw, 1.7rem);
+        display: flex;
+        gap: .45rem;
+    }
+
+    .mi-hero-dot {
+        width: 10px;
+        height: 10px;
+        padding: 0;
+        border: 0;
+        border-radius: 999px;
+        background: rgba(255,255,255,.3);
+        cursor: pointer;
+        transition: width 210ms var(--mi-ease), background 180ms ease, transform 180ms ease;
+    }
+
+    .mi-hero-dot:hover {
+        transform: scale(1.2);
+    }
+
+    .mi-hero-dot[aria-current="true"] {
+        width: 32px;
+        background: var(--mi-gold-2);
+    }
+
+    /* ================================================================
+       MENU CATEGORIES SLIDER
+    ================================================================= */
+    .mi-categories {
+        padding: clamp(3.3rem, 6vw, 5.2rem) 0 clamp(2.2rem, 4vw, 3.5rem);
+    }
+
+    .mi-section-center {
+        text-align: center;
+    }
+
+    .mi-section-center .mi-section-title {
+        max-width: none;
+    }
+
+    .mi-category-shell {
+        position: relative;
+        margin-top: 1.8rem;
+        padding-inline: 3.8rem;
+    }
+
+    .mi-category-viewport {
+        overflow: hidden;
+        mask-image: linear-gradient(90deg, transparent 0, #000 4%, #000 96%, transparent 100%);
+        -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 4%, #000 96%, transparent 100%);
+    }
+
+    .mi-category-track {
+        display: flex;
+        gap: clamp(.75rem, 1.6vw, 1.2rem);
+        overflow-x: auto;
+        scroll-snap-type: x proximity;
+        scroll-behavior: smooth;
+        scrollbar-width: none;
+        padding: .4rem .1rem 1.5rem;
+    }
+
+    .mi-category-track::-webkit-scrollbar { display: none; }
+
+    .mi-category-card {
+        flex: 0 0 clamp(138px, 14vw, 178px);
+        scroll-snap-align: start;
+        color: inherit;
+        text-decoration: none;
+        transform: perspective(900px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
+        transform-style: preserve-3d;
+        transition: transform 240ms var(--mi-ease-2), filter 220ms ease;
+    }
+
+    .mi-category-card:hover {
+        color: inherit;
+        transform: perspective(900px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) translateY(-10px);
+    }
+
+    .mi-category-inner {
+        min-height: 160px;
+        display: grid;
+        place-items: center;
+        padding: 1rem .85rem;
+        border: 1px solid rgba(255, 202, 97, .22);
+        border-radius: 999px 999px 26px 26px;
+        background:
+            radial-gradient(circle at 50% 0%, rgba(220, 163, 58, .2), transparent 4.8rem),
+            rgba(255,255,255,.035);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 18px 46px rgba(0,0,0,.24);
+        transition: background 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+    }
+
+    .mi-category-card:hover .mi-category-inner {
+        border-color: rgba(255, 202, 97, .56);
+        background:
+            radial-gradient(circle at 50% 0%, rgba(220, 163, 58, .32), transparent 5.6rem),
+            rgba(255,255,255,.06);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 22px 54px rgba(0,0,0,.32);
+    }
+
+    .mi-category-visual {
+        width: 82px;
+        height: 82px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background: rgba(255,255,255,.05);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 18px 34px rgba(0,0,0,.28);
+        transform: translateZ(28px);
+        overflow: hidden;
+    }
+
+    .mi-category-visual img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: 50%;
+        transform: scale(1.1);
+        transition: transform 360ms var(--mi-ease);
+    }
+
+    .mi-category-card:hover .mi-category-visual img {
+        transform: scale(1.22) rotate(-3deg);
+    }
+
+    .mi-category-emoji {
+        font-size: 2.2rem;
+        filter: drop-shadow(0 12px 16px rgba(0,0,0,.28));
+    }
+
+    .mi-category-name {
+        margin-top: .75rem;
+        display: block;
+        color: var(--mi-white);
+        font-size: .92rem;
+        font-weight: 950;
+        line-height: 1.1;
+        text-transform: uppercase;
+    }
+
+    .mi-category-count {
+        display: block;
+        margin-top: .25rem;
+        color: var(--mi-muted);
+        font-size: .75rem;
+        line-height: 1.2;
+    }
+
+    .mi-cat-arrow {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+    }
+
+    .mi-cat-arrow:hover { transform: translateY(calc(-50% - 3px)); }
+    .mi-cat-prev { left: 0; }
+    .mi-cat-next { right: 0; }
+
+    /* ================================================================
+       PRODUCT CARDS
+    ================================================================= */
+    .mi-products {
+        padding: clamp(2.3rem, 5vw, 4rem) 0;
+    }
+
+    .mi-section-head {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 1.4rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .mi-products-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: clamp(.9rem, 1.6vw, 1.2rem);
+    }
+
+    .mi-product-card {
+        position: relative;
+        min-height: 320px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 202, 97, .18);
+        border-radius: 18px;
+        background: linear-gradient(145deg, rgba(255,255,255,.055), rgba(255,255,255,.025));
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 20px 50px rgba(0,0,0,.28);
+        transform: perspective(1000px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
+        transform-style: preserve-3d;
+        transition: transform 240ms var(--mi-ease-2), border-color 200ms ease, box-shadow 240ms ease;
+        cursor: pointer;
+    }
+
+    .mi-product-card:hover {
+        transform: perspective(1000px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) translateY(-8px);
+        border-color: rgba(255, 202, 97, .48);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 30px 70px rgba(0,0,0,.38);
+    }
+
+    .mi-product-media {
+        position: relative;
+        height: 176px;
+        overflow: hidden;
+        background:
+            radial-gradient(circle at 50% 50%, rgba(220, 163, 58, .22), transparent 6rem),
+            #0c0907;
+    }
+
+    .mi-product-media img {
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: cover;
+        filter: saturate(1.1) contrast(1.04);
+        transition: transform 520ms var(--mi-ease), filter 260ms ease;
+    }
+
+    .mi-product-card:hover .mi-product-media img {
+        transform: scale(1.12) translateY(-3px);
+        filter: saturate(1.16) contrast(1.08);
+    }
+
+    .mi-product-fallback {
+        height: 100%;
+        display: grid;
+        place-items: center;
+        font-size: 4rem;
+    }
+
+    .mi-product-tag {
+        position: absolute;
+        top: .8rem;
+        left: .8rem;
+        z-index: 2;
+        padding: .32rem .55rem;
+        border-radius: 7px;
+        background: var(--mi-gold);
+        color: #120a04;
+        font-size: .66rem;
+        font-weight: 950;
+        text-transform: uppercase;
+        box-shadow: 0 8px 18px rgba(220, 163, 58, .18);
+        backdrop-filter: blur(4px);
+    }
+
+    .mi-product-body {
+        padding: 1rem;
+    }
+
+    .mi-product-title {
+        margin: 0;
+        color: var(--mi-white);
+        font-size: 1.05rem;
+        font-weight: 950;
+        letter-spacing: -.02em;
+    }
+
+    .mi-product-desc {
+        min-height: 42px;
+        margin: .38rem 0 0;
+        color: var(--mi-muted);
+        font-size: .82rem;
+        line-height: 1.48;
+    }
+
+    .mi-product-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .8rem;
+        margin-top: .75rem;
+    }
+
+    .mi-stars {
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        color: var(--mi-gold-2);
+        font-size: .8rem;
+        font-weight: 850;
+    }
+
+    .mi-price {
+        color: var(--mi-gold-2);
+        font-weight: 950;
+        white-space: nowrap;
+    }
+
+    .mi-card-action {
+        position: absolute;
+        right: .85rem;
+        bottom: .85rem;
+        width: 36px;
+        height: 36px;
+        display: grid;
+        place-items: center;
+        border: 1px solid rgba(255,202,97,.32);
+        border-radius: 10px;
+        background: rgba(220,163,58,.14);
+        color: var(--mi-gold-2);
+        text-decoration: none;
+        font-size: 1.2rem;
+        transition: transform 190ms var(--mi-ease-2), background 190ms ease, color 190ms ease, box-shadow 190ms ease;
+    }
+
+    .mi-card-action:hover {
+        transform: translateY(-3px) rotate(6deg) scale(1.05);
+        background: var(--mi-gold);
+        color: #120a04;
+        box-shadow: 0 8px 20px rgba(220, 163, 58, .3);
+    }
+
+    /* ================================================================
+       DEAL BANNER
+    ================================================================= */
+    .mi-deal-banner {
+        padding: clamp(1rem, 2vw, 1.5rem) 0 clamp(2.5rem, 5vw, 4rem);
+    }
+
+    .mi-deal-card {
+        position: relative;
+        overflow: hidden;
+        min-height: 130px;
+        display: grid;
+        grid-template-columns: .9fr 1.3fr .9fr;
+        align-items: center;
+        gap: 1rem;
+        padding: clamp(1rem, 2.8vw, 2rem);
+        border: 1px solid rgba(255, 202, 97, .22);
+        border-radius: 20px;
+        background:
+            radial-gradient(circle at 42% 45%, rgba(220, 163, 58, .24), transparent 18rem),
+            linear-gradient(110deg, #2d0805, #5d150c 44%, #1a0f0b 100%);
+        box-shadow: 0 24px 70px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.1);
+    }
+
+    .mi-deal-card::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(100deg, transparent, rgba(255,255,255,.16), transparent);
+        transform: translateX(-110%);
+        animation: mi-shine 5.5s ease-in-out infinite;
+        pointer-events: none;
+    }
+
+    @keyframes mi-shine {
+        0%, 55% { transform: translateX(-110%); }
+        85%, 100% { transform: translateX(110%); }
+    }
+
+    .mi-deal-title {
+        margin: 0;
+        color: var(--mi-white);
+        font-size: clamp(1.7rem, 3vw, 3.1rem);
+        font-weight: 950;
+        line-height: .95;
+        text-transform: uppercase;
+    }
+
+    .mi-deal-title span {
+        color: var(--mi-gold-2);
+    }
+
+    .mi-deal-food {
+        position: relative;
+        min-height: 132px;
+        display: grid;
+        place-items: center;
+        isolation: isolate;
+        filter: drop-shadow(0 24px 24px rgba(0,0,0,.38));
+    }
+
+    .mi-deal-food::before {
+        content: "";
+        position: absolute;
+        width: min(92%, 360px);
+        height: 86px;
+        border-radius: 999px;
+        background:
+            radial-gradient(ellipse at 35% 45%, rgba(255, 202, 97, .26), transparent 52%),
+            linear-gradient(90deg, transparent, rgba(255, 202, 97, .14), transparent);
+        filter: blur(18px);
+        opacity: .9;
+        animation: mi-deal-glow 3.6s ease-in-out infinite;
+        pointer-events: none;
+    }
+
+    @keyframes mi-deal-glow {
+        0%, 100% { opacity: .68; transform: scaleX(.92); }
+        50% { opacity: 1; transform: scaleX(1.06); }
+    }
+
+    .mi-pizza-canvas {
+        position: relative;
+        z-index: 2;
+        width: min(220px, 100%);
+        height: auto;
+        aspect-ratio: 1;
+        display: block;
+        transform-origin: center center;
+        will-change: transform;
+        filter:
+            drop-shadow(0 20px 20px rgba(0,0,0,.34))
+            drop-shadow(0 0 18px rgba(255,202,97,.16));
+        animation: mi-whole-pizza-motion 7s linear infinite;
+    }
+
+    @keyframes mi-whole-pizza-motion {
+        0% { transform: rotate(-8deg) translateY(0px) scale(.98); }
+        25% { transform: rotate(82deg) translateY(-5px) scale(1.02); }
+        50% { transform: rotate(172deg) translateY(2px) scale(1); }
+        75% { transform: rotate(262deg) translateY(-4px) scale(1.02); }
+        100% { transform: rotate(352deg) translateY(0px) scale(.98); }
+    }
+
+    .mi-deal-spark {
+        position: absolute;
+        z-index: 1;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--mi-gold-2);
+        box-shadow: 0 0 18px rgba(255,202,97,.65);
+        animation: mi-spark-float 2.8s ease-in-out infinite;
+        pointer-events: none;
+    }
+
+    .mi-deal-spark.s1 { left: 13%; top: 30%; animation-delay: .1s; }
+    .mi-deal-spark.s2 { right: 18%; top: 22%; width: 6px; height: 6px; animation-delay: .65s; }
+    .mi-deal-spark.s3 { right: 27%; bottom: 18%; width: 7px; height: 7px; animation-delay: 1.15s; }
+
+    @keyframes mi-spark-float {
+        0%, 100% { transform: translateY(0) scale(.9); opacity: .45; }
+        50% { transform: translateY(-14px) scale(1.15); opacity: 1; }
+    }
+
+    .mi-deal-price {
+        color: var(--mi-white);
+    }
+
+    .mi-deal-price strong {
+        display: block;
+        color: var(--mi-gold-2);
+        font-size: clamp(1.6rem, 2.4vw, 2.3rem);
+        line-height: 1;
+    }
+
+    .mi-deal-price del {
+        color: rgba(255,255,255,.45);
+        margin-left: .4rem;
+    }
+
+    /* ================================================================
+       WHY CHOOSE
+    ================================================================= */
+    .mi-why {
+        padding: clamp(1.5rem, 4vw, 3rem) 0 clamp(2.3rem, 5vw, 4rem);
+    }
+
+    .mi-why-title {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        gap: 1rem;
+        align-items: center;
+        margin-bottom: 1.6rem;
+        color: var(--mi-white);
+        text-align: center;
+        font-size: clamp(1.6rem, 2.6vw, 2.4rem);
+        font-weight: 950;
+        text-transform: uppercase;
+        letter-spacing: -.04em;
+    }
+
+    .mi-why-title::before,
+    .mi-why-title::after {
+        content: "";
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(255,202,97,.44));
+    }
+
+    .mi-why-title::after { background: linear-gradient(90deg, rgba(255,202,97,.44), transparent); }
+
+    .mi-why-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 1rem;
+    }
+
+    .mi-why-item {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: .75rem;
+        align-items: center;
+        padding: .5rem .7rem;
+        border-radius: 14px;
+        background: rgba(255,255,255,.02);
+        border: 1px solid transparent;
+        transition: background 220ms ease, border-color 220ms ease, transform 220ms ease;
+        cursor: default;
+    }
+
+    .mi-why-item:hover {
+        background: rgba(255,255,255,.04);
+        border-color: rgba(255,202,97,.12);
+        transform: translateY(-3px);
+    }
+
+    .mi-why-icon {
+        width: 58px;
+        height: 58px;
+        display: grid !important;
+        place-items: center;
+        margin-top: 0 !important;
+        border: 1px solid rgba(255,202,97,.48);
+        border-radius: 50%;
+        color: var(--mi-gold-2);
+        background:
+            radial-gradient(circle at 35% 22%, rgba(255,226,154,.22), transparent 34%),
+            linear-gradient(145deg, rgba(255,202,97,.13), rgba(255,202,97,.035));
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.1),
+            0 0 0 7px rgba(255,202,97,.035),
+            0 14px 34px rgba(0,0,0,.28);
+        transform: translateZ(18px);
+        transition:
+            transform 260ms var(--mi-ease),
+            border-color 260ms ease,
+            box-shadow 260ms ease,
+            background 260ms ease;
+    }
+
+    .mi-why-icon svg {
+        width: 27px;
+        height: 27px;
+        display: block;
+        stroke: currentColor;
+        stroke-width: 1.85;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        fill: none;
+        filter: drop-shadow(0 7px 10px rgba(255,202,97,.22));
+    }
+
+    .mi-why-item:hover .mi-why-icon {
+        transform: translateY(-5px) translateZ(28px) scale(1.045);
+        border-color: rgba(255,202,97,.78);
+        background:
+            radial-gradient(circle at 35% 22%, rgba(255,226,154,.32), transparent 36%),
+            linear-gradient(145deg, rgba(255,202,97,.18), rgba(255,202,97,.055));
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.14),
+            0 0 0 9px rgba(255,202,97,.045),
+            0 20px 42px rgba(0,0,0,.34);
+    }
+
+    .mi-why-item strong {
+        display: block;
+        color: var(--mi-white);
+        font-size: .82rem;
+        font-weight: 950;
+        line-height: 1.2;
+        text-transform: uppercase;
+    }
+
+    .mi-why-item span {
+        display: block;
+        margin-top: .18rem;
+        color: var(--mi-muted);
+        font-size: .76rem;
+        line-height: 1.35;
+    }
+
+    /* ================================================================
+       STORY + REVIEWS
+    ================================================================= */
+    .mi-story-reviews {
+        position: relative;
+        padding: clamp(2rem, 4vw, 3rem) 0;
+        background:
+            radial-gradient(circle at 20% 30%, rgba(220,163,58,.18), transparent 18rem),
+            linear-gradient(180deg, var(--mi-cream), #fff6e8);
+        color: #20150e;
+    }
+
+    .mi-story-grid {
+        display: grid;
+        grid-template-columns: 1.02fr 1.18fr;
+        gap: 1rem;
+        align-items: stretch;
+    }
+
+    .mi-story-card,
+    .mi-review-card {
+        overflow: hidden;
+        border: 1px solid rgba(84, 55, 22, .14);
+        border-radius: 20px;
+        background: rgba(255,255,255,.58);
+        box-shadow: 0 22px 55px rgba(89, 55, 17, .12), inset 0 1px 0 rgba(255,255,255,.8);
+        backdrop-filter: blur(4px);
+        transition: transform 300ms var(--mi-ease), box-shadow 300ms var(--mi-ease);
+    }
+
+    .mi-story-card:hover,
+    .mi-review-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 28px 65px rgba(89, 55, 17, .18), inset 0 1px 0 rgba(255,255,255,.8);
+    }
+
+    .mi-story-card {
+        display: grid;
+        grid-template-columns: .82fr 1fr;
+        min-height: 275px;
+    }
+
+    .mi-story-copy {
+        padding: clamp(1.3rem, 2.6vw, 2rem);
+    }
+
+    .mi-story-copy small,
+    .mi-review-card small {
+        display: block;
+        margin-bottom: .55rem;
+        color: #6f4614;
+        font-weight: 950;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+    }
+
+    .mi-story-copy h2,
+    .mi-review-card h2 {
+        margin: 0;
+        color: #1d130d;
+        font-size: clamp(1.6rem, 2.5vw, 2.5rem);
+        font-weight: 950;
+        line-height: 1;
+        letter-spacing: -.055em;
+    }
+
+    .mi-story-copy p {
+        margin: .9rem 0 0;
+        color: #5e4a39;
+        font-size: .92rem;
+        line-height: 1.65;
+    }
+
+    .mi-story-visual {
+        position: relative;
+        min-height: 260px;
+        background:
+            radial-gradient(circle at 48% 42%, rgba(255,255,255,.72), transparent 6rem),
+            linear-gradient(135deg, rgba(0,0,0,.04), rgba(0,0,0,.18)),
+            url("{{ url_for('static', filename='images/chef.jpg') }}") center/cover no-repeat;
+    }
+
+    .mi-story-visual::after {
+        content: "👨‍🍳";
+        position: absolute;
+        right: 12%;
+        bottom: 12%;
+        font-size: 5.5rem;
+        filter: drop-shadow(0 18px 18px rgba(0,0,0,.25));
+        animation: mi-chef-float 4s ease-in-out infinite;
+    }
+
+    @keyframes mi-chef-float {
+        0%, 100% { transform: translateY(0) rotate(-4deg); }
+        50% { transform: translateY(-8px) rotate(4deg); }
+    }
+
+    .mi-review-card {
+        padding: clamp(1.3rem, 2.6vw, 2rem);
+    }
+
+    .mi-review-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 1.3rem;
+    }
+
+    .mi-review-list {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: .85rem;
+    }
+
+    .mi-review-item {
+        padding: 1rem;
+        border: 1px solid rgba(84,55,22,.12);
+        border-radius: 14px;
+        background: rgba(255,255,255,.58);
+        transition: transform 220ms ease, box-shadow 220ms ease;
+    }
+
+    .mi-review-item:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 12px 30px rgba(0,0,0,.06);
+    }
+
+    .mi-review-stars {
+        color: #e29718;
+        letter-spacing: .06em;
+        font-size: .86rem;
+    }
+
+    .mi-review-item p {
+        min-height: 66px;
+        margin: .55rem 0 .7rem;
+        color: #5e4a39;
+        font-size: .82rem;
+        line-height: 1.5;
+    }
+
+    .mi-review-person {
+        display: flex;
+        align-items: center;
+        gap: .55rem;
+        color: #2a1b10;
+        font-size: .82rem;
+        font-weight: 900;
+    }
+
+    .mi-avatar {
+        width: 30px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background: #1a130f;
+        color: #fff;
+        font-size: .78rem;
+        font-weight: 900;
+    }
+
+    .mi-review-dots {
+        display: flex;
+        justify-content: center;
+        gap: .35rem;
+        margin-top: 1.05rem;
+    }
+
+    .mi-review-dots i {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: rgba(48, 27, 10, .22);
+        transition: background 200ms ease, transform 200ms ease;
+    }
+
+    .mi-review-dots i:first-child {
+        background: var(--mi-gold);
+        transform: scale(1.2);
+    }
+
+    /* ================================================================
+       BOTTOM STRIP
+    ================================================================= */
+    .mi-bottom-strip {
+        padding: clamp(1.2rem, 3vw, 2rem) 0;
+        background: linear-gradient(180deg, #080604, #050403);
+    }
+
+    .mi-strip-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        border: 1px solid rgba(255,202,97,.14);
+        border-radius: 22px;
+        background: rgba(255,255,255,.03);
+        overflow: hidden;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.07);
+    }
+
+    .mi-strip-item {
+        min-height: 106px;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: .9rem;
+        align-items: center;
+        padding: 1.1rem 1.25rem;
+        border-right: 1px solid rgba(255,202,97,.12);
+        transition: background 200ms ease;
+    }
+
+    .mi-strip-item:hover {
+        background: rgba(255,255,255,.02);
+    }
+
+    .mi-strip-item:last-child {
+        border-right: 0;
+    }
+
+    .mi-strip-icon {
+        width: 48px;
+        height: 48px;
+        display: grid;
+        place-items: center;
+        border-radius: 14px;
+        background: rgba(220,163,58,.09);
+        color: var(--mi-gold-2);
+        font-size: 1.4rem;
+    }
+
+    .mi-strip-item strong {
+        display: block;
+        color: var(--mi-gold-2);
+        font-size: .92rem;
+        font-weight: 950;
+        text-transform: uppercase;
+    }
+
+    .mi-strip-item span,
+    .mi-strip-item p {
+        margin: .18rem 0 0;
+        color: var(--mi-muted);
+        font-size: .82rem;
+        line-height: 1.35;
+    }
+
+    .mi-newsletter-mini {
+        display: flex;
+        gap: .5rem;
+        margin-top: .65rem;
+    }
+
+    .mi-newsletter-mini input {
+        min-height: 40px;
+        flex: 1;
+        border-radius: 10px;
+        border: 1px solid rgba(255,202,97,.18);
+        background: rgba(255,255,255,.04);
+        color: var(--mi-white);
+        padding-inline: .8rem;
+        transition: border-color 200ms ease, box-shadow 200ms ease;
+    }
+
+    .mi-newsletter-mini input:focus {
+        border-color: var(--mi-gold-2);
+        box-shadow: 0 0 0 3px rgba(255,202,97,.1);
+        outline: none;
+    }
+
+    .mi-newsletter-mini button {
+        min-width: 46px;
+        min-height: 40px;
+        border: 0;
+        border-radius: 10px;
+        background: var(--mi-gold);
+        color: #120a04;
+        cursor: pointer;
+        font-size: 1.2rem;
+        transition: transform 200ms ease, background 200ms ease;
+    }
+
+    .mi-newsletter-mini button:hover {
+        transform: scale(1.05);
+        background: var(--mi-gold-2);
+    }
+
+    /* ================================================================
+       REVEAL
+    ================================================================= */
+    .mi-reveal {
+        opacity: 0;
+        transform: translateY(28px);
+        transition: opacity 700ms var(--mi-ease), transform 700ms var(--mi-ease);
+        will-change: opacity, transform;
+    }
+
+    .mi-reveal.is-visible {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    .mi-reveal[data-delay="1"] { transition-delay: 70ms; }
+    .mi-reveal[data-delay="2"] { transition-delay: 130ms; }
+    .mi-reveal[data-delay="3"] { transition-delay: 190ms; }
+
+    /* ================================================================
+       RESPONSIVE
+    ================================================================= */
+    @media (max-width: 1160px) {
+        .mi-hero-content { grid-template-columns: 1fr; }
+        .mi-hero-visual { display: none; }
+        .mi-products-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .mi-why-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .mi-story-grid { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 820px) {
+        .mi-hero { min-height: auto; }
+        .mi-hero-shell { min-height: 900px; border-radius: 0 0 26px 26px; }
+        .mi-hero-content { min-height: 900px; padding: 3.25rem 1.15rem 17rem; align-items: start; }
+        .mi-hero-title { font-size: clamp(3.1rem, 14vw, 5.2rem); }
+        .mi-hero-script { font-size: clamp(2.4rem, 12vw, 4.6rem); }
+        .mi-hero-service-band { grid-template-columns: 1fr; bottom: 1rem; }
+        .mi-service-heading { justify-content: center; text-align: center; }
+        .mi-category-shell { padding-inline: 2.8rem; }
+        .mi-products-grid,
+        .mi-why-grid,
+        .mi-strip-grid { grid-template-columns: 1fr; }
+        .mi-strip-item { border-right: 0; border-bottom: 1px solid rgba(255,202,97,.12); }
+        .mi-strip-item:last-child { border-bottom: 0; }
+        .mi-deal-card { grid-template-columns: 1fr; text-align: center; }
+        .mi-review-list { grid-template-columns: 1fr; }
+        .mi-story-card { grid-template-columns: 1fr; }
+        .service-options,
+        .outlet-list,
+        .service-form-grid { grid-template-columns: 1fr; }
+        .service-form-grid .span-2 { grid-column: auto; }
+        .service-dialog-footer { align-items: stretch; flex-direction: column; }
+        .service-dialog-actions { width: 100%; }
+        .service-dialog-actions .mi-btn { flex: 1; }
+        .mi-hero-nav { bottom: 5rem; right: 1rem; }
+        .mi-hero-dots { bottom: 5rem; left: 1rem; }
+        .mi-why-item { grid-template-columns: 1fr; text-align: center; justify-items: center; }
+        .mi-why-icon { width: 48px; height: 48px; }
+        .mi-why-icon svg { width: 22px; height: 22px; }
+    }
+
+    @media (max-width: 560px) {
+        .mi-container { width: min(calc(100% - 1.15rem), 1240px); }
+        .mi-hero-shell { min-height: 860px; }
+        .mi-hero-content { min-height: 860px; padding-bottom: 17rem; }
+        .mi-trust-row { gap: .7rem; }
+        .mi-trust-item { min-width: 130px; padding: .4rem .5rem; }
+        .mi-category-card { flex-basis: 136px; }
+        .mi-section-head { display: block; }
+        .mi-section-head .mi-btn { margin-top: 1rem; }
+        .mi-deal-food { min-height: 100px; }
+        .mi-pizza-canvas { width: min(180px, 100%); }
+        .mi-story-card { min-height: auto; }
+        .mi-story-visual { min-height: 180px; }
+        .mi-review-item p { min-height: auto; }
+        .mi-why-grid { grid-template-columns: 1fr 1fr; }
+        .mi-why-item { padding: .4rem; }
+    }
+
+    /* ================================================================
+       REDUCED MOTION
+    ================================================================= */
+    @media (prefers-reduced-motion: reduce) {
+        .mi-food-orbit,
+        .mi-food-plate,
+        .mi-food-burger,
+        .mi-float,
+        .mi-deal-card::before,
+        .mi-hero-slide.is-active .mi-hero-bg img,
+        .mi-hero-slide.is-active .mi-hero-bg video,
+        .mi-pizza-canvas {
+            animation: none !important;
+        }
+
+        .mi-reveal {
+            opacity: 1;
+            transform: none;
+        }
+
+        .mi-deal-spark {
+            animation: none !important;
+        }
+
+        .mi-hero-title .gold {
+            background: var(--mi-gold-2);
+            -webkit-background-clip: unset;
+            background-clip: unset;
+            color: var(--mi-gold-2);
+            text-shadow: 0 2px 10px rgba(0,0,0,.3);
+        }
+    }
+
+    /* ================================================================
+       SURGICAL FIX: remove only the large circular CSS food disk from hero.
+       Everything else stays same: hero, service band, category slider, cards,
+       deals, sections, animations and JavaScript.
+    ================================================================= */
+    .mi-food-plate {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        animation: none !important;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .mi-pizza-canvas {
+            animation: none !important;
+            transform: rotate(-8deg) !important;
+        }
+    }
+
+    /* ================================================================
+       GLOW CURSOR EFFECT (Optional enhancement)
+    ================================================================= */
+    .mi-glow-cursor {
+        position: fixed;
+        width: 300px;
+        height: 300px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(255,202,97,0.06) 0%, transparent 70%);
+        pointer-events: none;
+        transform: translate(-50%, -50%);
+        z-index: 0;
+        transition: opacity 300ms ease;
+        opacity: 0;
+    }
+
+    .home-page:hover .mi-glow-cursor {
+        opacity: 1;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set brand_name_home = business_name|default('Mr. Italiano Pizza & Burger', true) %}
+{% set selected_service = session.get('service_selection') or {} %}
+{% set has_service = selected_service.get('service_mode') %}
+{% set home_categories = categories|default([], true) %}
+{% set home_deals = deals|default([], true) %}
+{% set home_products = popular_products|default([], true) %}
+{% if not home_products %}{% set home_products = featured_products|default([], true) %}{% endif %}
+{% if not home_products %}{% set home_products = products|default([], true) %}{% endif %}
+{% set home_hero_media = hero_media|default([], true) %}
+{% if not home_hero_media %}
+    {% set home_hero_media = [
+        {
+            'title': 'Craving Something Delicious?',
+            'subtitle': 'Fresh Pizza. Juicy Burgers. Delivered Hot To Your Door.',
+            'cta_text': 'Order Now',
+            'cta_url': url_for('menu_page'),
+            'media_type': 'image',
+            'media_url': url_for('static', filename='images/hero-4.jpg')
+        },
+        {
+            'title': 'Pizza + Burger Feast',
+            'subtitle': 'Hot deals, premium ingredients, and fast delivery for every craving.',
+            'cta_text': 'Explore Deals',
+            'cta_url': url_for('deals_page'),
+            'media_type': 'image',
+            'media_url': url_for('static', filename='images/hero-5.jpg')
+        }
+    ] %}
+{% endif %}
+
+<div class="home-page">
+
+    <!-- Glow Cursor -->
+    <div class="mi-glow-cursor" id="mi-glow-cursor"></div>
+
+    <!-- =========================================================
+         SERVICE SELECTION MODAL
+    ========================================================== -->
+    <div class="service-modal-shell" id="service-modal-shell" aria-hidden="true" hidden>
+        <section class="service-dialog" id="service-dialog" role="dialog" aria-modal="true" aria-labelledby="service-dialog-title" aria-describedby="service-dialog-description" tabindex="-1" inert>
+            <header class="service-dialog-header">
+                <div class="service-dialog-heading">
+                    <span class="mi-section-kicker">Start your order</span>
+                    <h2 id="service-dialog-title">How would you like to order?</h2>
+                    <p id="service-dialog-description">Choose delivery, pickup, or dine-in. You can change this later.</p>
+                </div>
+
+                <button class="icon-btn" id="service-modal-close" type="button" aria-label="Close service selection and continue browsing">
+                    <svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M18 6 6 18"></path><path d="M6 6l12 12"></path></svg>
+                </button>
+            </header>
+
+            <div class="service-dialog-body">
+                <div class="service-options" id="service-options" role="group" aria-label="Choose order service">
+                    <button class="service-option" type="button" data-service-option="delivery" aria-pressed="{{ 'true' if selected_service.get('service_mode') == 'delivery' else 'false' }}">
+                        <span class="service-option-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M3 7h11v10H3z"></path><path d="M14 10h4l3 3v4h-7z"></path><circle cx="7" cy="18" r="2"></circle><circle cx="18" cy="18" r="2"></circle></svg></span>
+                        <span><span class="service-option-title">Delivery</span><span class="service-option-copy">Delivered hot to your address.</span></span>
+                        <span class="service-option-check" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></svg></span>
+                    </button>
+
+                    <button class="service-option" type="button" data-service-option="pickup" aria-pressed="{{ 'true' if selected_service.get('service_mode') == 'pickup' else 'false' }}">
+                        <span class="service-option-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M4 9h16l-1 11H5L4 9z"></path><path d="M8 9V7a4 4 0 0 1 8 0v2"></path></svg></span>
+                        <span><span class="service-option-title">Pickup</span><span class="service-option-copy">Collect from your preferred outlet.</span></span>
+                        <span class="service-option-check" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></svg></span>
+                    </button>
+
+                    <button class="service-option" type="button" data-service-option="dine_in" aria-pressed="{{ 'true' if selected_service.get('service_mode') == 'dine_in' else 'false' }}">
+                        <span class="service-option-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M6 3v8"></path><path d="M3 3v5a3 3 0 0 0 6 0V3"></path><path d="M6 11v10"></path><path d="M15 3v18"></path><path d="M15 3c4 1 6 4 6 8h-6"></path></svg></span>
+                        <span><span class="service-option-title">Dine-in</span><span class="service-option-copy">Enjoy inside the restaurant.</span></span>
+                        <span class="service-option-check" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></svg></span>
+                    </button>
+                </div>
+
+                <form class="service-panel" id="delivery-service-panel" data-service-panel="delivery" novalidate {% if selected_service.get('service_mode') != 'delivery' %}hidden{% endif %}>
+                    <div class="service-panel-head"><h3>Delivery details</h3><p>Use your location or enter your city and area manually.</p></div>
+                    <div class="delivery-location-tools">
+                        <button class="mi-btn mi-btn-outline" id="use-current-location" type="button"><svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path><circle cx="12" cy="12" r="8"></circle></svg> Use My Current Location</button>
+                        <span class="location-status" id="location-status" role="status" aria-live="polite"></span>
+                    </div>
+
+                    <div class="service-form-grid">
+                        <div class="form-group"><label for="delivery-city">City</label><input id="delivery-city" name="city" type="text" maxlength="100" list="home-city-list" autocomplete="address-level2" value="{{ selected_service.get('city', '') }}" required></div>
+                        <div class="form-group"><label for="delivery-area">Area</label><input id="delivery-area" name="area" type="text" maxlength="120" list="home-area-list" autocomplete="address-level3" value="{{ selected_service.get('area', '') }}" required></div>
+                        <div class="form-group span-2"><label for="delivery-address">Street / Address</label><textarea id="delivery-address" name="address" maxlength="400" autocomplete="street-address" placeholder="Street, building, house or apartment details"></textarea>{% if not principal %}<span class="service-field-note">Guest address will be confirmed again at checkout.</span>{% endif %}</div>
+                        <div class="form-group"><label for="delivery-landmark">Landmark <span class="text-muted">(optional)</span></label><input id="delivery-landmark" name="landmark" type="text" maxlength="120" autocomplete="off" placeholder="Nearby landmark"></div>
+                        <div class="form-group"><label for="delivery-phone">Phone <span class="text-muted">(optional here)</span></label><input id="delivery-phone" name="phone" type="tel" inputmode="tel" maxlength="30" autocomplete="tel" placeholder="Contact number"></div>
+                        <div class="form-group span-2">
+                            <label for="delivery-outlet">Preferred delivery outlet <span class="text-muted">(optional)</span></label>
+                            <select id="delivery-outlet" name="outlet_id">
+                                <option value="">Choose automatically</option>
+                                {% for location in locations|default([], true) %}
+                                    {% if location.delivery_enabled %}
+                                        <option value="{{ location.id }}" {% if selected_service.get('outlet_id') == location.id %}selected{% endif %}>{{ location.name }}{% if location.area %} — {{ location.area }}{% endif %}{% if location.city %}, {{ location.city }}{% endif %}</option>
+                                    {% endif %}
+                                {% endfor %}
+                            </select>
+                            <span class="service-field-note">Backend can choose an eligible delivery outlet from your area or coordinates.</span>
+                        </div>
+                    </div>
+                    <input type="hidden" id="delivery-latitude" name="latitude" value="{{ selected_service.get('latitude', '') if selected_service.get('latitude') is not none else '' }}">
+                    <input type="hidden" id="delivery-longitude" name="longitude" value="{{ selected_service.get('longitude', '') if selected_service.get('longitude') is not none else '' }}">
+                </form>
+
+                <div class="service-panel" id="pickup-service-panel" data-service-panel="pickup" {% if selected_service.get('service_mode') != 'pickup' %}hidden{% endif %}>
+                    <div class="service-panel-head"><h3>Choose a pickup outlet</h3><p>Select an active restaurant that supports pickup.</p></div>
+                    <div class="outlet-list" role="radiogroup" aria-label="Pickup outlets">
+                        {% set pickup_count = namespace(value=0) %}
+                        {% for location in locations|default([], true) %}
+                            {% if location.pickup_enabled %}
+                                {% set pickup_count.value = pickup_count.value + 1 %}
+                                <label class="outlet-choice"><input type="radio" name="pickup_outlet_id" value="{{ location.id }}" {% if selected_service.get('service_mode') == 'pickup' and selected_service.get('outlet_id') == location.id %}checked{% endif %}><span class="outlet-card"><span><span class="outlet-name">{{ location.name }}</span><span class="outlet-address">{{ location.address }}{% if location.area %}, {{ location.area }}{% endif %}{% if location.city %}, {{ location.city }}{% endif %}</span>{% if location.opening_hours and (location.opening_hours.summary or location.opening_hours.display) %}<span class="outlet-meta">{{ location.opening_hours.summary|default(location.opening_hours.display, true) }}</span>{% endif %}</span><span class="outlet-check" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></svg></span></span></label>
+                            {% endif %}
+                        {% endfor %}
+                        {% if pickup_count.value == 0 %}<div class="outlet-empty">No pickup outlet is currently available.</div>{% endif %}
+                    </div>
+                </div>
+
+                <div class="service-panel" id="dine-in-service-panel" data-service-panel="dine_in" {% if selected_service.get('service_mode') != 'dine_in' %}hidden{% endif %}>
+                    <div class="service-panel-head"><h3>Choose a dine-in outlet</h3><p>Select an active restaurant that supports dine-in.</p></div>
+                    <div class="outlet-list" role="radiogroup" aria-label="Dine-in outlets">
+                        {% set dine_count = namespace(value=0) %}
+                        {% for location in locations|default([], true) %}
+                            {% if location.dine_in_enabled %}
+                                {% set dine_count.value = dine_count.value + 1 %}
+                                <label class="outlet-choice"><input type="radio" name="dine_in_outlet_id" value="{{ location.id }}" {% if selected_service.get('service_mode') == 'dine_in' and selected_service.get('outlet_id') == location.id %}checked{% endif %}><span class="outlet-card"><span><span class="outlet-name">{{ location.name }}</span><span class="outlet-address">{{ location.address }}{% if location.area %}, {{ location.area }}{% endif %}{% if location.city %}, {{ location.city }}{% endif %}</span>{% if location.opening_hours and (location.opening_hours.summary or location.opening_hours.display) %}<span class="outlet-meta">{{ location.opening_hours.summary|default(location.opening_hours.display, true) }}</span>{% endif %}</span><span class="outlet-check" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></svg></span></span></label>
+                            {% endif %}
+                        {% endfor %}
+                        {% if dine_count.value == 0 %}<div class="outlet-empty">No dine-in outlet is currently available.</div>{% endif %}
+                    </div>
+                </div>
+
+                <div class="service-error" id="service-error" role="alert" aria-live="assertive"></div>
+            </div>
+
+            <footer class="service-dialog-footer">
+                <div class="service-auth-area">
+                    {% if principal %}
+                        Signed in as <strong>{{ principal.full_name|default(principal.email, true) }}</strong>
+                    {% else %}
+                        <span class="service-auth-links">You can continue browsing as guest or <a href="{{ url_for('login_page') }}">login</a> / <a href="{{ url_for('signup_page') }}">signup</a>.</span>
+                    {% endif %}
+                </div>
+                <div class="service-dialog-actions">
+                    <button class="mi-btn mi-btn-outline" id="service-browse-button" type="button">Browse First</button>
+                    {% if not principal %}<button class="mi-btn mi-btn-outline" id="continue-as-guest" type="button">Continue as Guest</button>{% endif %}
+                    <button class="mi-btn mi-btn-primary service-submit" id="service-continue-button" type="button"><span class="service-submit-spinner" aria-hidden="true"></span><span class="service-submit-text">Save & Continue</span></button>
+                </div>
+            </footer>
+        </section>
+    </div>
+
+    <datalist id="home-city-list">
+        {% for location in locations|default([], true) %}{% if location.city %}<option value="{{ location.city }}"></option>{% endif %}{% endfor %}
+    </datalist>
+    <datalist id="home-area-list">
+        {% for location in locations|default([], true) %}{% if location.area %}<option value="{{ location.area }}"></option>{% endif %}{% for delivery_area in location.delivery_areas|default([], true) %}<option value="{{ delivery_area }}"></option>{% endfor %}{% endfor %}
+    </datalist>
+
+    <!-- =========================================================
+         HERO
+    ========================================================== -->
+    <section class="mi-hero" aria-labelledby="homepage-main-heading">
+        <div class="mi-hero-shell" id="hero-slider" data-hero-count="{{ home_hero_media|length }}">
+            <div class="mi-hero-track" id="hero-track">
+                {% for item in home_hero_media %}
+                    <article class="mi-hero-slide hero-slide{% if loop.first %} is-active{% endif %}" data-hero-slide data-slide-index="{{ loop.index0 }}" data-media-type="{{ item.media_type|default('image', true) }}" aria-hidden="{{ 'false' if loop.first else 'true' }}">
+                        <div class="mi-hero-bg hero-media-wrap">
+                            {% if item.media_type == 'video' %}
+                                {% if item.poster_url %}<img class="hero-video-fallback" src="{{ item.poster_url }}" alt="" aria-hidden="true" loading="{{ 'eager' if loop.first else 'lazy' }}" {% if loop.first %}fetchpriority="high"{% endif %}>{% endif %}
+                                <video class="hero-video" data-hero-video muted playsinline poster="{{ item.poster_url|default('', true) }}" preload="{{ 'metadata' if loop.first else 'none' }}" aria-label="{{ item.title|default('Restaurant promotional video', true) }}">
+                                    {% if item.mobile_media_url %}<source media="(max-width: 700px)" src="{{ item.mobile_media_url }}">{% endif %}
+                                    <source src="{{ item.media_url }}">
+                                </video>
+                            {% else %}
+                                <picture>
+                                    {% if item.mobile_media_url %}<source media="(max-width: 700px)" srcset="{{ item.mobile_media_url }}">{% endif %}
+                                    <img class="hero-media" src="{{ item.media_url }}" alt="{{ item.title|default('Restaurant promotion', true) }}" loading="{{ 'eager' if loop.first else 'lazy' }}" decoding="async" {% if loop.first %}fetchpriority="high"{% endif %} data-hero-image>
+                                </picture>
+                            {% endif %}
+                        </div>
+                    </article>
+                {% endfor %}
+            </div>
+
+            <div class="mi-hero-content">
+                <div class="mi-hero-copy mi-reveal">
+                    <div class="mi-hotline"><span>Hot</span><b></b><span>Fresh</span><b></b><span>Delicious</span></div>
+                    <h1 class="mi-hero-title" id="homepage-main-heading">Craving <span class="gold">Something</span><span class="mi-hero-script">Delicious?</span></h1>
+                    <p class="mi-hero-text">Fresh Pizza. Juicy Burgers. Delivered Hot To Your Door.</p>
+                    <div class="mi-hero-actions">
+                        <a class="mi-btn mi-btn-primary" href="{{ url_for('menu_page') }}">Order Now <svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></svg></a>
+                        <a class="mi-btn mi-btn-outline" href="{{ url_for('menu_page') }}">Explore Menu <svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M4 6h16"></path><path d="M4 12h16"></path><path d="M4 18h16"></path></svg></a>
+                    </div>
+                    <div class="mi-trust-row">
+                        <div class="mi-trust-item"><span class="mi-trust-icon">🚚</span><span><strong>Fast Delivery</strong><span>30–40 min</span></span></div>
+                        <div class="mi-trust-item"><span class="mi-trust-icon">🏅</span><span><strong>Best Quality</strong><span>Premium Ingredients</span></span></div>
+                        <div class="mi-trust-item"><span class="mi-trust-icon">💳</span><span><strong>Secure Payment</strong><span>100% Safe</span></span></div>
+                    </div>
+                </div>
+
+                <div class="mi-hero-visual" aria-hidden="true"></div>
+            </div>
+
+            <div class="mi-hero-service-band mi-reveal" data-delay="1">
+                <div class="mi-service-heading">How would you like <span>&nbsp;your order?</span></div>
+                <button class="mi-service-pill" type="button" data-change-service><span class="mi-service-icon">🛵</span><span><strong>Delivery</strong><span>30–40 min</span></span></button>
+                <button class="mi-service-pill" type="button" data-change-service><span class="mi-service-icon">🛍️</span><span><strong>Pickup</strong><span>15–20 min</span></span></button>
+                <button class="mi-service-pill" type="button" data-change-service><span class="mi-service-icon">🍽️</span><span><strong>Dine-in</strong><span>Enjoy in restaurant</span></span></button>
+            </div>
+
+            {% if home_hero_media|length > 1 %}
+                <div class="mi-hero-dots hero-pagination" id="hero-pagination" aria-label="Hero slide navigation">
+                    {% for item in home_hero_media %}<button class="mi-hero-dot hero-dot" type="button" data-hero-dot="{{ loop.index0 }}" aria-label="Go to slide {{ loop.index }}" aria-current="{{ 'true' if loop.first else 'false' }}"></button>{% endfor %}
+                </div>
+                <div class="mi-hero-nav hero-controls">
+                    <button class="mi-hero-arrow hero-arrow" id="hero-previous" type="button" aria-label="Previous slide"><svg class="icon" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"></path></svg></button>
+                    <button class="mi-hero-arrow hero-arrow" id="hero-next" type="button" aria-label="Next slide"><svg class="icon" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"></path></svg></button>
+                </div>
+            {% endif %}
+        </div>
+    </section>
+
+    <!-- =========================================================
+         EXPLORE MENU CATEGORIES SLIDER
+    ========================================================== -->
+    <section class="mi-categories" aria-labelledby="explore-heading">
+        <div class="mi-container mi-section-center">
+            <span class="mi-section-kicker">Explore our menu</span>
+            <h2 class="mi-section-title" id="explore-heading">Something for every craving</h2>
+            <p class="mi-section-copy">Pizza, burgers, fries, wings, drinks, desserts and hot deals — everything moves in a smooth premium slider.</p>
+
+            <div class="mi-category-shell mi-reveal" data-delay="1">
+                <button class="mi-cat-arrow mi-cat-prev" id="explore-previous" type="button" aria-label="Previous category"><svg class="icon" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"></path></svg></button>
+                <div class="mi-category-viewport">
+                    <div class="mi-category-track explore-track" id="explore-track" aria-label="Explore categories and featured deals">
+                        {% for category in home_categories %}
+                            <a class="mi-category-card explore-card {% if 'pizza' in category.name|lower %}is-pizza{% elif 'burger' in category.name|lower %}is-burger{% endif %}" data-explore-card href="{{ url_for('category_page', category_slug=category.slug) }}">
+                                <span class="mi-category-inner">
+                                    <span class="mi-category-visual">
+                                        {% if category.image_url %}<img src="{{ category.image_url }}" alt="{{ category.name }}" loading="lazy" decoding="async">{% else %}<span class="mi-category-emoji">{% if 'pizza' in category.name|lower %}🍕{% elif 'burger' in category.name|lower %}🍔{% elif 'fries' in category.name|lower %}🍟{% elif 'wing' in category.name|lower %}🍗{% elif 'drink' in category.name|lower %}🥤{% elif 'dessert' in category.name|lower %}🍰{% else %}🍽️{% endif %}</span>{% endif %}
+                                    </span>
+                                    <span class="mi-category-name">{{ category.name }}</span>
+                                    <span class="mi-category-count">{{ category.product_count|default(category.count|default('Explore', true), true) }}{% if category.product_count or category.count %}+ Items{% endif %}</span>
+                                </span>
+                            </a>
+                        {% endfor %}
+
+                        {% for deal in home_deals[:4] %}
+                            <a class="mi-category-card explore-card" data-explore-card href="{{ url_for('deal_detail_page', deal_id=deal.id) }}">
+                                <span class="mi-category-inner">
+                                    <span class="mi-category-visual">{% if deal.image_url %}<img src="{{ deal.image_url }}" alt="{{ deal.name }}" loading="lazy" decoding="async">{% else %}<span class="mi-category-emoji">🔥</span>{% endif %}</span>
+                                    <span class="mi-category-name">{{ deal.name }}</span>
+                                    <span class="mi-category-count">Best offer</span>
+                                </span>
+                            </a>
+                        {% endfor %}
+
+                        {% if not home_categories and not home_deals %}
+                            {% for fallback in [('Pizza','🍕','20+ Items'),('Burgers','🍔','18+ Items'),('Fries','🍟','12+ Items'),('Wings','🍗','15+ Items'),('Drinks','🥤','20+ Items'),('Desserts','🍰','10+ Items'),('Deals','🍟','Best Offers')] %}
+                                <a class="mi-category-card explore-card" data-explore-card href="{{ url_for('menu_page') }}"><span class="mi-category-inner"><span class="mi-category-visual"><span class="mi-category-emoji">{{ fallback[1] }}</span></span><span class="mi-category-name">{{ fallback[0] }}</span><span class="mi-category-count">{{ fallback[2] }}</span></span></a>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
+                <button class="mi-cat-arrow mi-cat-next" id="explore-next" type="button" aria-label="Next category"><svg class="icon" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"></path></svg></button>
+            </div>
+        </div>
+    </section>
+
+    <!-- =========================================================
+         MOST POPULAR
+    ========================================================== -->
+    <section class="mi-products" aria-labelledby="popular-heading">
+        <div class="mi-container">
+            <div class="mi-section-head">
+                <div>
+                    <span class="mi-section-kicker">Most popular</span>
+                    <h2 class="mi-section-title" id="popular-heading">Most loved by our customers</h2>
+                </div>
+                <a class="mi-btn mi-btn-outline" href="{{ url_for('menu_page') }}">View All Menu</a>
+            </div>
+
+            <div class="mi-products-grid">
+                {% if home_products %}
+                    {% for product in home_products[:4] %}
+                        <article class="mi-product-card mi-reveal" data-tilt-card data-delay="{{ loop.index0 % 4 }}">
+                            <div class="mi-product-media">
+                                <span class="mi-product-tag">{% if product.spicy %}Spicy{% elif product.featured %}Bestseller{% elif product.popular %}Popular{% else %}Hot{% endif %}</span>
+                                {% if product.image_url or product.image %}<img src="{{ product.image_url|default(product.image, true) }}" alt="{{ product.name }}" loading="lazy" decoding="async">{% else %}<div class="mi-product-fallback">{% if 'pizza' in product.name|lower %}🍕{% elif 'burger' in product.name|lower %}🍔{% elif 'wing' in product.name|lower %}🍗{% elif 'fries' in product.name|lower %}🍟{% else %}🍽️{% endif %}</div>{% endif %}
+                            </div>
+                            <div class="mi-product-body">
+                                <h3 class="mi-product-title">{{ product.name }}</h3>
+                                <p class="mi-product-desc">{{ product.description|default(product.desc|default('Fresh, hot and made with premium ingredients.', true), true)|truncate(82, true, '…') }}</p>
+                                <div class="mi-product-meta"><span class="mi-stars">★ {{ product.rating|default('4.8', true) }}</span><span class="mi-price">Rs. {{ product.base_price|default(product.price|default('699', true), true) }}</span></div>
+                                <a class="mi-card-action" href="{{ url_for('menu_page') }}" aria-label="View {{ product.name }}">+</a>
+                            </div>
+                        </article>
+                    {% endfor %}
+                {% else %}
+                    {% for item in [('Italian Supreme Pizza','Pepperoni, olives, mushrooms, bell peppers, extra cheese','1499','🍕'),('Zinger Burger','Crispy fillet, lettuce, mayo sauce','699','🍔'),('Hot & Spicy Wings','6 pieces chicken wings with spicy sauce','549','🍗'),('Loaded Cheese Fries','Fries with cheese sauce and jalapenos','429','🍟')] %}
+                        <article class="mi-product-card mi-reveal" data-tilt-card data-delay="{{ loop.index0 }}">
+                            <div class="mi-product-media"><span class="mi-product-tag">{% if loop.index == 3 %}Spicy{% else %}Bestseller{% endif %}</span><div class="mi-product-fallback">{{ item[3] }}</div></div>
+                            <div class="mi-product-body"><h3 class="mi-product-title">{{ item[0] }}</h3><p class="mi-product-desc">{{ item[1] }}</p><div class="mi-product-meta"><span class="mi-stars">★ 4.8</span><span class="mi-price">Rs. {{ item[2] }}</span></div><a class="mi-card-action" href="{{ url_for('menu_page') }}" aria-label="View {{ item[0] }}">+</a></div>
+                        </article>
+                    {% endfor %}
+                {% endif %}
+            </div>
+        </div>
+    </section>
+
+    <!-- =========================================================
+         SUPER DEAL BANNER
+    ========================================================== -->
+    <section class="mi-deal-banner" aria-labelledby="super-deal-heading">
+        <div class="mi-container">
+            <div class="mi-deal-card mi-reveal">
+                <h2 class="mi-deal-title" id="super-deal-heading">Super <span>Deal</span><small style="display:block;font-size:.78rem;letter-spacing:.12em;color:rgba(255,255,255,.7);margin-top:.35rem;">Limited time offer</small></h2>
+                <div class="mi-deal-food" aria-hidden="true">
+                    <canvas class="mi-pizza-canvas" id="super-deal-pizza" width="250" height="250"></canvas>
+                    <span class="mi-deal-spark s1"></span>
+                    <span class="mi-deal-spark s2"></span>
+                    <span class="mi-deal-spark s3"></span>
+                </div>
+                <div class="mi-deal-price"><strong>Pizza + Burger<br>Fries + Drink</strong><span>Rs. 1999 <del>Rs. 2800</del></span><br><br><a class="mi-btn mi-btn-primary" href="{{ url_for('deals_page') }}">Order Now</a></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- =========================================================
+         WHY CHOOSE US
+    ========================================================== -->
+    <section class="mi-why" aria-labelledby="why-heading">
+        <div class="mi-container">
+            <h2 class="mi-why-title" id="why-heading">Why Choose Us?</h2>
+            <div class="mi-why-grid">
+                <div class="mi-why-item mi-reveal">
+                    <span class="mi-why-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><path d="M5 20c9-1 14-6 14-15-7 0-13 4-14 11"></path><path d="M5 20c2.8-5.4 7-8.8 12-10"></path></svg>
+                    </span>
+                    <span><strong>Premium Ingredients</strong><span>Always fresh and high quality</span></span>
+                </div>
+                <div class="mi-why-item mi-reveal" data-delay="1">
+                    <span class="mi-why-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><path d="M7 10h10"></path><path d="M8 10c-2.2-2.5-.4-6 3-5.2C12.2 2.7 16 3.4 16 6c2.5.2 3.3 2.8 1.4 4"></path><path d="M6 13h12l-1 7H7z"></path><path d="M9 16h6"></path></svg>
+                    </span>
+                    <span><strong>Expert Chefs</strong><span>Experienced and passionate</span></span>
+                </div>
+                <div class="mi-why-item mi-reveal" data-delay="2">
+                    <span class="mi-why-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><path d="M4 15h10l3-5h3"></path><path d="M7 18a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"></path><path d="M17 18a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"></path><path d="M4 12h5"></path><path d="M3 9h6"></path><path d="M13 15V8h3"></path></svg>
+                    </span>
+                    <span><strong>Fast Delivery</strong><span>On time, every time</span></span>
+                </div>
+                <div class="mi-why-item mi-reveal" data-delay="3">
+                    <span class="mi-why-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.6 2.9 8.7 7 10 4.1-1.3 7-5.4 7-10V6z"></path><path d="m9 12 2 2 4-5"></path></svg>
+                    </span>
+                    <span><strong>Hygienic Food</strong><span>100% clean and safe</span></span>
+                </div>
+                <div class="mi-why-item mi-reveal">
+                    <span class="mi-why-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><path d="M20 13 11 4H5v6l9 9a2 2 0 0 0 3 0l3-3a2 2 0 0 0 0-3Z"></path><path d="M8 7h.01"></path><path d="M15 8v8"></path><path d="M12.8 10h3.2a1.5 1.5 0 0 1 0 3h-2a1.5 1.5 0 0 0 0 3H17"></path></svg>
+                    </span>
+                    <span><strong>Best Prices</strong><span>Great taste, great price</span></span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- =========================================================
+         STORY + REVIEWS
+    ========================================================== -->
+    <section class="mi-story-reviews" aria-labelledby="story-heading">
+        <div class="mi-container mi-story-grid">
+            <article class="mi-story-card mi-reveal">
+                <div class="mi-story-copy">
+                    <small>Our Story</small>
+                    <h2 id="story-heading">Passion for Pizza<br>Love for You</h2>
+                    <p>For over 12 years, we have been serving delicious pizzas and burgers made with love, passion and the finest ingredients. Our goal is simple — make you happy with every bite.</p>
+                    <br><a class="mi-btn mi-btn-primary" href="{{ url_for('about_page') }}">Read More</a>
+                </div>
+                <div class="mi-story-visual" aria-hidden="true"></div>
+            </article>
+
+            <article class="mi-review-card mi-reveal" data-delay="1">
+                <div class="mi-review-head"><div><small>What Our Customers Say</small><h2>Real People. Real Love.</h2></div><a href="{{ url_for('feedback_page') }}" style="color:#7a4e16;font-weight:900;font-size:.78rem;text-transform:uppercase;text-decoration:none;transition:color 200ms ease;">View all reviews</a></div>
+                <div class="mi-review-list">
+                    <div class="mi-review-item"><div class="mi-review-stars">★★★★★</div><p>Best pizza in town! Delivered hot and fresh. Highly recommended.</p><div class="mi-review-person"><span class="mi-avatar">A</span>Adeel Khan</div></div>
+                    <div class="mi-review-item"><div class="mi-review-stars">★★★★★</div><p>Amazing burgers and super fast delivery. Will order again!</p><div class="mi-review-person"><span class="mi-avatar">S</span>Sara Ahmed</div></div>
+                    <div class="mi-review-item"><div class="mi-review-stars">★★★★★</div><p>Loved the taste and quality. 10/10 experience!</p><div class="mi-review-person"><span class="mi-avatar">U</span>Usman Iqbal</div></div>
+                </div>
+                <div class="mi-review-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+            </article>
+        </div>
+    </section>
+
+    <!-- =========================================================
+         BOTTOM PROMO STRIP
+    ========================================================== -->
+    <section class="mi-bottom-strip" aria-label="Restaurant services and offers">
+        <div class="mi-container">
+            <div class="mi-strip-grid">
+                <div class="mi-strip-item"><span class="mi-strip-icon">📱</span><span><strong>Download Our App</strong><span>Get exclusive deals and faster ordering</span></span></div>
+                <div class="mi-strip-item"><span class="mi-strip-icon">🏆</span><span><strong>Become a Member</strong><span>Join our rewards program</span><br><a class="mi-btn mi-btn-primary" href="{{ url_for('rewards_page') }}" style="min-height:38px;padding:.55rem 1rem;margin-top:.55rem;">Join Now</a></span></div>
+                <div class="mi-strip-item"><span class="mi-strip-icon">🛡️</span><span><strong>Stay Connected</strong><span>Get updates on offers and new items</span><form class="mi-newsletter-mini" action="#" method="post"><input type="email" placeholder="Your email address" aria-label="Email address"><button type="submit" aria-label="Subscribe">→</button></form></span></div>
+            </div>
+        </div>
+    </section>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    "use strict";
+
+    const SERVICE_SELECTION_URL = {{ url_for('save_service_selection')|tojson }};
+    const PROFILE_GET_URL = {{ url_for('profile_api_get')|tojson }};
+    const PROFILE_UPDATE_URL = {{ url_for('profile_api_update')|tojson }};
+    const IS_AUTHENTICATED = {{ 'true' if principal else 'false' }};
+    const INITIAL_SERVICE = {{ (session.get('service_selection') or {})|tojson }};
+    const SERVICE_DISMISS_KEY = "home-service-modal-dismissed";
+    const HERO_ROTATION_MS = 4200;
+    const CATEGORY_AUTO_MS = 3000;
+
+    const reducedMotionQuery = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+    function prefersReducedMotion() { return Boolean(reducedMotionQuery && reducedMotionQuery.matches); }
+
+    function uiToast(message, type = "info", options = {}) {
+        if (window.AppUI && typeof window.AppUI.showToast === "function") return window.AppUI.showToast(message, type, options);
+        if (typeof window.showToast === "function") return window.showToast(message, type, options);
+        return null;
+    }
+
+    function csrfFetch(url, options = {}) {
+        if (window.AppUI && typeof window.AppUI.csrfFetch === "function") return window.AppUI.csrfFetch(url, options);
+        return window.fetch(url, { credentials: "same-origin", ...options });
+    }
+
+    function lockBody(reason) {
+        if (window.AppUI && typeof window.AppUI.lockBody === "function") { window.AppUI.lockBody(reason); return; }
+        document.body.classList.add("is-scroll-locked");
+    }
+
+    function unlockBody(reason) {
+        if (window.AppUI && typeof window.AppUI.unlockBody === "function") { window.AppUI.unlockBody(reason); return; }
+        document.body.classList.remove("is-scroll-locked");
+    }
+
+    function focusableElements(container) {
+        if (!container) return [];
+        return Array.from(container.querySelectorAll("a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex='-1'])")).filter(function (element) {
+            return !element.hidden && element.offsetParent !== null;
+        });
+    }
+
+    function parseApiResponse(response, payload) {
+        if (response.ok && payload && payload.success) return payload.data;
+        const message = payload && payload.error && payload.error.message ? payload.error.message : "Unable to complete this request. Please try again.";
+        const error = new Error(message);
+        error.code = payload && payload.error ? payload.error.code : "REQUEST_FAILED";
+        error.status = response.status;
+        throw error;
+    }
+
+    async function fetchJson(url, options = {}) {
+        const response = await csrfFetch(url, options);
+        let payload = null;
+        try { payload = await response.json(); } catch (error) { throw new Error("The server returned an unreadable response. Please try again."); }
+        return parseApiResponse(response, payload);
+    }
+
+    // ================================================================
+    // GLOW CURSOR
+    // ================================================================
+    function initializeGlowCursor() {
+        const cursor = document.getElementById("mi-glow-cursor");
+        if (!cursor) return;
+        let isVisible = false;
+        let timeoutId = null;
+
+        document.addEventListener("mousemove", function(e) {
+            cursor.style.left = e.clientX + "px";
+            cursor.style.top = e.clientY + "px";
+            if (!isVisible) {
+                isVisible = true;
+                cursor.style.opacity = "1";
+            }
+            if (timeoutId) clearTimeout(timeoutId);
+            timeoutId = setTimeout(function() {
+                isVisible = false;
+                cursor.style.opacity = "0";
+            }, 3000);
+        }, { passive: true });
+
+        document.addEventListener("mouseleave", function() {
+            isVisible = false;
+            cursor.style.opacity = "0";
+        }, { passive: true });
+    }
+
+    // ================================================================
+    // SERVICE MODAL (Same as original, kept intact)
+    // ================================================================
+    function initializeServiceModal() {
+        const shell = document.getElementById("service-modal-shell");
+        const dialog = document.getElementById("service-dialog");
+        const closeButton = document.getElementById("service-modal-close");
+        const browseButton = document.getElementById("service-browse-button");
+        const guestButton = document.getElementById("continue-as-guest");
+        const continueButton = document.getElementById("service-continue-button");
+        const serviceButtons = Array.from(document.querySelectorAll("[data-service-option]"));
+        const panels = Array.from(document.querySelectorAll("[data-service-panel]"));
+        const errorBox = document.getElementById("service-error");
+        const locationButton = document.getElementById("use-current-location");
+        const locationStatus = document.getElementById("location-status");
+        const latitudeInput = document.getElementById("delivery-latitude");
+        const longitudeInput = document.getElementById("delivery-longitude");
+        const cityInput = document.getElementById("delivery-city");
+        const areaInput = document.getElementById("delivery-area");
+        const addressInput = document.getElementById("delivery-address");
+        const landmarkInput = document.getElementById("delivery-landmark");
+        const phoneInput = document.getElementById("delivery-phone");
+        const deliveryOutlet = document.getElementById("delivery-outlet");
+        if (!shell || !dialog || !continueButton || !serviceButtons.length) return;
+
+        let selectedMode = INITIAL_SERVICE && INITIAL_SERVICE.service_mode ? INITIAL_SERVICE.service_mode : "";
+        let lastFocusedElement = null;
+        let submitting = false;
+
+        function modalIsOpen() { return shell.classList.contains("is-open"); }
+        function setError(message = "") { if (!errorBox) return; errorBox.textContent = message; errorBox.classList.toggle("is-visible", Boolean(message)); }
+        function setLocationStatus(message = "", type = "") { if (!locationStatus) return; locationStatus.className = "location-status"; if (type) locationStatus.classList.add(`is-${type}`); locationStatus.textContent = message; }
+
+        function selectMode(mode, { focusPanel = false } = {}) {
+            if (!["delivery", "pickup", "dine_in"].includes(mode)) return;
+            selectedMode = mode; setError("");
+            serviceButtons.forEach(function (button) { button.setAttribute("aria-pressed", button.dataset.serviceOption === mode ? "true" : "false"); });
+            panels.forEach(function (panel) { panel.hidden = panel.dataset.servicePanel !== mode; });
+            if (focusPanel) {
+                const panel = panels.find(function (item) { return item.dataset.servicePanel === mode; });
+                const first = panel ? focusableElements(panel)[0] : null;
+                if (first) first.focus();
+            }
+        }
+
+        function markDismissed() { try { sessionStorage.setItem(SERVICE_DISMISS_KEY, "1"); } catch (error) {} }
+        function clearDismissed() { try { sessionStorage.removeItem(SERVICE_DISMISS_KEY); } catch (error) {} }
+        function wasDismissed() { try { return sessionStorage.getItem(SERVICE_DISMISS_KEY) === "1"; } catch (error) { return false; } }
+
+        function openModal({ force = false } = {}) {
+            if (modalIsOpen()) return;
+            if (!force && !selectedMode && wasDismissed()) return;
+            lastFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+            shell.hidden = false; dialog.removeAttribute("inert"); shell.setAttribute("aria-hidden", "false"); lockBody("service-modal");
+            window.requestAnimationFrame(function () { shell.classList.add("is-open"); (serviceButtons.find(function (button) { return button.dataset.serviceOption === selectedMode; }) || serviceButtons[0] || dialog).focus(); });
+        }
+
+        function closeModal({ restoreFocus = true, rememberDismissal = false } = {}) {
+            if (!modalIsOpen()) return;
+            if (rememberDismissal) markDismissed();
+            shell.classList.remove("is-open"); shell.setAttribute("aria-hidden", "true"); unlockBody("service-modal");
+            const finish = function () { dialog.setAttribute("inert", ""); shell.hidden = true; if (restoreFocus && lastFocusedElement && document.contains(lastFocusedElement)) lastFocusedElement.focus(); };
+            if (prefersReducedMotion()) finish(); else window.setTimeout(finish, 270);
+        }
+
+        function selectedOutletFor(mode) {
+            const name = mode === "pickup" ? "pickup_outlet_id" : "dine_in_outlet_id";
+            const checked = document.querySelector(`input[name="${name}"]:checked`);
+            return checked ? checked.value : "";
+        }
+
+        function validateDelivery() {
+            if (!cityInput || !cityInput.value.trim()) { setError("Please enter or select a city."); if (cityInput) cityInput.focus(); return false; }
+            if (!areaInput || !areaInput.value.trim()) { setError("Please enter or select an area."); if (areaInput) areaInput.focus(); return false; }
+            return true;
+        }
+
+        function buildServicePayload() {
+            if (!selectedMode) throw new Error("Please choose Delivery, Pickup, or Dine-in.");
+            if (selectedMode === "delivery") {
+                if (!validateDelivery()) return null;
+                const payload = { service_mode: "delivery", city: cityInput ? cityInput.value.trim() : "", area: areaInput ? areaInput.value.trim() : "" };
+                if (deliveryOutlet && deliveryOutlet.value) payload.outlet_id = deliveryOutlet.value;
+                if (latitudeInput && latitudeInput.value) payload.latitude = latitudeInput.value;
+                if (longitudeInput && longitudeInput.value) payload.longitude = longitudeInput.value;
+                return payload;
+            }
+            const outletId = selectedOutletFor(selectedMode);
+            if (!outletId) throw new Error(`Please select an outlet for ${selectedMode === "pickup" ? "pickup" : "dine-in"}.`);
+            return { service_mode: selectedMode, outlet_id: outletId };
+        }
+
+        async function updateAuthenticatedProfileAfterDelivery(selection) {
+            if (!IS_AUTHENTICATED || selectedMode !== "delivery") return;
+            const profilePayload = { city: cityInput ? cityInput.value.trim() : "", area: areaInput ? areaInput.value.trim() : "" };
+            if (addressInput && addressInput.value.trim()) {
+                const landmark = landmarkInput && landmarkInput.value.trim() ? ` — Landmark: ${landmarkInput.value.trim()}` : "";
+                profilePayload.address = `${addressInput.value.trim()}${landmark}`.slice(0, 400);
+            }
+            if (phoneInput && phoneInput.value.trim()) profilePayload.phone = phoneInput.value.trim();
+            if (selection.latitude !== null && selection.latitude !== undefined) profilePayload.latitude = selection.latitude;
+            if (selection.longitude !== null && selection.longitude !== undefined) profilePayload.longitude = selection.longitude;
+            try {
+                await fetchJson(PROFILE_UPDATE_URL, { method: "PATCH", headers: { "Content-Type": "application/json", "Accept": "application/json" }, body: JSON.stringify(profilePayload) });
+            } catch (error) {
+                uiToast("Service selected, but your profile contact details could not be updated.", "warning");
+            }
+        }
+
+        async function saveSelection() {
+            if (submitting) return;
+            setError("");
+            let payload;
+            try { payload = buildServicePayload(); if (!payload) return; } catch (error) { setError(error.message); return; }
+            submitting = true; continueButton.disabled = true; continueButton.classList.add("is-loading");
+            try {
+                const selection = await fetchJson(SERVICE_SELECTION_URL, { method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json" }, body: JSON.stringify(payload) });
+                selectedMode = selection.service_mode; clearDismissed();
+                if (selectedMode === "delivery") await updateAuthenticatedProfileAfterDelivery(selection);
+                uiToast(selectedMode === "delivery" ? "Delivery area saved." : `${selectedMode === "pickup" ? "Pickup" : "Dine-in"} outlet saved.`, "success");
+                window.dispatchEvent(new CustomEvent("restaurant:service-changed", { detail: selection }));
+                closeModal({ restoreFocus: true, rememberDismissal: false });
+            } catch (error) {
+                let message = error.message || "Unable to save your selection. Please try again.";
+                if (error.code === "DELIVERY_OUTLET_REQUIRED") message = "We couldn't determine a delivery outlet from this area. Choose a preferred delivery outlet or use your current location.";
+                setError(message);
+            } finally {
+                submitting = false; continueButton.disabled = false; continueButton.classList.remove("is-loading");
+            }
+        }
+
+        async function prefillProfile() {
+            if (!IS_AUTHENTICATED || !addressInput || !phoneInput) return;
+            try {
+                const profile = await fetchJson(PROFILE_GET_URL, { headers: { "Accept": "application/json" } });
+                if (!addressInput.value && profile.address) addressInput.value = profile.address;
+                if (!phoneInput.value && profile.phone) phoneInput.value = profile.phone;
+                if (cityInput && !cityInput.value && profile.city) cityInput.value = profile.city;
+                if (areaInput && !areaInput.value && profile.area) areaInput.value = profile.area;
+                if (latitudeInput && !latitudeInput.value && profile.latitude !== null && profile.latitude !== undefined) latitudeInput.value = profile.latitude;
+                if (longitudeInput && !longitudeInput.value && profile.longitude !== null && profile.longitude !== undefined) longitudeInput.value = profile.longitude;
+            } catch (error) {}
+        }
+
+        function requestCurrentLocation() {
+            if (!locationButton || !locationStatus) return;
+            if (!("geolocation" in navigator)) { setLocationStatus("Your browser does not support location access. Enter your address manually.", "error"); return; }
+            locationButton.disabled = true; setLocationStatus("Requesting your location…", "");
+            navigator.geolocation.getCurrentPosition(function (position) {
+                if (latitudeInput) latitudeInput.value = String(position.coords.latitude);
+                if (longitudeInput) longitudeInput.value = String(position.coords.longitude);
+                setLocationStatus("Location detected. Add your city and area to continue.", "success"); locationButton.disabled = false;
+            }, function (error) {
+                let message = "We couldn't access your location. Enter your address manually.";
+                if (error.code === error.PERMISSION_DENIED) message = "Location permission was denied. You can still enter your city and area manually.";
+                if (error.code === error.TIMEOUT) message = "Location request timed out. Try again or enter your address manually.";
+                if (error.code === error.POSITION_UNAVAILABLE) message = "Your location is currently unavailable. Enter your address manually.";
+                setLocationStatus(message, "error"); locationButton.disabled = false;
+            }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 120000 });
+        }
+
+        serviceButtons.forEach(function (button) { button.addEventListener("click", function () { selectMode(button.dataset.serviceOption || ""); }); });
+        if (locationButton) locationButton.addEventListener("click", requestCurrentLocation);
+        continueButton.addEventListener("click", saveSelection);
+        if (closeButton) closeButton.addEventListener("click", function () { closeModal({ rememberDismissal: true }); });
+        if (browseButton) browseButton.addEventListener("click", function () { closeModal({ rememberDismissal: true }); });
+        if (guestButton) guestButton.addEventListener("click", function () { closeModal({ rememberDismissal: true }); });
+        shell.addEventListener("mousedown", function (event) { if (event.target === shell) closeModal({ rememberDismissal: true }); });
+        document.addEventListener("keydown", function (event) {
+            if (!modalIsOpen()) return;
+            if (event.key === "Escape") { event.preventDefault(); closeModal({ rememberDismissal: true }); return; }
+            if (event.key === "Tab") {
+                const items = focusableElements(dialog); if (!items.length) { event.preventDefault(); dialog.focus(); return; }
+                const first = items[0]; const last = items[items.length - 1];
+                if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+                else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+            }
+        });
+        document.querySelectorAll("[data-change-service]").forEach(function (button) { button.addEventListener("click", function () { openModal({ force: true }); }); });
+        window.addEventListener("restaurant:open-service-modal", function () { openModal({ force: true }); });
+        window.openServiceModal = function () { openModal({ force: true }); };
+        window.AppUI = window.AppUI || {}; window.AppUI.openServiceModal = window.openServiceModal;
+        if (selectedMode) selectMode(selectedMode); else if (!wasDismissed()) window.requestAnimationFrame(function () { openModal({ force: true }); });
+        prefillProfile();
+    }
+
+    // ================================================================
+    // HERO SLIDER
+    // ================================================================
+    function initializeHeroSlider() {
+        const slider = document.getElementById("hero-slider"); if (!slider) return;
+        const slides = Array.from(slider.querySelectorAll("[data-hero-slide]"));
+        const dots = Array.from(slider.querySelectorAll("[data-hero-dot]"));
+        const previous = document.getElementById("hero-previous"); const next = document.getElementById("hero-next");
+        if (!slides.length) return;
+        let active = Math.max(0, slides.findIndex(function (slide) { return slide.classList.contains("is-active"); }));
+        let timer = null;
+        function activate(index) {
+            active = (index + slides.length) % slides.length;
+            slides.forEach(function (slide, i) { const isActive = i === active; slide.classList.toggle("is-active", isActive); slide.setAttribute("aria-hidden", isActive ? "false" : "true"); });
+            dots.forEach(function (dot, i) { dot.setAttribute("aria-current", i === active ? "true" : "false"); });
+        }
+        function start() { if (prefersReducedMotion() || slides.length < 2) return; stop(); timer = window.setInterval(function () { activate(active + 1); }, HERO_ROTATION_MS); }
+        function stop() { if (timer) window.clearInterval(timer); timer = null; }
+        if (previous) previous.addEventListener("click", function () { stop(); activate(active - 1); start(); });
+        if (next) next.addEventListener("click", function () { stop(); activate(active + 1); start(); });
+        dots.forEach(function (dot, i) { dot.addEventListener("click", function () { stop(); activate(i); start(); }); });
+        slider.addEventListener("pointerenter", stop); slider.addEventListener("pointerleave", start);
+        start();
+    }
+
+    // ================================================================
+    // CATEGORY SLIDER
+    // ================================================================
+    function initializeCategorySlider() {
+        const track = document.getElementById("explore-track"); if (!track) return;
+        const previous = document.getElementById("explore-previous"); const next = document.getElementById("explore-next");
+        let timer = null;
+        function step(direction) {
+            const card = track.querySelector(".mi-category-card");
+            const amount = card ? card.getBoundingClientRect().width + 18 : 220;
+            track.scrollBy({ left: amount * direction, behavior: "smooth" });
+        }
+        if (previous) previous.addEventListener("click", function () { step(-1); });
+        if (next) next.addEventListener("click", function () { step(1); });
+        function start() { if (prefersReducedMotion()) return; stop(); timer = window.setInterval(function () { const nearEnd = track.scrollLeft + track.clientWidth >= track.scrollWidth - 12; if (nearEnd) track.scrollTo({ left: 0, behavior: "smooth" }); else step(1); }, CATEGORY_AUTO_MS); }
+        function stop() { if (timer) window.clearInterval(timer); timer = null; }
+        track.addEventListener("pointerenter", stop); track.addEventListener("pointerleave", start); track.addEventListener("focusin", stop); track.addEventListener("focusout", start);
+        start();
+    }
+
+    // ================================================================
+    // REVEAL
+    // ================================================================
+    function initializeReveal() {
+        const items = Array.from(document.querySelectorAll(".mi-reveal"));
+        if (!items.length) return;
+        if (!("IntersectionObserver" in window) || prefersReducedMotion()) { items.forEach(function (item) { item.classList.add("is-visible"); }); return; }
+        const observer = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) { if (entry.isIntersecting) { entry.target.classList.add("is-visible"); observer.unobserve(entry.target); } });
+        }, { threshold: .16, rootMargin: "0px 0px -7% 0px" });
+        items.forEach(function (item) { observer.observe(item); });
+    }
+
+    // ================================================================
+    // TILT
+    // ================================================================
+    function initializeTilt() {
+        if (prefersReducedMotion() || !window.PointerEvent) return;
+        const cards = Array.from(document.querySelectorAll("[data-tilt-card], .mi-category-card"));
+        cards.forEach(function (card) {
+            let frame = null;
+            card.addEventListener("pointermove", function (event) {
+                if (frame) window.cancelAnimationFrame(frame);
+                frame = window.requestAnimationFrame(function () {
+                    const rect = card.getBoundingClientRect(); if (!rect.width || !rect.height) return;
+                    const px = (event.clientX - rect.left) / rect.width; const py = (event.clientY - rect.top) / rect.height;
+                    card.style.setProperty("--tilt-y", (((px - .5) * 9).toFixed(2)) + "deg");
+                    card.style.setProperty("--tilt-x", (((.5 - py) * 7).toFixed(2)) + "deg");
+                });
+            }, { passive: true });
+            function reset() { card.style.setProperty("--tilt-y", "0deg"); card.style.setProperty("--tilt-x", "0deg"); }
+            card.addEventListener("pointerleave", reset, { passive: true }); card.addEventListener("pointercancel", reset, { passive: true });
+        });
+
+        const hero = document.getElementById("hero-slider");
+        if (!hero) return;
+        let heroFrame = null;
+        hero.addEventListener("pointermove", function (event) {
+            if (heroFrame) window.cancelAnimationFrame(heroFrame);
+            heroFrame = window.requestAnimationFrame(function () {
+                const rect = hero.getBoundingClientRect(); if (!rect.width || !rect.height) return;
+                const px = (event.clientX - rect.left) / rect.width; const py = (event.clientY - rect.top) / rect.height;
+                hero.style.setProperty("--hero-shift-x", (((px - .5) * 18).toFixed(2)) + "px");
+                hero.style.setProperty("--hero-shift-y", (((py - .5) * 12).toFixed(2)) + "px");
+            });
+        }, { passive: true });
+        hero.addEventListener("pointerleave", function () { hero.style.setProperty("--hero-shift-x", "0px"); hero.style.setProperty("--hero-shift-y", "0px"); }, { passive: true });
+
+        function parallax() {
+            const rect = hero.getBoundingClientRect(); const viewport = window.innerHeight || document.documentElement.clientHeight;
+            const centerOffset = ((rect.top + rect.height / 2) - viewport / 2) / Math.max(viewport, 1);
+            const movement = Math.max(-16, Math.min(16, centerOffset * -18));
+            hero.style.setProperty("--hero-scroll-y", movement.toFixed(2) + "px");
+        }
+        window.addEventListener("scroll", function () { window.requestAnimationFrame(parallax); }, { passive: true });
+        window.addEventListener("resize", function () { window.requestAnimationFrame(parallax); }, { passive: true });
+        parallax();
+    }
+
+    // ================================================================
+    // SUPER DEAL PIZZA (Canvas animation)
+    // ================================================================
+    function initializeSuperDealPizza() {
+        const canvas = document.getElementById("super-deal-pizza");
+        if (!canvas || !canvas.getContext) return;
+
+        const ctx = canvas.getContext("2d");
+        const size = 250;
+        const center = size / 2;
+        const radius = 82;
+        const slices = 6;
+        const slice = Math.PI * 2 / slices;
+        let progress = 0;
+        let cooldown = 14;
+
+        function cheeseLine(rad, multi, movingRad) {
+            const x1 = radius * multi * Math.cos(rad - 0.18);
+            const y1 = radius * multi * Math.sin(rad - 0.18);
+            const x2 = radius * multi * Math.cos(movingRad + 0.2);
+            const y2 = radius * multi * Math.sin(movingRad + 0.2);
+            const stretch = 0.58 + Math.sin(progress * 2.3 + multi * 3) * 0.14;
+
+            ctx.beginPath();
+            ctx.lineCap = "round";
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x1 + (x2 - x1) * stretch, y1 + (y2 - y1) * stretch);
+            ctx.moveTo(x2, y2);
+            ctx.lineTo(x2 + (x1 - x2) * stretch, y2 + (y1 - y2) * stretch);
+            ctx.lineWidth = 7.5 - multi * 3.2;
+            ctx.strokeStyle = "#ffe27a";
+            ctx.shadowColor = "rgba(255, 202, 97, .42)";
+            ctx.shadowBlur = 6;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        }
+
+        function drawPepperoni(x, y, r) {
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fillStyle = "#c93522";
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(x - r * 0.28, y - r * 0.24, r * 0.22, 0, Math.PI * 2);
+            ctx.fillStyle = "rgba(255,255,255,.18)";
+            ctx.fill();
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, size, size);
+
+            if (!prefersReducedMotion()) {
+                if (--cooldown < 0) progress += 0.013 + progress * 0.012;
+            }
+
+            ctx.save();
+            ctx.translate(center, center);
+            ctx.rotate(-Math.PI / 2 + progress * 0.22);
+
+            // Shadow
+            ctx.beginPath();
+            ctx.ellipse(0, 18, 92, 22, 0, 0, Math.PI * 2);
+            ctx.fillStyle = "rgba(0,0,0,.28)";
+            ctx.fill();
+
+            for (let i = 0; i < slices; i++) {
+                const rad = i * slice;
+                const isMoving = i === slices - 1;
+                const offset = isMoving ? Math.min(progress * 58, 26) : 0;
+                const moveX = offset * Math.cos(rad + slice / 2);
+                const moveY = offset * Math.sin(rad + slice / 2);
+
+                ctx.save();
+                ctx.translate(moveX, moveY);
+
+                // Crust
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.arc(0, 0, radius + 9, rad, rad + slice);
+                ctx.closePath();
+                ctx.fillStyle = "#c66a22";
+                ctx.fill();
+
+                // Cheese slice
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.arc(0, 0, radius, rad, rad + slice);
+                ctx.closePath();
+                ctx.fillStyle = "#ffc84f";
+                ctx.fill();
+
+                // Baked gradient
+                const gx = radius * 0.52 * Math.cos(rad + slice * 0.5);
+                const gy = radius * 0.52 * Math.sin(rad + slice * 0.5);
+                const grad = ctx.createRadialGradient(gx, gy, 4, gx, gy, 70);
+                grad.addColorStop(0, "rgba(255, 237, 124, .5)");
+                grad.addColorStop(1, "rgba(194, 75, 20, .12)");
+                ctx.fillStyle = grad;
+                ctx.fill();
+
+                // Pepperoni
+                const px = radius * 0.56 * Math.cos(rad + slice * 0.52);
+                const py = radius * 0.56 * Math.sin(rad + slice * 0.52);
+                drawPepperoni(px, py, 7.5);
+
+                ctx.restore();
+            }
+
+            // Cheese stretch
+            if (!prefersReducedMotion()) {
+                const movingRad = (slices - 1) * slice + progress * 0.42;
+                cheeseLine((slices - 1) * slice, .82, movingRad);
+                cheeseLine((slices - 1) * slice, .62, movingRad);
+                cheeseLine((slices - 1) * slice, .44, movingRad);
+            }
+
+            ctx.restore();
+
+            if (progress > slice * 1.05) {
+                progress = 0;
+                cooldown = 22;
+            }
+
+            window.requestAnimationFrame(draw);
+        }
+
+        window.requestAnimationFrame(draw);
+    }
+
+    // ================================================================
+    // INIT
+    // ================================================================
+    document.addEventListener("DOMContentLoaded", function () {
+        initializeGlowCursor();
+        initializeServiceModal();
+        initializeHeroSlider();
+        initializeCategorySlider();
+        initializeReveal();
+        initializeTilt();
+        initializeSuperDealPizza();
+    });
+}());
+</script>
+{% endblock %}

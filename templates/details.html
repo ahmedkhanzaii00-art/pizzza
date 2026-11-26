@@ -1,0 +1,5866 @@
+{% extends "base.html" %}
+
+{% block title %}{{ deal.name|default('Deal Details', true) }} | {{ business_name|default('Deals', true) }}{% endblock %}
+
+{% block meta_description %}{{ deal.description|default('View deal details, included items, availability and ordering information.', true)|striptags|truncate(155, true, '…') }}{% endblock %}
+
+{% block styles %}
+<style>
+    /* =========================================================
+       DEAL DETAILS PAGE TOKENS
+    ========================================================== */
+
+    .deal-page {
+        --deal-primary: var(--primary-color, #b83222);
+        --deal-bg: var(--background-color, #fffaf4);
+        --deal-surface: var(--surface-color, #ffffff);
+        --deal-surface-muted: var(--surface-muted, #f5eee5);
+        --deal-text: var(--text-color, #201c19);
+        --deal-strong: var(--text-strong, #151210);
+        --deal-muted: var(--muted-text, #6f6760);
+        --deal-border: var(--border-color, #e7ded4);
+        --deal-border-strong: var(--border-strong, #d3c6b9);
+        --deal-success: var(--success-color, #247a4a);
+        --deal-error: var(--error-color, #b42318);
+        --deal-warning: var(--warning-color, #9a6510);
+        --deal-accent: var(--accent-color, #d99b35);
+        --deal-radius: var(--radius-lg, 18px);
+        --deal-radius-sm: var(--radius-md, 12px);
+        --deal-shadow: var(--shadow-sm, 0 6px 18px rgba(31, 24, 19, 0.08));
+        --deal-shadow-md: var(--shadow-md, 0 16px 36px rgba(31, 24, 19, 0.12));
+        --deal-soft-primary: color-mix(in srgb, var(--deal-primary) 10%, var(--deal-surface));
+        --deal-soft-success: color-mix(in srgb, var(--deal-success) 10%, var(--deal-surface));
+        --deal-soft-error: color-mix(in srgb, var(--deal-error) 9%, var(--deal-surface));
+        --deal-soft-warning: color-mix(in srgb, var(--deal-warning) 10%, var(--deal-surface));
+        --deal-mobile-cta-height: 78px;
+    }
+
+    .deal-shell {
+        width: min(100% - 2rem, var(--container-width, 1240px));
+        margin-inline: auto;
+    }
+
+    /* =========================================================
+       BREADCRUMB / BACK NAVIGATION
+    ========================================================== */
+
+    .deal-top-nav {
+        padding-block: clamp(1rem, 2.4vw, 1.55rem) 0.8rem;
+    }
+
+    .deal-breadcrumb {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        flex-wrap: wrap;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        color: var(--deal-muted);
+        font-size: 0.82rem;
+    }
+
+    .deal-breadcrumb a,
+    .deal-back-link {
+        color: var(--deal-muted);
+        font-weight: 700;
+        text-decoration: none;
+    }
+
+    .deal-breadcrumb a:hover,
+    .deal-back-link:hover {
+        color: var(--deal-primary);
+    }
+
+    .deal-breadcrumb-separator {
+        color: var(--deal-border-strong);
+        user-select: none;
+    }
+
+    .deal-back-link {
+        display: none;
+        min-height: 40px;
+        align-items: center;
+        gap: 0.45rem;
+    }
+
+    .deal-back-link .icon {
+        width: 1rem;
+        height: 1rem;
+    }
+
+    /* =========================================================
+       MAIN LAYOUT
+    ========================================================== */
+
+    .deal-main {
+        display: grid;
+        grid-template-columns: minmax(0, 0.95fr) minmax(360px, 1.05fr);
+        gap: clamp(1.6rem, 4vw, 3.5rem);
+        align-items: start;
+        padding-block: 0.6rem clamp(3.5rem, 7vw, 6rem);
+    }
+
+    .deal-media-column,
+    .deal-details-column {
+        min-width: 0;
+    }
+
+    .deal-media-sticky {
+        position: sticky;
+        top: calc(var(--header-height, 106px) + 1.25rem);
+    }
+
+    /* =========================================================
+       MEDIA GALLERY
+    ========================================================== */
+
+    .deal-media-stage {
+        position: relative;
+        aspect-ratio: 1 / 1;
+        overflow: hidden;
+        border: 1px solid var(--deal-border);
+        border-radius: clamp(18px, 2.5vw, 28px);
+        background: var(--deal-surface-muted);
+        box-shadow: var(--deal-shadow);
+    }
+
+    .deal-main-image,
+    .deal-main-video,
+    .deal-main-placeholder {
+        width: 100%;
+        height: 100%;
+        display: block;
+    }
+
+    .deal-main-image,
+    .deal-main-video {
+        object-fit: cover;
+    }
+
+    .deal-main-video {
+        background: #111111;
+    }
+
+    .deal-main-placeholder {
+        display: grid;
+        place-items: center;
+        color: var(--deal-primary);
+        background:
+            radial-gradient(
+                circle at 75% 18%,
+                color-mix(in srgb, var(--deal-accent) 24%, transparent),
+                transparent 34%
+            ),
+            linear-gradient(145deg, var(--deal-surface-muted), var(--deal-soft-primary));
+    }
+
+    .deal-main-placeholder .icon {
+        width: 3rem;
+        height: 3rem;
+    }
+
+    .deal-media-badges {
+        position: absolute;
+        top: 0.8rem;
+        left: 0.8rem;
+        z-index: 3;
+        display: flex;
+        gap: 0.4rem;
+        flex-wrap: wrap;
+        max-width: calc(100% - 1.6rem);
+    }
+
+    .deal-media-badge {
+        min-height: 28px;
+        display: inline-flex;
+        align-items: center;
+        padding: 0.3rem 0.58rem;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        border-radius: var(--radius-pill, 999px);
+        background: rgba(22, 17, 14, 0.79);
+        color: #ffffff;
+        font-size: 0.67rem;
+        font-weight: 820;
+        letter-spacing: 0.055em;
+        text-transform: uppercase;
+        backdrop-filter: blur(8px);
+    }
+
+    .deal-media-badge.is-featured {
+        background: color-mix(in srgb, var(--deal-primary) 88%, #000 12%);
+    }
+
+    .deal-media-badge.is-expired,
+    .deal-media-badge.is-unavailable {
+        background: rgba(127, 29, 29, 0.88);
+    }
+
+    .deal-media-thumbnails {
+        display: flex;
+        gap: 0.65rem;
+        margin-top: 0.8rem;
+        overflow-x: auto;
+        padding: 0.15rem 0.1rem 0.35rem;
+        scrollbar-width: thin;
+        overscroll-behavior-inline: contain;
+    }
+
+    .deal-media-thumbnails[hidden] {
+        display: none !important;
+    }
+
+    .deal-media-thumb {
+        position: relative;
+        width: 76px;
+        height: 76px;
+        flex: 0 0 76px;
+        overflow: hidden;
+        padding: 0;
+        border: 2px solid transparent;
+        border-radius: 12px;
+        background: var(--deal-surface-muted);
+        cursor: pointer;
+        transition:
+            border-color var(--transition-fast, 160ms ease),
+            transform var(--transition-fast, 160ms ease);
+    }
+
+    .deal-media-thumb:hover {
+        transform: translateY(-1px);
+        border-color: var(--deal-border-strong);
+    }
+
+    .deal-media-thumb.is-active {
+        border-color: var(--deal-primary);
+    }
+
+    .deal-media-thumb img,
+    .deal-media-thumb video {
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: cover;
+        pointer-events: none;
+    }
+
+    .deal-media-thumb-type {
+        position: absolute;
+        right: 0.28rem;
+        bottom: 0.28rem;
+        width: 23px;
+        height: 23px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background: rgba(16, 14, 13, 0.78);
+        color: #fff;
+    }
+
+    .deal-media-thumb-type .icon {
+        width: 0.78rem;
+        height: 0.78rem;
+    }
+
+    /* =========================================================
+       DEAL HEADING / DESCRIPTION / PRICE
+    ========================================================== */
+
+    .deal-heading {
+        padding-bottom: 1.15rem;
+        border-bottom: 1px solid var(--deal-border);
+    }
+
+    .deal-label-row {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        flex-wrap: wrap;
+        margin-bottom: 0.6rem;
+    }
+
+    .deal-kicker,
+    .deal-status-pill,
+    .deal-chip {
+        min-height: 28px;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.3rem 0.55rem;
+        border-radius: var(--radius-pill, 999px);
+        font-size: 0.7rem;
+        font-weight: 780;
+    }
+
+    .deal-kicker {
+        border: 1px solid color-mix(in srgb, var(--deal-primary) 28%, var(--deal-border));
+        background: var(--deal-soft-primary);
+        color: var(--deal-primary);
+    }
+
+    .deal-status-pill {
+        border: 1px solid color-mix(in srgb, var(--deal-success) 25%, var(--deal-border));
+        background: var(--deal-soft-success);
+        color: var(--deal-success);
+    }
+
+    .deal-status-pill.is-warning {
+        border-color: color-mix(in srgb, var(--deal-warning) 28%, var(--deal-border));
+        background: var(--deal-soft-warning);
+        color: var(--deal-warning);
+    }
+
+    .deal-status-pill.is-error {
+        border-color: color-mix(in srgb, var(--deal-error) 25%, var(--deal-border));
+        background: var(--deal-soft-error);
+        color: var(--deal-error);
+    }
+
+    .deal-title {
+        margin: 0;
+        color: var(--deal-strong);
+        font-size: clamp(2rem, 4.2vw, 3.35rem);
+        line-height: 1.04;
+        text-wrap: balance;
+    }
+
+    .deal-description {
+        margin: 0.85rem 0 0;
+        max-width: 64ch;
+        color: var(--deal-muted);
+        font-size: 0.96rem;
+        line-height: 1.72;
+        white-space: pre-line;
+    }
+
+    .deal-price-row {
+        display: flex;
+        align-items: end;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        margin-top: 1.05rem;
+    }
+
+    .deal-current-price {
+        color: var(--deal-primary);
+        font-size: clamp(1.65rem, 3.4vw, 2.35rem);
+        font-weight: 880;
+        line-height: 1;
+    }
+
+    .deal-original-price {
+        color: var(--deal-muted);
+        font-size: 0.95rem;
+        font-weight: 700;
+        text-decoration: line-through;
+    }
+
+    .deal-savings {
+        min-height: 28px;
+        display: inline-flex;
+        align-items: center;
+        padding: 0.3rem 0.55rem;
+        border-radius: var(--radius-pill, 999px);
+        background: var(--deal-soft-success);
+        color: var(--deal-success);
+        font-size: 0.72rem;
+        font-weight: 800;
+    }
+
+    /* =========================================================
+       AVAILABILITY / SERVICE CONTEXT / VALIDITY
+    ========================================================== */
+
+    .deal-context-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.7rem;
+        margin-top: 1rem;
+    }
+
+    .deal-context-card {
+        min-width: 0;
+        display: flex;
+        align-items: flex-start;
+        gap: 0.65rem;
+        padding: 0.8rem;
+        border: 1px solid var(--deal-border);
+        border-radius: var(--deal-radius-sm);
+        background: var(--deal-surface);
+    }
+
+    .deal-context-icon {
+        width: 36px;
+        height: 36px;
+        flex: 0 0 36px;
+        display: grid;
+        place-items: center;
+        border-radius: 10px;
+        background: var(--deal-soft-primary);
+        color: var(--deal-primary);
+    }
+
+    .deal-context-icon .icon {
+        width: 1rem;
+        height: 1rem;
+    }
+
+    .deal-context-copy {
+        min-width: 0;
+        flex: 1 1 auto;
+    }
+
+    .deal-context-label {
+        display: block;
+        color: var(--deal-muted);
+        font-size: 0.68rem;
+        font-weight: 760;
+        letter-spacing: 0.055em;
+        text-transform: uppercase;
+    }
+
+    .deal-context-value {
+        display: block;
+        margin-top: 0.18rem;
+        color: var(--deal-strong);
+        font-size: 0.84rem;
+        font-weight: 760;
+        overflow-wrap: anywhere;
+    }
+
+    .deal-context-action {
+        margin-top: 0.45rem;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--deal-primary);
+        font: inherit;
+        font-size: 0.76rem;
+        font-weight: 780;
+        cursor: pointer;
+    }
+
+    .deal-validity {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.65rem;
+        margin-top: 0.75rem;
+        padding: 0.8rem 0.9rem;
+        border: 1px solid var(--deal-border);
+        border-radius: var(--deal-radius-sm);
+        background: var(--deal-surface-muted);
+        color: var(--deal-muted);
+        font-size: 0.82rem;
+        line-height: 1.55;
+    }
+
+    .deal-validity .icon {
+        width: 1.05rem;
+        height: 1.05rem;
+        flex: 0 0 1.05rem;
+        margin-top: 0.08rem;
+        color: var(--deal-primary);
+    }
+
+    .deal-countdown {
+        display: inline-block;
+        margin-left: 0.3rem;
+        color: var(--deal-strong);
+        font-weight: 780;
+    }
+
+    /* =========================================================
+       REUSABLE SECTION CARD
+    ========================================================== */
+
+    .deal-section-card {
+        margin-top: 1rem;
+        padding: clamp(1rem, 2vw, 1.2rem);
+        border: 1px solid var(--deal-border);
+        border-radius: var(--deal-radius);
+        background: var(--deal-surface);
+        box-shadow: var(--deal-shadow);
+    }
+
+    .deal-section-heading {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin-bottom: 0.85rem;
+    }
+
+    .deal-section-heading h2,
+    .deal-section-heading h3 {
+        margin: 0;
+        color: var(--deal-strong);
+        font-size: 1.08rem;
+    }
+
+    .deal-section-heading p {
+        margin: 0.25rem 0 0;
+        color: var(--deal-muted);
+        font-size: 0.78rem;
+        line-height: 1.5;
+    }
+
+    .deal-section-label {
+        flex: 0 0 auto;
+        min-height: 27px;
+        display: inline-flex;
+        align-items: center;
+        padding: 0.28rem 0.5rem;
+        border-radius: var(--radius-pill, 999px);
+        background: var(--deal-surface-muted);
+        color: var(--deal-muted);
+        font-size: 0.68rem;
+        font-weight: 780;
+    }
+
+    /* =========================================================
+       INCLUDED ITEMS
+    ========================================================== */
+
+    .deal-included-list {
+        display: grid;
+        gap: 0.65rem;
+    }
+
+    .deal-included-item {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem;
+        border: 1px solid var(--deal-border);
+        border-radius: 13px;
+        background: var(--deal-bg);
+    }
+
+    .deal-included-quantity {
+        min-width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+        border-radius: 11px;
+        background: var(--deal-soft-primary);
+        color: var(--deal-primary);
+        font-size: 0.78rem;
+        font-weight: 850;
+    }
+
+    .deal-included-copy {
+        min-width: 0;
+    }
+
+    .deal-included-name {
+        display: block;
+        color: var(--deal-strong);
+        font-size: 0.88rem;
+        font-weight: 780;
+        text-decoration: none;
+    }
+
+    a.deal-included-name:hover {
+        color: var(--deal-primary);
+    }
+
+    .deal-included-note {
+        display: block;
+        margin-top: 0.15rem;
+        color: var(--deal-muted);
+        font-size: 0.72rem;
+    }
+
+    .deal-customizable-pill {
+        min-height: 27px;
+        display: inline-flex;
+        align-items: center;
+        padding: 0.28rem 0.48rem;
+        border: 1px solid var(--deal-border);
+        border-radius: var(--radius-pill, 999px);
+        color: var(--deal-muted);
+        font-size: 0.66rem;
+        font-weight: 750;
+        white-space: nowrap;
+    }
+
+    /* =========================================================
+       FUTURE DEAL OPTION GROUPS
+       Only enabled when backend explicitly provides
+       deal_options_supported=true.
+    ========================================================== */
+
+    .deal-options-region[hidden] {
+        display: none !important;
+    }
+
+    .deal-option-group {
+        margin: 0;
+        padding: 0;
+        border: 0;
+    }
+
+    .deal-option-group + .deal-option-group {
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--deal-border);
+    }
+
+    .deal-option-legend {
+        width: 100%;
+        padding: 0;
+    }
+
+    .deal-option-legend-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.75rem;
+    }
+
+    .deal-option-name {
+        display: block;
+        color: var(--deal-strong);
+        font-size: 0.93rem;
+        font-weight: 800;
+    }
+
+    .deal-option-rule {
+        display: block;
+        margin-top: 0.18rem;
+        color: var(--deal-muted);
+        font-size: 0.72rem;
+        font-weight: 620;
+    }
+
+    .deal-required-pill,
+    .deal-optional-pill {
+        flex: 0 0 auto;
+        min-height: 26px;
+        display: inline-flex;
+        align-items: center;
+        padding: 0.26rem 0.48rem;
+        border-radius: var(--radius-pill, 999px);
+        font-size: 0.65rem;
+        font-weight: 800;
+    }
+
+    .deal-required-pill {
+        background: var(--deal-soft-primary);
+        color: var(--deal-primary);
+    }
+
+    .deal-optional-pill {
+        background: var(--deal-surface-muted);
+        color: var(--deal-muted);
+    }
+
+    .deal-option-list {
+        display: grid;
+        gap: 0.55rem;
+        margin-top: 0.75rem;
+    }
+
+    .deal-option-choice {
+        position: relative;
+        display: block;
+    }
+
+    .deal-option-choice input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .deal-option-card {
+        min-height: 54px;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 0.7rem;
+        padding: 0.72rem 0.78rem;
+        border: 1px solid var(--deal-border);
+        border-radius: 13px;
+        background: var(--deal-bg);
+        cursor: pointer;
+        transition:
+            border-color var(--transition-fast, 160ms ease),
+            background-color var(--transition-fast, 160ms ease),
+            box-shadow var(--transition-fast, 160ms ease);
+    }
+
+    .deal-option-choice input:checked + .deal-option-card {
+        border-color: var(--deal-primary);
+        background: var(--deal-soft-primary);
+        box-shadow: 0 0 0 1px color-mix(in srgb, var(--deal-primary) 22%, transparent);
+    }
+
+    .deal-option-choice input:focus-visible + .deal-option-card {
+        outline: 3px solid color-mix(in srgb, var(--deal-primary) 48%, transparent);
+        outline-offset: 2px;
+    }
+
+    .deal-option-choice input:disabled + .deal-option-card {
+        opacity: 0.55;
+        cursor: not-allowed;
+    }
+
+    .deal-option-indicator {
+        width: 20px;
+        height: 20px;
+        display: grid;
+        place-items: center;
+        border: 1.5px solid var(--deal-border-strong);
+        border-radius: 6px;
+        background: var(--deal-surface);
+        color: transparent;
+    }
+
+    .deal-option-choice[data-selection-type="single"] .deal-option-indicator {
+        border-radius: 50%;
+    }
+
+    .deal-option-choice input:checked + .deal-option-card .deal-option-indicator {
+        border-color: var(--deal-primary);
+        background: var(--deal-primary);
+        color: #ffffff;
+    }
+
+    .deal-option-indicator .icon {
+        width: 0.75rem;
+        height: 0.75rem;
+    }
+
+    .deal-option-copy {
+        min-width: 0;
+    }
+
+    .deal-option-title {
+        display: block;
+        color: var(--deal-strong);
+        font-size: 0.82rem;
+        font-weight: 760;
+    }
+
+    .deal-option-description {
+        display: block;
+        margin-top: 0.12rem;
+        color: var(--deal-muted);
+        font-size: 0.7rem;
+        line-height: 1.45;
+    }
+
+    .deal-option-price {
+        color: var(--deal-primary);
+        font-size: 0.75rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+
+    .deal-option-error {
+        display: none;
+        margin-top: 0.55rem;
+        color: var(--deal-error);
+        font-size: 0.73rem;
+        font-weight: 680;
+    }
+
+    .deal-option-group.has-error .deal-option-error {
+        display: block;
+    }
+
+    .deal-option-group.has-error .deal-option-list {
+        padding: 0.4rem;
+        border: 1px solid color-mix(in srgb, var(--deal-error) 35%, var(--deal-border));
+        border-radius: 13px;
+        background: var(--deal-soft-error);
+    }
+
+    /* =========================================================
+       CUSTOMIZATION SUMMARY
+    ========================================================== */
+
+    .deal-selection-summary[hidden] {
+        display: none !important;
+    }
+
+    .deal-selection-list {
+        display: flex;
+        gap: 0.45rem;
+        flex-wrap: wrap;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .deal-selection-chip {
+        min-height: 30px;
+        display: inline-flex;
+        align-items: center;
+        padding: 0.32rem 0.55rem;
+        border: 1px solid var(--deal-border);
+        border-radius: var(--radius-pill, 999px);
+        background: var(--deal-bg);
+        color: var(--deal-text);
+        font-size: 0.72rem;
+        font-weight: 700;
+    }
+
+    /* =========================================================
+       QUANTITY + PRICE SUMMARY + CTA
+    ========================================================== */
+
+    .deal-order-card {
+        margin-top: 1rem;
+        padding: clamp(1rem, 2vw, 1.2rem);
+        border: 1px solid var(--deal-border);
+        border-radius: var(--deal-radius);
+        background: var(--deal-surface);
+        box-shadow: var(--deal-shadow-md);
+    }
+
+    .deal-quantity-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+    }
+
+    .deal-quantity-label strong {
+        display: block;
+        color: var(--deal-strong);
+        font-size: 0.9rem;
+    }
+
+    .deal-quantity-label span {
+        display: block;
+        margin-top: 0.16rem;
+        color: var(--deal-muted);
+        font-size: 0.72rem;
+    }
+
+    .deal-quantity-control {
+        display: inline-grid;
+        grid-template-columns: 42px 48px 42px;
+        align-items: center;
+        overflow: hidden;
+        border: 1px solid var(--deal-border);
+        border-radius: 12px;
+        background: var(--deal-bg);
+    }
+
+    .deal-quantity-button {
+        width: 42px;
+        height: 42px;
+        display: grid;
+        place-items: center;
+        border: 0;
+        background: transparent;
+        color: var(--deal-strong);
+        cursor: pointer;
+    }
+
+    .deal-quantity-button:hover:not(:disabled) {
+        background: var(--deal-surface-muted);
+        color: var(--deal-primary);
+    }
+
+    .deal-quantity-button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+
+    .deal-quantity-button .icon {
+        width: 1rem;
+        height: 1rem;
+    }
+
+    .deal-quantity-value {
+        display: grid;
+        place-items: center;
+        min-height: 42px;
+        color: var(--deal-strong);
+        font-size: 0.9rem;
+        font-weight: 820;
+        text-align: center;
+    }
+
+    .deal-price-breakdown {
+        display: grid;
+        gap: 0.45rem;
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--deal-border);
+    }
+
+    .deal-price-line {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        color: var(--deal-muted);
+        font-size: 0.78rem;
+    }
+
+    .deal-price-line strong {
+        color: var(--deal-text);
+        font-weight: 760;
+    }
+
+    .deal-price-line.is-total {
+        margin-top: 0.15rem;
+        padding-top: 0.65rem;
+        border-top: 1px dashed var(--deal-border);
+        color: var(--deal-strong);
+        font-size: 0.95rem;
+        font-weight: 800;
+    }
+
+    .deal-price-line.is-total strong {
+        color: var(--deal-primary);
+        font-size: 1.12rem;
+        font-weight: 880;
+    }
+
+    .deal-price-security-note {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.45rem;
+        margin-top: 0.75rem;
+        color: var(--deal-muted);
+        font-size: 0.68rem;
+        line-height: 1.45;
+    }
+
+    .deal-price-security-note .icon {
+        width: 0.9rem;
+        height: 0.9rem;
+        flex: 0 0 0.9rem;
+        margin-top: 0.08rem;
+    }
+
+    .deal-add-button {
+        width: 100%;
+        min-height: 52px;
+        margin-top: 1rem;
+        justify-content: center;
+        font-size: 0.9rem;
+    }
+
+    .deal-add-spinner {
+        width: 16px;
+        height: 16px;
+        display: none;
+        border: 2px solid currentColor;
+        border-right-color: transparent;
+        border-radius: 50%;
+        animation: deal-spin 700ms linear infinite;
+    }
+
+    .deal-add-button.is-loading .deal-add-spinner,
+    .deal-mobile-add.is-loading .deal-add-spinner {
+        display: inline-block;
+    }
+
+    @keyframes deal-spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    .deal-inline-error {
+        display: none;
+        margin-top: 0.75rem;
+        padding: 0.7rem 0.8rem;
+        border: 1px solid color-mix(in srgb, var(--deal-error) 32%, var(--deal-border));
+        border-radius: 11px;
+        background: var(--deal-soft-error);
+        color: var(--deal-error);
+        font-size: 0.76rem;
+        line-height: 1.5;
+    }
+
+    .deal-inline-error.is-visible {
+        display: block;
+    }
+
+    /* =========================================================
+       TERMS / CONDITIONS
+    ========================================================== */
+
+    .deal-terms-section {
+        margin-top: 1rem;
+        border: 1px solid var(--deal-border);
+        border-radius: var(--deal-radius);
+        background: var(--deal-surface);
+        overflow: hidden;
+    }
+
+    .deal-terms-toggle {
+        width: 100%;
+        min-height: 52px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.85rem 1rem;
+        border: 0;
+        background: transparent;
+        color: var(--deal-strong);
+        font: inherit;
+        font-size: 0.86rem;
+        font-weight: 800;
+        text-align: left;
+        cursor: pointer;
+    }
+
+    .deal-terms-toggle:hover {
+        background: var(--deal-surface-muted);
+    }
+
+    .deal-terms-chevron {
+        width: 1rem;
+        height: 1rem;
+        transition: transform var(--transition-fast, 160ms ease);
+    }
+
+    .deal-terms-toggle[aria-expanded="true"] .deal-terms-chevron {
+        transform: rotate(180deg);
+    }
+
+    .deal-terms-content {
+        padding: 0 1rem 1rem;
+        color: var(--deal-muted);
+        font-size: 0.78rem;
+        line-height: 1.65;
+    }
+
+    .deal-terms-content[hidden] {
+        display: none !important;
+    }
+
+    .deal-terms-list {
+        margin: 0;
+        padding-left: 1.1rem;
+    }
+
+    .deal-terms-list li + li {
+        margin-top: 0.35rem;
+    }
+
+    /* =========================================================
+       RELATED DEALS
+    ========================================================== */
+
+    .deal-related-section {
+        padding-block: clamp(2.5rem, 6vw, 4.5rem);
+        border-top: 1px solid var(--deal-border);
+    }
+
+    .deal-related-head {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .deal-related-head h2 {
+        margin: 0;
+        color: var(--deal-strong);
+        font-size: clamp(1.4rem, 2.5vw, 1.9rem);
+    }
+
+    .deal-related-head a {
+        color: var(--deal-primary);
+        font-size: 0.8rem;
+        font-weight: 780;
+        text-decoration: none;
+    }
+
+    .deal-related-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.9rem;
+    }
+
+    .deal-related-card {
+        min-width: 0;
+        overflow: hidden;
+        border: 1px solid var(--deal-border);
+        border-radius: var(--deal-radius);
+        background: var(--deal-surface);
+        box-shadow: var(--deal-shadow);
+        transition:
+            transform var(--transition-fast, 160ms ease),
+            box-shadow var(--transition-fast, 160ms ease);
+    }
+
+    .deal-related-card:hover,
+    .deal-related-card:focus-within {
+        transform: translateY(-2px);
+        box-shadow: var(--deal-shadow-md);
+    }
+
+    .deal-related-image-link {
+        display: block;
+        aspect-ratio: 4 / 3;
+        overflow: hidden;
+        background: var(--deal-surface-muted);
+    }
+
+    .deal-related-image-link img,
+    .deal-related-placeholder {
+        width: 100%;
+        height: 100%;
+        display: block;
+    }
+
+    .deal-related-image-link img {
+        object-fit: cover;
+    }
+
+    .deal-related-placeholder {
+        display: grid;
+        place-items: center;
+        color: var(--deal-primary);
+        background: linear-gradient(145deg, var(--deal-surface-muted), var(--deal-soft-primary));
+    }
+
+    .deal-related-placeholder .icon {
+        width: 1.8rem;
+        height: 1.8rem;
+    }
+
+    .deal-related-body {
+        padding: 0.8rem;
+    }
+
+    .deal-related-title {
+        margin: 0;
+        color: var(--deal-strong);
+        font-size: 0.9rem;
+        line-height: 1.35;
+    }
+
+    .deal-related-title a {
+        color: inherit;
+        text-decoration: none;
+    }
+
+    .deal-related-title a:hover {
+        color: var(--deal-primary);
+    }
+
+    .deal-related-price {
+        display: block;
+        margin-top: 0.4rem;
+        color: var(--deal-primary);
+        font-size: 0.84rem;
+        font-weight: 820;
+    }
+
+    .deal-related-cta {
+        margin-top: 0.7rem;
+    }
+
+    /* =========================================================
+       MOBILE STICKY CTA
+    ========================================================== */
+
+    .deal-mobile-cta {
+        position: fixed;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        z-index: calc(var(--z-header, 100) - 1);
+        display: none;
+        padding:
+            0.65rem
+            max(0.8rem, env(safe-area-inset-right))
+            max(0.65rem, env(safe-area-inset-bottom))
+            max(0.8rem, env(safe-area-inset-left));
+        border-top: 1px solid var(--deal-border);
+        background: color-mix(in srgb, var(--deal-surface) 95%, transparent);
+        backdrop-filter: blur(14px) saturate(125%);
+        box-shadow: 0 -8px 22px rgba(22, 17, 14, 0.08);
+    }
+
+    .deal-mobile-cta-inner {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(150px, auto);
+        align-items: center;
+        gap: 0.7rem;
+    }
+
+    .deal-mobile-total-label {
+        display: block;
+        color: var(--deal-muted);
+        font-size: 0.66rem;
+        font-weight: 720;
+    }
+
+    .deal-mobile-total {
+        display: block;
+        margin-top: 0.05rem;
+        color: var(--deal-strong);
+        font-size: 0.95rem;
+        font-weight: 860;
+    }
+
+    .deal-mobile-add {
+        min-height: 46px;
+        justify-content: center;
+    }
+
+    /* =========================================================
+       RESPONSIVE
+    ========================================================== */
+
+    @media (max-width: 1080px) {
+        .deal-main {
+            grid-template-columns: minmax(0, 0.9fr) minmax(330px, 1.1fr);
+            gap: 1.5rem;
+        }
+
+        .deal-related-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 860px) {
+        .deal-main {
+            grid-template-columns: 1fr;
+        }
+
+        .deal-media-sticky {
+            position: static;
+        }
+
+        .deal-media-stage {
+            aspect-ratio: 16 / 11;
+        }
+
+        .deal-context-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .deal-related-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 680px) {
+        .deal-page {
+            padding-bottom: calc(var(--deal-mobile-cta-height) + env(safe-area-inset-bottom));
+        }
+
+        .deal-shell {
+            width: min(100% - 1.3rem, var(--container-width, 1240px));
+        }
+
+        .deal-breadcrumb {
+            display: none;
+        }
+
+        .deal-back-link {
+            display: inline-flex;
+        }
+
+        .deal-top-nav {
+            padding-bottom: 0.45rem;
+        }
+
+        .deal-main {
+            gap: 1rem;
+            padding-top: 0.25rem;
+        }
+
+        .deal-media-stage {
+            aspect-ratio: 4 / 3;
+            border-radius: 18px;
+        }
+
+        .deal-title {
+            font-size: clamp(1.75rem, 9vw, 2.5rem);
+        }
+
+        .deal-description {
+            font-size: 0.9rem;
+        }
+
+        .deal-included-item {
+            grid-template-columns: auto minmax(0, 1fr);
+        }
+
+        .deal-customizable-pill {
+            grid-column: 2;
+            justify-self: start;
+        }
+
+        .deal-option-card {
+            grid-template-columns: auto minmax(0, 1fr);
+        }
+
+        .deal-option-price {
+            grid-column: 2;
+        }
+
+        .deal-related-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .deal-mobile-cta {
+            display: block;
+        }
+
+        .deal-order-card .deal-add-button {
+            display: none;
+        }
+    }
+
+    @media (max-width: 430px) {
+        .deal-price-row {
+            align-items: flex-start;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+
+        .deal-quantity-row {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+
+        .deal-mobile-cta-inner {
+            grid-template-columns: minmax(0, 0.8fr) minmax(150px, 1.2fr);
+        }
+    }
+
+    /* =========================================================
+       REDUCED MOTION
+    ========================================================== */
+
+    @media (prefers-reduced-motion: reduce) {
+        .deal-media-thumb,
+        .deal-related-card,
+        .deal-terms-chevron {
+            transition: none !important;
+        }
+
+        .deal-add-spinner {
+            animation-duration: 1.2s;
+        }
+    }
+
+    /* =====================================================================
+       PREMIUM DEAL DETAILS ENHANCEMENT LAYER
+       ---------------------------------------------------------------------
+       Presentation-only layer:
+       - keeps all Flask/Jinja data contracts intact
+       - keeps cart / service / pricing / validation logic intact
+       - adds restrained 3D depth, white/ivory glow and premium motion
+       ===================================================================== */
+
+    .deal-page {
+        --deal-lux-gold: #d9ad4d;
+        --deal-lux-gold-strong: #f0ca72;
+        --deal-lux-gold-deep: #a96f17;
+        --deal-lux-ivory: #fffaf1;
+        --deal-lux-paper: #fffdf9;
+        --deal-lux-paper-soft: #f6f0e6;
+        --deal-lux-ink: #17120d;
+        --deal-lux-muted: #6b6055;
+        --deal-lux-dark: #090806;
+        --deal-lux-dark-2: #12100d;
+        --deal-lux-dark-3: #19140f;
+        --deal-lux-line: rgba(215, 173, 77, .18);
+        --deal-lux-white-line: rgba(255, 255, 255, .12);
+        --deal-lux-shadow: 0 28px 70px rgba(0, 0, 0, .34);
+        --deal-lux-paper-shadow: 0 28px 70px rgba(17, 12, 8, .15);
+        --deal-lux-paper-shadow-soft: 0 18px 42px rgba(17, 12, 8, .10);
+        --deal-lux-ease: cubic-bezier(.22, .61, .36, 1);
+        --deal-lux-pointer-x: 76%;
+        --deal-lux-pointer-y: 13%;
+        --deal-lux-detail-rx: 0deg;
+        --deal-lux-detail-ry: 0deg;
+        --deal-lux-media-rx: 0deg;
+        --deal-lux-media-ry: 0deg;
+        --deal-lux-scroll: 0%;
+        position: relative;
+        isolation: isolate;
+        overflow-x: clip;
+        min-height: 100vh;
+        background:
+            radial-gradient(
+                circle at 9% 0%,
+                rgba(255, 249, 234, .10),
+                transparent 25rem
+            ),
+            radial-gradient(
+                circle at 91% 4%,
+                rgba(217, 173, 77, .13),
+                transparent 23rem
+            ),
+            linear-gradient(
+                180deg,
+                #090806 0%,
+                #0d0a08 42%,
+                #14100c 60%,
+                #f0e9de 60.15%,
+                #faf7f1 78%,
+                #fffdf9 100%
+            );
+    }
+
+    .deal-page::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        background:
+            radial-gradient(
+                circle at var(--deal-lux-pointer-x) var(--deal-lux-pointer-y),
+                rgba(255, 255, 255, .12),
+                transparent 12rem
+            ),
+            radial-gradient(
+                circle at calc(var(--deal-lux-pointer-x) - 8%) calc(var(--deal-lux-pointer-y) + 9%),
+                rgba(217, 173, 77, .14),
+                transparent 18rem
+            );
+        opacity: .94;
+    }
+
+    .deal-page::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        opacity: .18;
+        background-image:
+            linear-gradient(
+                rgba(255, 255, 255, .03) 1px,
+                transparent 1px
+            ),
+            linear-gradient(
+                90deg,
+                rgba(255, 255, 255, .025) 1px,
+                transparent 1px
+            );
+        background-size: 44px 44px;
+        mask-image: linear-gradient(
+            180deg,
+            #000 0%,
+            rgba(0, 0, 0, .55) 46%,
+            transparent 64%
+        );
+    }
+
+    .deal-page > * {
+        position: relative;
+        z-index: 1;
+    }
+
+    .deal-page .deal-lux-progress {
+        position: fixed;
+        inset: 0 0 auto 0;
+        z-index: 90;
+        height: 3px;
+        pointer-events: none;
+        background: rgba(255, 255, 255, .035);
+    }
+
+    .deal-page .deal-lux-progress::after {
+        content: "";
+        display: block;
+        width: var(--deal-lux-scroll);
+        height: 100%;
+        background:
+            linear-gradient(
+                90deg,
+                #fff0c5 0%,
+                #e1b75c 55%,
+                #ac741f 100%
+            );
+        box-shadow:
+            0 0 12px rgba(240, 202, 114, .46),
+            0 0 24px rgba(217, 173, 77, .20);
+        transition: width 150ms linear;
+    }
+
+    /* =====================================================================
+       TOP NAV / BREADCRUMB
+       ===================================================================== */
+
+    .deal-top-nav {
+        padding-block:
+            clamp(1rem, 2.4vw, 1.55rem)
+            .85rem;
+    }
+
+    .deal-breadcrumb {
+        color: rgba(255, 249, 239, .64);
+    }
+
+    .deal-breadcrumb a,
+    .deal-back-link {
+        color: rgba(255, 249, 239, .72);
+        transition:
+            color 180ms ease,
+            transform 180ms var(--deal-lux-ease);
+    }
+
+    .deal-breadcrumb a:hover,
+    .deal-back-link:hover {
+        color: var(--deal-lux-gold-strong);
+    }
+
+    .deal-breadcrumb-separator {
+        color: rgba(240, 202, 114, .38);
+    }
+
+    .deal-breadcrumb li[aria-current="page"] {
+        color: rgba(255, 250, 241, .92);
+        font-weight: 760;
+    }
+
+    .deal-back-link {
+        color: var(--deal-lux-ivory);
+    }
+
+    /* =====================================================================
+       MAIN 2-COLUMN STAGE
+       ===================================================================== */
+
+    .deal-main {
+        position: relative;
+        perspective: 1600px;
+        gap: clamp(1.45rem, 3.7vw, 3.15rem);
+        padding-bottom: clamp(4rem, 7vw, 6.4rem);
+    }
+
+    .deal-media-column,
+    .deal-details-column {
+        min-width: 0;
+        transform-style: preserve-3d;
+    }
+
+    .deal-media-column {
+        position: relative;
+        z-index: 2;
+    }
+
+    .deal-details-column {
+        position: relative;
+        z-index: 3;
+        padding:
+            clamp(1rem, 2.1vw, 1.35rem)
+            clamp(1rem, 2.25vw, 1.5rem)
+            clamp(1.15rem, 2.4vw, 1.6rem);
+        border:
+            1px solid
+            rgba(225, 194, 126, .24);
+        border-radius:
+            clamp(24px, 2.8vw, 34px);
+        background:
+            radial-gradient(
+                circle at var(--deal-lux-local-x, 83%) var(--deal-lux-local-y, 10%),
+                rgba(255, 255, 255, .96),
+                transparent 14rem
+            ),
+            linear-gradient(
+                155deg,
+                rgba(255, 255, 255, .985),
+                rgba(249, 244, 236, .965)
+            );
+        box-shadow:
+            0 30px 72px rgba(0, 0, 0, .28),
+            0 0 0 1px rgba(255, 255, 255, .62) inset,
+            0 0 46px rgba(255, 255, 255, .08);
+        transform:
+            rotateX(var(--deal-lux-detail-rx))
+            rotateY(var(--deal-lux-detail-ry))
+            translateZ(0);
+        transform-origin: center top;
+        transition:
+            transform 260ms var(--deal-lux-ease),
+            box-shadow 260ms var(--deal-lux-ease),
+            border-color 220ms ease;
+        will-change: transform;
+    }
+
+    .deal-details-column::before {
+        content: "";
+        position: absolute;
+        inset: -1px;
+        z-index: 0;
+        pointer-events: none;
+        border-radius: inherit;
+        background:
+            radial-gradient(
+                circle at var(--deal-lux-local-x, 82%) var(--deal-lux-local-y, 12%),
+                rgba(255, 255, 255, .78),
+                transparent 12rem
+            );
+        opacity: .62;
+        mix-blend-mode: screen;
+    }
+
+    .deal-details-column::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        border-radius: inherit;
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .86),
+            inset 0 -1px 0 rgba(164, 119, 42, .06);
+    }
+
+    .deal-details-column > * {
+        position: relative;
+        z-index: 1;
+    }
+
+    .deal-details-column:hover {
+        border-color:
+            rgba(217, 173, 77, .34);
+        box-shadow:
+            0 34px 78px rgba(0, 0, 0, .31),
+            0 0 0 1px rgba(255, 255, 255, .72) inset,
+            0 0 54px rgba(255, 255, 255, .10);
+    }
+
+    /* =====================================================================
+       MEDIA CARD / GALLERY
+       ===================================================================== */
+
+    .deal-media-sticky {
+        perspective: 1300px;
+    }
+
+    .deal-media-stage {
+        position: relative;
+        isolation: isolate;
+        border:
+            1px solid
+            rgba(240, 202, 114, .20);
+        background:
+            radial-gradient(
+                circle at var(--deal-lux-media-x, 78%) var(--deal-lux-media-y, 12%),
+                rgba(255, 255, 255, .08),
+                transparent 13rem
+            ),
+            linear-gradient(
+                145deg,
+                #17120e,
+                #090705
+            );
+        box-shadow:
+            0 30px 70px rgba(0, 0, 0, .42),
+            0 0 0 1px rgba(255, 255, 255, .035) inset,
+            0 0 42px rgba(217, 173, 77, .06);
+        transform:
+            rotateX(var(--deal-lux-media-rx))
+            rotateY(var(--deal-lux-media-ry));
+        transform-style: preserve-3d;
+        transform-origin: center center;
+        transition:
+            transform 260ms var(--deal-lux-ease),
+            box-shadow 260ms var(--deal-lux-ease),
+            border-color 220ms ease;
+        will-change: transform;
+    }
+
+    .deal-media-stage::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        pointer-events: none;
+        background:
+            radial-gradient(
+                circle at var(--deal-lux-media-x, 78%) var(--deal-lux-media-y, 12%),
+                rgba(255, 255, 255, .18),
+                transparent 11rem
+            ),
+            linear-gradient(
+                180deg,
+                rgba(255, 255, 255, .09),
+                transparent 20%,
+                transparent 78%,
+                rgba(0, 0, 0, .15)
+            );
+        opacity: .72;
+    }
+
+    .deal-media-stage::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 3;
+        pointer-events: none;
+        border-radius: inherit;
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .08),
+            inset 0 0 0 1px rgba(255, 255, 255, .018);
+    }
+
+    .deal-media-stage:hover {
+        border-color:
+            rgba(240, 202, 114, .34);
+        box-shadow:
+            0 36px 78px rgba(0, 0, 0, .46),
+            0 0 0 1px rgba(255, 255, 255, .045) inset,
+            0 0 50px rgba(217, 173, 77, .08);
+    }
+
+    .deal-main-image,
+    .deal-main-video,
+    .deal-main-placeholder {
+        position: relative;
+        z-index: 1;
+        transition:
+            transform 620ms var(--deal-lux-ease),
+            filter 360ms ease;
+    }
+
+    .deal-media-stage:hover
+    .deal-main-image {
+        transform:
+            scale(1.035)
+            translateZ(10px);
+        filter:
+            saturate(1.04)
+            contrast(1.02);
+    }
+
+    .deal-main-placeholder {
+        background:
+            radial-gradient(
+                circle at 76% 16%,
+                rgba(217, 173, 77, .22),
+                transparent 32%
+            ),
+            linear-gradient(
+                145deg,
+                #1b1510,
+                #0e0a07
+            );
+        color:
+            var(--deal-lux-gold-strong);
+    }
+
+    .deal-media-badges {
+        z-index: 5;
+    }
+
+    .deal-media-badge {
+        border-color:
+            rgba(255, 255, 255, .20);
+        background:
+            rgba(15, 12, 9, .72);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .08),
+            0 9px 22px rgba(0, 0, 0, .22);
+        backdrop-filter:
+            blur(12px);
+    }
+
+    .deal-media-badge.is-featured {
+        background:
+            linear-gradient(
+                180deg,
+                #e4b85d,
+                #b7791f
+            );
+        color:
+            #241605;
+        border-color:
+            rgba(255, 239, 199, .36);
+    }
+
+    .deal-media-thumbnails {
+        padding:
+            .3rem
+            .12rem
+            .42rem;
+    }
+
+    .deal-media-thumb {
+        border-color:
+            rgba(255, 255, 255, .07);
+        background:
+            #17120e;
+        box-shadow:
+            0 12px 24px rgba(0, 0, 0, .24);
+        transition:
+            transform 200ms var(--deal-lux-ease),
+            border-color 200ms ease,
+            box-shadow 200ms ease;
+    }
+
+    .deal-media-thumb:hover {
+        transform:
+            translateY(-3px)
+            scale(1.015);
+        border-color:
+            rgba(240, 202, 114, .36);
+        box-shadow:
+            0 16px 28px rgba(0, 0, 0, .28);
+    }
+
+    .deal-media-thumb.is-active {
+        border-color:
+            var(--deal-lux-gold);
+        box-shadow:
+            0 0 0 2px rgba(217, 173, 77, .12),
+            0 16px 30px rgba(0, 0, 0, .30);
+    }
+
+    /* =====================================================================
+       HEADING / PRICE / STATUS
+       ===================================================================== */
+
+    .deal-heading {
+        position: relative;
+        padding:
+            .3rem
+            .1rem
+            1.2rem;
+        border-bottom:
+            1px solid
+            rgba(183, 145, 74, .16);
+    }
+
+    .deal-heading::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        bottom: -1px;
+        width: min(190px, 44%);
+        height: 1px;
+        background:
+            linear-gradient(
+                90deg,
+                rgba(217, 173, 77, .75),
+                transparent
+            );
+    }
+
+    .deal-label-row {
+        gap: .42rem;
+    }
+
+    .deal-kicker,
+    .deal-status-pill,
+    .deal-chip,
+    .deal-savings,
+    .deal-section-label,
+    .deal-required-pill,
+    .deal-optional-pill,
+    .deal-selection-chip,
+    .deal-customizable-pill {
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .52);
+    }
+
+    .deal-kicker {
+        border-color:
+            rgba(217, 173, 77, .28);
+        background:
+            linear-gradient(
+                180deg,
+                #fff5dd,
+                #f6e2b5
+            );
+        color:
+            #74470a;
+    }
+
+    .deal-title {
+        color:
+            #1c1712;
+        letter-spacing:
+            -.035em;
+        text-shadow:
+            0 1px 0 rgba(255, 255, 255, .86);
+    }
+
+    .deal-description {
+        color:
+            #655a50;
+    }
+
+    .deal-current-price {
+        color:
+            #9a6314;
+        text-shadow:
+            0 1px 0 rgba(255, 255, 255, .78);
+    }
+
+    .deal-original-price {
+        color:
+            #8d8175;
+    }
+
+    .deal-savings {
+        border:
+            1px solid
+            rgba(44, 122, 77, .12);
+        background:
+            linear-gradient(
+                180deg,
+                #f1fbf4,
+                #e1f4e8
+            );
+    }
+
+    /* =====================================================================
+       CONTEXT CARDS / VALIDITY
+       ===================================================================== */
+
+    .deal-context-grid {
+        gap:
+            .72rem;
+    }
+
+    .deal-context-card,
+    .deal-validity {
+        position:
+            relative;
+        overflow:
+            hidden;
+        border-color:
+            rgba(184, 147, 77, .14);
+        background:
+            linear-gradient(
+                155deg,
+                rgba(255, 255, 255, .96),
+                rgba(247, 241, 232, .90)
+            );
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .82),
+            0 12px 26px rgba(0, 0, 0, .055);
+        transition:
+            transform 220ms var(--deal-lux-ease),
+            box-shadow 220ms var(--deal-lux-ease),
+            border-color 220ms ease;
+    }
+
+    .deal-context-card::before,
+    .deal-validity::before {
+        content:
+            "";
+        position:
+            absolute;
+        inset:
+            0;
+        pointer-events:
+            none;
+        background:
+            radial-gradient(
+                circle at 86% 8%,
+                rgba(255, 255, 255, .78),
+                transparent 8rem
+            );
+    }
+
+    .deal-context-card > *,
+    .deal-validity > * {
+        position:
+            relative;
+        z-index:
+            1;
+    }
+
+    .deal-context-card:hover,
+    .deal-validity:hover {
+        transform:
+            translateY(-3px);
+        border-color:
+            rgba(217, 173, 77, .24);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .88),
+            0 16px 32px rgba(0, 0, 0, .075);
+    }
+
+    .deal-context-icon {
+        background:
+            linear-gradient(
+                160deg,
+                #fff8e9,
+                #efd39e 58%,
+                #bd8426 100%
+            );
+        color:
+            #442809;
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .58),
+            0 10px 18px rgba(0, 0, 0, .10);
+    }
+
+    .deal-context-label {
+        color:
+            #807367;
+    }
+
+    .deal-context-value {
+        color:
+            #231d17;
+    }
+
+    .deal-context-action {
+        color:
+            #976012;
+        position:
+            relative;
+    }
+
+    .deal-context-action::after {
+        content:
+            "";
+        position:
+            absolute;
+        left:
+            0;
+        right:
+            100%;
+        bottom:
+            -2px;
+        height:
+            1px;
+        background:
+            #c68e2d;
+        transition:
+            right 180ms ease;
+    }
+
+    .deal-context-action:hover::after {
+        right:
+            0;
+    }
+
+    /* =====================================================================
+       REUSABLE WHITE / IVORY CONTENT CARDS
+       ===================================================================== */
+
+    .deal-section-card,
+    .deal-order-card,
+    .deal-terms-section {
+        position:
+            relative;
+        isolation:
+            isolate;
+        overflow:
+            hidden;
+        border-color:
+            rgba(187, 148, 75, .14);
+        background:
+            radial-gradient(
+                circle at var(--deal-lux-section-x, 84%) var(--deal-lux-section-y, 10%),
+                rgba(255, 255, 255, .88),
+                transparent 12rem
+            ),
+            linear-gradient(
+                155deg,
+                rgba(255, 255, 255, .97),
+                rgba(248, 242, 233, .94)
+            );
+        box-shadow:
+            var(--deal-lux-paper-shadow-soft),
+            inset 0 1px 0 rgba(255, 255, 255, .82);
+        transition:
+            transform 230ms var(--deal-lux-ease),
+            box-shadow 230ms var(--deal-lux-ease),
+            border-color 220ms ease;
+    }
+
+    .deal-section-card::before,
+    .deal-order-card::before,
+    .deal-terms-section::before {
+        content:
+            "";
+        position:
+            absolute;
+        inset:
+            0;
+        z-index:
+            0;
+        pointer-events:
+            none;
+        background:
+            linear-gradient(
+                180deg,
+                rgba(255, 255, 255, .22),
+                transparent 22%,
+                transparent 76%,
+                rgba(181, 132, 49, .02)
+            );
+    }
+
+    .deal-section-card > *,
+    .deal-order-card > *,
+    .deal-terms-section > * {
+        position:
+            relative;
+        z-index:
+            1;
+    }
+
+    .deal-section-card:hover,
+    .deal-order-card:hover,
+    .deal-terms-section:hover {
+        transform:
+            translateY(-2px);
+        border-color:
+            rgba(217, 173, 77, .26);
+        box-shadow:
+            0 22px 46px rgba(17, 12, 8, .11),
+            inset 0 1px 0 rgba(255, 255, 255, .90);
+    }
+
+    .deal-section-heading {
+        position:
+            relative;
+        padding-bottom:
+            .68rem;
+        margin-bottom:
+            .82rem;
+    }
+
+    .deal-section-heading::after {
+        content:
+            "";
+        position:
+            absolute;
+        left:
+            0;
+        bottom:
+            0;
+        width:
+            min(180px, 38%);
+        height:
+            1px;
+        background:
+            linear-gradient(
+                90deg,
+                rgba(217, 173, 77, .56),
+                transparent
+            );
+    }
+
+    .deal-section-heading h2,
+    .deal-section-heading h3 {
+        color:
+            #211b15;
+        letter-spacing:
+            -.018em;
+    }
+
+    .deal-section-heading p {
+        color:
+            #75695e;
+    }
+
+    .deal-section-label {
+        background:
+            rgba(249, 242, 231, .92);
+        color:
+            #7c6b5a;
+        border:
+            1px solid
+            rgba(191, 153, 80, .13);
+    }
+
+    /* =====================================================================
+       INCLUDED ITEMS
+       ===================================================================== */
+
+    .deal-included-item {
+        position:
+            relative;
+        overflow:
+            hidden;
+        border-color:
+            rgba(189, 151, 76, .13);
+        background:
+            linear-gradient(
+                145deg,
+                rgba(255, 255, 255, .86),
+                rgba(247, 241, 231, .88)
+            );
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .66);
+        transition:
+            transform 220ms var(--deal-lux-ease),
+            border-color 220ms ease,
+            box-shadow 220ms ease;
+    }
+
+    .deal-included-item::before {
+        content:
+            "";
+        position:
+            absolute;
+        inset:
+            0;
+        pointer-events:
+            none;
+        background:
+            radial-gradient(
+                circle at 88% 8%,
+                rgba(255, 255, 255, .72),
+                transparent 8rem
+            );
+    }
+
+    .deal-included-item > * {
+        position:
+            relative;
+        z-index:
+            1;
+    }
+
+    .deal-included-item:hover {
+        transform:
+            translateY(-2px)
+            translateX(2px);
+        border-color:
+            rgba(217, 173, 77, .23);
+        box-shadow:
+            0 12px 24px rgba(0, 0, 0, .06),
+            inset 0 1px 0 rgba(255, 255, 255, .76);
+    }
+
+    .deal-included-quantity {
+        background:
+            linear-gradient(
+                160deg,
+                #fff8e8,
+                #efd19a 60%,
+                #bd8427
+            );
+        color:
+            #402607;
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .56),
+            0 8px 16px rgba(0, 0, 0, .08);
+    }
+
+    .deal-included-name {
+        color:
+            #221b15;
+    }
+
+    a.deal-included-name:hover {
+        color:
+            #9a6213;
+    }
+
+    .deal-included-note {
+        color:
+            #76695d;
+    }
+
+    /* =====================================================================
+       OPTION CARDS
+       ===================================================================== */
+
+    .deal-option-group + .deal-option-group {
+        border-top-color:
+            rgba(187, 148, 75, .14);
+    }
+
+    .deal-option-name {
+        color:
+            #241e18;
+    }
+
+    .deal-option-rule {
+        color:
+            #776b60;
+    }
+
+    .deal-required-pill {
+        border:
+            1px solid
+            rgba(217, 173, 77, .18);
+        background:
+            linear-gradient(
+                180deg,
+                #fff5dd,
+                #f4dfb2
+            );
+        color:
+            #77490a;
+    }
+
+    .deal-optional-pill {
+        border:
+            1px solid
+            rgba(126, 110, 92, .10);
+        background:
+            #f4efe8;
+        color:
+            #70665c;
+    }
+
+    .deal-option-card {
+        position:
+            relative;
+        overflow:
+            hidden;
+        border-color:
+            rgba(188, 150, 74, .14);
+        background:
+            linear-gradient(
+                145deg,
+                rgba(255, 255, 255, .92),
+                rgba(248, 242, 232, .92)
+            );
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .74),
+            0 10px 20px rgba(0, 0, 0, .04);
+        transition:
+            transform 200ms var(--deal-lux-ease),
+            border-color 200ms ease,
+            box-shadow 200ms ease,
+            background 200ms ease;
+    }
+
+    .deal-option-card::before {
+        content:
+            "";
+        position:
+            absolute;
+        inset:
+            0;
+        pointer-events:
+            none;
+        background:
+            radial-gradient(
+                circle at 86% 10%,
+                rgba(255, 255, 255, .76),
+                transparent 8rem
+            );
+    }
+
+    .deal-option-card > * {
+        position:
+            relative;
+        z-index:
+            1;
+    }
+
+    .deal-option-choice:hover
+    .deal-option-card {
+        transform:
+            translateY(-2px);
+        border-color:
+            rgba(217, 173, 77, .28);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .80),
+            0 13px 24px rgba(0, 0, 0, .06);
+    }
+
+    .deal-option-choice
+    input:checked
+    + .deal-option-card {
+        border-color:
+            rgba(184, 127, 31, .58);
+        background:
+            radial-gradient(
+                circle at 86% 10%,
+                rgba(255, 255, 255, .82),
+                transparent 9rem
+            ),
+            linear-gradient(
+                145deg,
+                #fff9ea,
+                #f8e8c5
+            );
+        box-shadow:
+            0 0 0 2px rgba(217, 173, 77, .10),
+            0 14px 28px rgba(0, 0, 0, .07);
+    }
+
+    .deal-option-choice
+    input:checked
+    + .deal-option-card
+    .deal-option-indicator {
+        border-color:
+            #a86c13;
+        background:
+            linear-gradient(
+                180deg,
+                #ebc469,
+                #b97a1d
+            );
+        color:
+            #201303;
+    }
+
+    .deal-option-title {
+        color:
+            #261f19;
+    }
+
+    .deal-option-description {
+        color:
+            #74685d;
+    }
+
+    .deal-option-price {
+        color:
+            #986013;
+    }
+
+    .deal-selection-chip {
+        border-color:
+            rgba(185, 146, 70, .16);
+        background:
+            linear-gradient(
+                180deg,
+                #fffaf0,
+                #f3e9d8
+            );
+        color:
+            #5a4630;
+    }
+
+    /* =====================================================================
+       ORDER / QUANTITY / PRICE
+       ===================================================================== */
+
+    .deal-order-card {
+        box-shadow:
+            0 26px 58px rgba(17, 12, 8, .13),
+            inset 0 1px 0 rgba(255, 255, 255, .86);
+    }
+
+    .deal-quantity-label strong {
+        color:
+            #201a15;
+    }
+
+    .deal-quantity-label span {
+        color:
+            #776b5f;
+    }
+
+    .deal-quantity-control {
+        border-color:
+            rgba(183, 144, 69, .16);
+        background:
+            linear-gradient(
+                180deg,
+                #fffdf8,
+                #f4eee5
+            );
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .84),
+            0 10px 20px rgba(0, 0, 0, .05);
+    }
+
+    .deal-quantity-button {
+        color:
+            #211b15;
+        transition:
+            background 180ms ease,
+            color 180ms ease,
+            transform 180ms var(--deal-lux-ease);
+    }
+
+    .deal-quantity-button:hover:not(:disabled) {
+        background:
+            rgba(224, 181, 92, .12);
+        color:
+            #965d0f;
+        transform:
+            scale(1.06);
+    }
+
+    .deal-quantity-value {
+        color:
+            #1f1914;
+    }
+
+    .deal-price-breakdown {
+        border-top-color:
+            rgba(185, 147, 73, .15);
+    }
+
+    .deal-price-line {
+        color:
+            #71655a;
+    }
+
+    .deal-price-line strong {
+        color:
+            #261e18;
+    }
+
+    .deal-price-line.is-total {
+        border-top-color:
+            rgba(184, 145, 70, .14);
+    }
+
+    .deal-price-line.is-total strong {
+        color:
+            #8f5910;
+    }
+
+    .deal-price-security-note {
+        border-color:
+            rgba(44, 122, 74, .13);
+        background:
+            linear-gradient(
+                180deg,
+                #f7fcf8,
+                #edf7f0
+            );
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .70);
+    }
+
+    /* =====================================================================
+       PRIMARY / SECONDARY BUTTON DEPTH
+       ===================================================================== */
+
+    .deal-page .deal-add-button,
+    .deal-page .deal-mobile-add,
+    .deal-page .btn {
+        position:
+            relative;
+        overflow:
+            hidden;
+    }
+
+    .deal-page .deal-add-button,
+    .deal-page .deal-mobile-add {
+        border-color:
+            rgba(133, 86, 15, .62);
+        background:
+            linear-gradient(
+                180deg,
+                #f7d27d 0%,
+                #dfad45 58%,
+                #b4771a 100%
+            );
+        color:
+            #201304;
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .60),
+            inset 0 -1px 0 rgba(94, 56, 5, .12),
+            0 14px 28px rgba(160, 101, 17, .20);
+        text-shadow:
+            0 1px 0 rgba(255, 255, 255, .34);
+        transition:
+            transform 200ms var(--deal-lux-ease),
+            box-shadow 200ms var(--deal-lux-ease),
+            filter 180ms ease;
+    }
+
+    .deal-page .deal-add-button:hover:not(:disabled),
+    .deal-page .deal-mobile-add:hover:not(:disabled) {
+        transform:
+            translateY(-2px);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .70),
+            inset 0 -1px 0 rgba(94, 56, 5, .12),
+            0 18px 34px rgba(160, 101, 17, .24);
+        filter:
+            saturate(1.03);
+    }
+
+    .deal-page .deal-add-button:active:not(:disabled),
+    .deal-page .deal-mobile-add:active:not(:disabled) {
+        transform:
+            translateY(0)
+            scale(.993);
+    }
+
+    .deal-page .btn-outline {
+        border-color:
+            rgba(188, 150, 75, .22);
+        background:
+            linear-gradient(
+                180deg,
+                rgba(255, 255, 255, .98),
+                rgba(246, 240, 231, .96)
+            );
+        color:
+            #3e3328;
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .88),
+            0 10px 20px rgba(0, 0, 0, .045);
+        transition:
+            transform 200ms var(--deal-lux-ease),
+            border-color 200ms ease,
+            box-shadow 200ms ease;
+    }
+
+    .deal-page .btn-outline:hover {
+        transform:
+            translateY(-2px);
+        border-color:
+            rgba(217, 173, 77, .40);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .92),
+            0 14px 26px rgba(0, 0, 0, .065);
+    }
+
+    .deal-lux-ripple {
+        position:
+            absolute;
+        width:
+            12px;
+        height:
+            12px;
+        border-radius:
+            50%;
+        pointer-events:
+            none;
+        background:
+            rgba(255, 255, 255, .50);
+        transform:
+            translate(-50%, -50%)
+            scale(0);
+        animation:
+            deal-lux-ripple
+            620ms
+            ease-out
+            forwards;
+        mix-blend-mode:
+            screen;
+    }
+
+    @keyframes deal-lux-ripple {
+        0% {
+            opacity:
+                .55;
+            transform:
+                translate(-50%, -50%)
+                scale(0);
+        }
+
+        100% {
+            opacity:
+                0;
+            transform:
+                translate(-50%, -50%)
+                scale(18);
+        }
+    }
+
+    /* =====================================================================
+       TERMS
+       ===================================================================== */
+
+    .deal-terms-section {
+        border:
+            1px solid
+            rgba(188, 150, 75, .14);
+        border-radius:
+            var(--deal-radius);
+    }
+
+    .deal-terms-toggle {
+        transition:
+            color 180ms ease,
+            background 180ms ease;
+    }
+
+    .deal-terms-toggle:hover {
+        color:
+            #8d570f;
+        background:
+            rgba(217, 173, 77, .055);
+    }
+
+    .deal-terms-chevron {
+        transition:
+            transform 240ms var(--deal-lux-ease);
+    }
+
+    .deal-terms-toggle[aria-expanded="true"]
+    .deal-terms-chevron {
+        transform:
+            rotate(180deg);
+    }
+
+    .deal-terms-content {
+        color:
+            #6e6257;
+        border-top-color:
+            rgba(184, 145, 70, .13);
+    }
+
+    /* =====================================================================
+       RELATED / CONTINUE BROWSING
+       ===================================================================== */
+
+    .deal-related-section {
+        position:
+            relative;
+        overflow:
+            hidden;
+        padding-block:
+            clamp(2.5rem, 5vw, 4.4rem);
+        background:
+            radial-gradient(
+                circle at 9% 12%,
+                rgba(255, 255, 255, .78),
+                transparent 18rem
+            ),
+            linear-gradient(
+                180deg,
+                #f1eadf,
+                #fbf8f3 55%,
+                #fffdf9
+            );
+        border-top:
+            1px solid
+            rgba(182, 143, 68, .12);
+    }
+
+    .deal-related-section::before {
+        content:
+            "";
+        position:
+            absolute;
+        inset:
+            0;
+        pointer-events:
+            none;
+        background:
+            radial-gradient(
+                circle at var(--deal-lux-pointer-x) var(--deal-lux-pointer-y),
+                rgba(255, 255, 255, .62),
+                transparent 18rem
+            );
+        opacity:
+            .68;
+    }
+
+    .deal-related-section > * {
+        position:
+            relative;
+        z-index:
+            1;
+    }
+
+    .deal-related-head h2 {
+        color:
+            #1f1914;
+        letter-spacing:
+            -.025em;
+    }
+
+    .deal-related-head a {
+        color:
+            #8f5910;
+        font-weight:
+            780;
+    }
+
+    .deal-related-card {
+        position:
+            relative;
+        isolation:
+            isolate;
+        overflow:
+            hidden;
+        border-color:
+            rgba(187, 148, 74, .14);
+        background:
+            radial-gradient(
+                circle at var(--deal-lux-card-x, 84%) var(--deal-lux-card-y, 10%),
+                rgba(255, 255, 255, .88),
+                transparent 10rem
+            ),
+            linear-gradient(
+                155deg,
+                rgba(255, 255, 255, .98),
+                rgba(247, 241, 232, .96)
+            );
+        box-shadow:
+            0 20px 44px rgba(17, 12, 8, .09),
+            inset 0 1px 0 rgba(255, 255, 255, .78);
+        transform-style:
+            preserve-3d;
+        transition:
+            transform 230ms var(--deal-lux-ease),
+            border-color 220ms ease,
+            box-shadow 230ms var(--deal-lux-ease);
+    }
+
+    .deal-related-card::before {
+        content:
+            "";
+        position:
+            absolute;
+        inset:
+            0;
+        z-index:
+            0;
+        pointer-events:
+            none;
+        background:
+            linear-gradient(
+                180deg,
+                rgba(255, 255, 255, .14),
+                transparent 28%
+            );
+    }
+
+    .deal-related-card > * {
+        position:
+            relative;
+        z-index:
+            1;
+    }
+
+    .deal-related-card:hover {
+        transform:
+            translateY(-5px)
+            rotateX(var(--deal-lux-card-rx, 0deg))
+            rotateY(var(--deal-lux-card-ry, 0deg));
+        border-color:
+            rgba(217, 173, 77, .30);
+        box-shadow:
+            0 27px 56px rgba(17, 12, 8, .12),
+            inset 0 1px 0 rgba(255, 255, 255, .84);
+    }
+
+    .deal-related-image-link {
+        overflow:
+            hidden;
+    }
+
+    .deal-related-image-link img {
+        transition:
+            transform 520ms var(--deal-lux-ease),
+            filter 300ms ease;
+    }
+
+    .deal-related-card:hover
+    .deal-related-image-link img {
+        transform:
+            scale(1.055);
+        filter:
+            saturate(1.035)
+            contrast(1.015);
+    }
+
+    .deal-related-title a {
+        color:
+            #251e18;
+    }
+
+    .deal-related-price {
+        color:
+            #956014;
+    }
+
+    /* =====================================================================
+       MOBILE CTA
+       ===================================================================== */
+
+    .deal-mobile-cta {
+        border-top:
+            1px solid
+            rgba(240, 202, 114, .14);
+        background:
+            rgba(14, 11, 8, .90);
+        box-shadow:
+            0 -18px 42px rgba(0, 0, 0, .28),
+            inset 0 1px 0 rgba(255, 255, 255, .04);
+        backdrop-filter:
+            blur(18px);
+    }
+
+    .deal-mobile-total-label {
+        color:
+            rgba(255, 249, 238, .62);
+    }
+
+    .deal-mobile-total {
+        color:
+            #fff7e8;
+    }
+
+    /* =====================================================================
+       REVEAL / MICRO-MOTION
+       ===================================================================== */
+
+    .deal-lux-reveal {
+        opacity:
+            0;
+        transform:
+            translateY(22px)
+            scale(.988);
+        transition:
+            opacity 620ms var(--deal-lux-ease),
+            transform 620ms var(--deal-lux-ease);
+    }
+
+    .deal-lux-reveal.is-visible {
+        opacity:
+            1;
+        transform:
+            none;
+    }
+
+    .deal-lux-shimmer {
+        position:
+            absolute;
+        inset:
+            0 auto 0 -120%;
+        width:
+            44%;
+        pointer-events:
+            none;
+        transform:
+            skewX(-22deg);
+        background:
+            linear-gradient(
+                90deg,
+                transparent,
+                rgba(255, 255, 255, .30),
+                transparent
+            );
+        opacity:
+            0;
+    }
+
+    .deal-page
+    .deal-add-button:hover
+    .deal-lux-shimmer,
+    .deal-page
+    .deal-mobile-add:hover
+    .deal-lux-shimmer {
+        animation:
+            deal-lux-shine
+            1.1s
+            ease;
+    }
+
+    @keyframes deal-lux-shine {
+        0% {
+            left:
+                -120%;
+            opacity:
+                0;
+        }
+
+        15% {
+            opacity:
+                .28;
+        }
+
+        100% {
+            left:
+                136%;
+            opacity:
+                0;
+        }
+    }
+
+    /* =====================================================================
+       RESPONSIVE / ZOOM-RESILIENT
+       ===================================================================== */
+
+    @media (max-width: 1120px) {
+        .deal-main {
+            grid-template-columns:
+                minmax(0, .92fr)
+                minmax(340px, 1.08fr);
+            gap:
+                1.45rem;
+        }
+
+        .deal-details-column {
+            padding:
+                1rem;
+        }
+    }
+
+    @media (max-width: 980px) {
+        .deal-page {
+            background:
+                radial-gradient(
+                    circle at 12% 0%,
+                    rgba(255, 248, 231, .09),
+                    transparent 20rem
+                ),
+                radial-gradient(
+                    circle at 90% 3%,
+                    rgba(217, 173, 77, .11),
+                    transparent 18rem
+                ),
+                linear-gradient(
+                    180deg,
+                    #090806 0%,
+                    #0d0a08 34%,
+                    #efe8dd 34.15%,
+                    #fbf8f3 100%
+                );
+        }
+
+        .deal-main {
+            perspective:
+                none;
+        }
+
+        .deal-details-column {
+            transform:
+                none !important;
+        }
+    }
+
+    @media (max-width: 760px) {
+        .deal-page::after {
+            opacity:
+                .10;
+        }
+
+        .deal-details-column {
+            border-radius:
+                24px;
+            padding:
+                .85rem;
+            box-shadow:
+                0 22px 48px rgba(0, 0, 0, .18),
+                0 0 0 1px rgba(255, 255, 255, .64) inset;
+        }
+
+        .deal-media-stage {
+            transform:
+                none !important;
+        }
+
+        .deal-section-card,
+        .deal-order-card,
+        .deal-terms-section {
+            border-radius:
+                18px;
+        }
+
+        .deal-context-card:hover,
+        .deal-validity:hover,
+        .deal-section-card:hover,
+        .deal-order-card:hover,
+        .deal-terms-section:hover,
+        .deal-included-item:hover,
+        .deal-related-card:hover {
+            transform:
+                none;
+        }
+
+        .deal-page
+        .deal-add-button:hover:not(:disabled),
+        .deal-page
+        .deal-mobile-add:hover:not(:disabled),
+        .deal-page
+        .btn-outline:hover {
+            transform:
+                none;
+        }
+    }
+
+    @media (max-width: 520px) {
+        .deal-details-column {
+            padding:
+                .72rem;
+        }
+
+        .deal-heading {
+            padding-inline:
+                .08rem;
+        }
+
+        .deal-title {
+            font-size:
+                clamp(1.82rem, 10vw, 2.45rem);
+        }
+
+        .deal-current-price {
+            font-size:
+                1.72rem;
+        }
+
+        .deal-related-section {
+            padding-block:
+                2.35rem;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .deal-page::before,
+        .deal-details-column,
+        .deal-media-stage,
+        .deal-main-image,
+        .deal-section-card,
+        .deal-order-card,
+        .deal-terms-section,
+        .deal-context-card,
+        .deal-validity,
+        .deal-included-item,
+        .deal-option-card,
+        .deal-related-card,
+        .deal-related-image-link img,
+        .deal-lux-reveal,
+        .deal-lux-progress::after {
+            transition:
+                none !important;
+            animation:
+                none !important;
+        }
+
+        .deal-lux-reveal {
+            opacity:
+                1;
+            transform:
+                none;
+        }
+
+        .deal-details-column,
+        .deal-media-stage,
+        .deal-related-card {
+            transform:
+                none !important;
+        }
+    }
+
+</style>
+{% endblock %}
+
+{% block content %}
+{% set service_selection = session.get('service_selection') or {} %}
+{% set current_mode = service_selection.get('service_mode', '') %}
+{% set current_outlet_id = service_selection.get('outlet_id', '') %}
+{% set included_items = deal.included_items|default([], true) %}
+{% set deal_media = deal.media|default([], true) %}
+{% set extra_images = deal.images|default([], true) %}
+{% set future_option_groups = deal_option_groups|default(deal.option_groups|default([], true), true) %}
+{% set options_enabled = deal_options_supported|default(false, true) %}
+{% set related = related_deals|default([], true) %}
+{% set deal_terms = deal.terms|default([], true) %}
+{% set deal_image = deal.image_url|default(deal.image, true) %}
+{% set deal_video = deal.video_url|default('', true) %}
+{% set deal_poster = deal.poster_image|default(deal_image, true) %}
+{% set base_price_minor = deal.price_minor|default(0, true)|int %}
+{% set original_price_minor = deal.original_price_minor|default(0, true)|int %}
+{% set deal_featured = deal.featured|default(false) %}
+{% set deal_badge = deal.badge|default('', true) %}
+{% set discount_label = deal.discount_label|default('', true) %}
+{% set valid_hours = deal.valid_hours|default('', true) %}
+{% set valid_days = deal.valid_days|default('', true) %}
+{% set service_modes = deal.service_modes|default([], true) %}
+{% set outlet_ids = deal.outlet_ids|default([], true) %}
+{% set deal_start_at = deal.start_at|default(none) %}
+{% set deal_end_at = deal.end_at|default(none) %}
+{% set initial_orderable = deal.active|default(false) and outlet_available|default(false) %}
+
+<div
+    class="deal-page"
+    id="deal-page-root"
+    data-deal-id="{{ deal.id }}"
+    data-price-minor="{{ base_price_minor }}"
+    data-original-price-minor="{{ original_price_minor }}"
+    data-pricing-version="{{ deal.pricing_version|default(1, true) }}"
+    data-active="{{ '1' if deal.active|default(false) else '0' }}"
+    data-outlet-available="{{ '1' if outlet_available|default(false) else '0' }}"
+    data-service-mode="{{ current_mode }}"
+    data-outlet-id="{{ current_outlet_id }}"
+    data-authenticated="{{ '1' if principal else '0' }}"
+    data-customer="{{ '1' if principal and principal.role == 'customer' else '0' }}"
+    data-options-enabled="{{ '1' if options_enabled else '0' }}"
+    data-start-at="{{ deal_start_at.isoformat() if deal_start_at and deal_start_at.isoformat is defined else '' }}"
+    data-end-at="{{ deal_end_at.isoformat() if deal_end_at and deal_end_at.isoformat is defined else '' }}"
+    data-max-quantity="{{ deal.max_quantity|default(20, true) }}"
+    data-cart-add-url="{{ url_for('add_cart_item_api') }}"
+    data-cart-url="{{ url_for('get_cart_api') }}"
+    data-cart-page-url="{{ url_for('cart_page') }}"
+    data-login-url="{{ url_for('login_page') }}"
+    data-home-url="{{ url_for('home_page') }}"
+    data-deals-url="{{ url_for('deals_page') }}"
+>
+
+    <!-- =========================================================
+         BREADCRUMB / BACK NAVIGATION
+    ========================================================== -->
+
+    <nav class="deal-top-nav" aria-label="Breadcrumb">
+        <div class="deal-shell">
+            <a class="deal-back-link" href="{{ url_for('deals_page') }}">
+                <svg class="icon" aria-hidden="true" viewBox="0 0 24 24">
+                    <path d="m15 18-6-6 6-6"></path>
+                </svg>
+                <span>Back to Deals</span>
+            </a>
+
+            <ol class="deal-breadcrumb">
+                <li><a href="{{ url_for('home_page') }}">Home</a></li>
+                <li class="deal-breadcrumb-separator" aria-hidden="true">/</li>
+                <li><a href="{{ url_for('deals_page') }}">Deals</a></li>
+                <li class="deal-breadcrumb-separator" aria-hidden="true">/</li>
+                <li aria-current="page">{{ deal.name }}</li>
+            </ol>
+        </div>
+    </nav>
+
+    <!-- =========================================================
+         MAIN DEAL DETAILS
+    ========================================================== -->
+
+    <main class="deal-shell deal-main" aria-labelledby="deal-title">
+
+        <!-- MEDIA -->
+        <section class="deal-media-column" aria-label="Deal media">
+            <div class="deal-media-sticky">
+                <div class="deal-media-stage" id="deal-media-stage">
+
+                    {% if deal_image %}
+                        <img
+                            class="deal-main-image"
+                            id="deal-main-image"
+                            src="{{ deal_image }}"
+                            alt="{{ deal.name }}"
+                            fetchpriority="high"
+                            decoding="async"
+                        >
+                    {% else %}
+                        <div class="deal-main-placeholder" id="deal-main-placeholder" aria-label="No deal image available">
+                            <svg class="icon" aria-hidden="true" viewBox="0 0 24 24">
+                                <path d="M4 7h16v13H4z"></path>
+                                <path d="M8 7V5h8v2"></path>
+                                <path d="M8 12h8"></path>
+                                <path d="M8 16h5"></path>
+                            </svg>
+                        </div>
+                    {% endif %}
+
+                    <video
+                        class="deal-main-video"
+                        id="deal-main-video"
+                        controls
+                        playsinline
+                        preload="metadata"
+                        poster="{{ deal_poster }}"
+                        hidden
+                    ></video>
+
+                    <div class="deal-media-badges" aria-label="Deal status">
+                        {% if deal_featured %}
+                            <span class="deal-media-badge is-featured">Featured</span>
+                        {% endif %}
+
+                        {% if deal_badge %}
+                            <span class="deal-media-badge">{{ deal_badge }}</span>
+                        {% endif %}
+
+                        <span
+                            class="deal-media-badge{% if not initial_orderable %} is-unavailable{% endif %}"
+                            id="deal-media-availability-badge"
+                        >
+                            {{ 'Available' if initial_orderable else 'Unavailable' }}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="deal-media-thumbnails" id="deal-media-thumbnails" hidden aria-label="Deal media gallery">
+                    {% if deal_image %}
+                        <button
+                            class="deal-media-thumb is-active"
+                            type="button"
+                            data-media-type="image"
+                            data-media-url="{{ deal_image }}"
+                            data-media-alt="{{ deal.name }}"
+                            aria-label="Show main deal image"
+                            aria-pressed="true"
+                        >
+                            <img src="{{ deal_image }}" alt="" loading="lazy" decoding="async">
+                        </button>
+                    {% endif %}
+
+                    {% for media in deal_media %}
+                        {% set media_type = media.media_type|default(media.type|default('image', true), true) %}
+                        {% set media_url = media.url|default(media.image_url|default(media.video_url|default('', true), true), true) %}
+                        {% if media_url %}
+                            <button
+                                class="deal-media-thumb"
+                                type="button"
+                                data-media-type="{{ media_type }}"
+                                data-media-url="{{ media_url }}"
+                                data-media-poster="{{ media.poster_image|default(deal_poster, true) }}"
+                                data-media-alt="{{ media.alt|default(deal.name, true) }}"
+                                aria-label="Show deal {{ media_type }} {{ loop.index }}"
+                                aria-pressed="false"
+                            >
+                                {% if media_type == 'video' %}
+                                    <div class="deal-related-placeholder" aria-hidden="true">
+                                        <svg class="icon" viewBox="0 0 24 24">
+                                            <path d="M9 7l8 5-8 5z"></path>
+                                        </svg>
+                                    </div>
+                                    <span class="deal-media-thumb-type" aria-hidden="true">
+                                        <svg class="icon" viewBox="0 0 24 24"><path d="M9 7l8 5-8 5z"></path></svg>
+                                    </span>
+                                {% else %}
+                                    <img src="{{ media_url }}" alt="" loading="lazy" decoding="async">
+                                {% endif %}
+                            </button>
+                        {% endif %}
+                    {% endfor %}
+
+                    {% for image_url in extra_images %}
+                        {% if image_url and image_url != deal_image %}
+                            <button
+                                class="deal-media-thumb"
+                                type="button"
+                                data-media-type="image"
+                                data-media-url="{{ image_url }}"
+                                data-media-alt="{{ deal.name }} image {{ loop.index + 1 }}"
+                                aria-label="Show deal image {{ loop.index + 1 }}"
+                                aria-pressed="false"
+                            >
+                                <img src="{{ image_url }}" alt="" loading="lazy" decoding="async">
+                            </button>
+                        {% endif %}
+                    {% endfor %}
+
+                    {% if deal_video %}
+                        <button
+                            class="deal-media-thumb"
+                            type="button"
+                            data-media-type="video"
+                            data-media-url="{{ deal_video }}"
+                            data-media-poster="{{ deal_poster }}"
+                            data-media-alt="{{ deal.name }} video"
+                            aria-label="Play deal video"
+                            aria-pressed="false"
+                        >
+                            <div class="deal-related-placeholder" aria-hidden="true">
+                                <svg class="icon" viewBox="0 0 24 24">
+                                    <path d="M9 7l8 5-8 5z"></path>
+                                </svg>
+                            </div>
+                            <span class="deal-media-thumb-type" aria-hidden="true">
+                                <svg class="icon" viewBox="0 0 24 24"><path d="M9 7l8 5-8 5z"></path></svg>
+                            </span>
+                        </button>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+
+        <!-- DETAILS / ORDER CONFIGURATION -->
+        <section class="deal-details-column">
+
+            <header class="deal-heading">
+                <div class="deal-label-row">
+                    <span class="deal-kicker">Deal</span>
+
+                    {% if deal_featured %}
+                        <span class="deal-chip">Featured</span>
+                    {% endif %}
+
+                    <span
+                        class="deal-status-pill{% if not initial_orderable %} is-error{% endif %}"
+                        id="deal-status-pill"
+                    >
+                        {{ 'Available now' if initial_orderable else 'Currently unavailable' }}
+                    </span>
+                </div>
+
+                <h1 class="deal-title" id="deal-title">{{ deal.name }}</h1>
+
+                {% if deal.description %}
+                    <p class="deal-description">{{ deal.description }}</p>
+                {% endif %}
+
+                <div class="deal-price-row">
+                    <span class="deal-current-price" id="deal-current-price" data-money-minor="{{ base_price_minor }}">
+                        Rs. {{ '{:,.0f}'.format(base_price_minor / 100) if base_price_minor % 100 == 0 else '{:,.2f}'.format(base_price_minor / 100) }}
+                    </span>
+
+                    {% if original_price_minor > base_price_minor and base_price_minor >= 0 %}
+                        <span class="deal-original-price">
+                            Rs. {{ '{:,.0f}'.format(original_price_minor / 100) if original_price_minor % 100 == 0 else '{:,.2f}'.format(original_price_minor / 100) }}
+                        </span>
+
+                        <span class="deal-savings">
+                            Save Rs. {{ '{:,.0f}'.format((original_price_minor - base_price_minor) / 100) if (original_price_minor - base_price_minor) % 100 == 0 else '{:,.2f}'.format((original_price_minor - base_price_minor) / 100) }}
+                        </span>
+                    {% elif discount_label %}
+                        <span class="deal-savings">{{ discount_label }}</span>
+                    {% endif %}
+                </div>
+
+                <div class="deal-context-grid">
+                    <article class="deal-context-card">
+                        <span class="deal-context-icon" aria-hidden="true">
+                            <svg class="icon" viewBox="0 0 24 24">
+                                <path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0z"></path>
+                                <circle cx="12" cy="10" r="2.5"></circle>
+                            </svg>
+                        </span>
+                        <span class="deal-context-copy">
+                            <span class="deal-context-label">Order mode</span>
+                            <span class="deal-context-value" id="deal-service-context">
+                                {% if current_mode == 'delivery' %}
+                                    Delivery{% if service_selection.get('area') %} · {{ service_selection.get('area') }}{% endif %}
+                                {% elif current_mode == 'pickup' %}
+                                    Pickup · Selected outlet
+                                {% elif current_mode == 'dine_in' %}
+                                    Dine-In · Selected outlet
+                                {% else %}
+                                    Select Delivery, Pickup, or Dine-In
+                                {% endif %}
+                            </span>
+                            <button class="deal-context-action" id="deal-change-service" type="button">Change Location / Service</button>
+                        </span>
+                    </article>
+
+                    <article class="deal-context-card">
+                        <span class="deal-context-icon" aria-hidden="true">
+                            <svg class="icon" viewBox="0 0 24 24">
+                                <path d="M4 5h16v14H4z"></path>
+                                <path d="M8 9h8"></path>
+                                <path d="M8 13h5"></path>
+                            </svg>
+                        </span>
+                        <span class="deal-context-copy">
+                            <span class="deal-context-label">Outlet availability</span>
+                            <span class="deal-context-value" id="deal-outlet-context">
+                                {% if current_outlet_id %}
+                                    {{ 'Available at selected outlet' if outlet_available else 'Not available at selected outlet' }}
+                                {% else %}
+                                    Select an outlet to confirm ordering availability
+                                {% endif %}
+                            </span>
+                        </span>
+                    </article>
+                </div>
+
+                {% if deal_start_at or deal_end_at or valid_hours or valid_days %}
+                    <div class="deal-validity" id="deal-validity-box">
+                        <svg class="icon" aria-hidden="true" viewBox="0 0 24 24">
+                            <circle cx="12" cy="12" r="9"></circle>
+                            <path d="M12 7v5l3 2"></path>
+                        </svg>
+                        <span>
+                            <span id="deal-validity-text">Deal validity is controlled by the restaurant.</span>
+                            <span class="deal-countdown" id="deal-countdown" hidden></span>
+                            {% if valid_hours %}
+                                <span> · {{ valid_hours }}</span>
+                            {% endif %}
+                            {% if valid_days %}
+                                <span> · {{ valid_days }}</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                {% endif %}
+            </header>
+
+            <!-- INCLUDED ITEMS -->
+            {% if included_items %}
+                <section class="deal-section-card" aria-labelledby="included-items-heading">
+                    <div class="deal-section-heading">
+                        <div>
+                            <h2 id="included-items-heading">What's Included</h2>
+                            <p>The deal contents below are stored with the current offer.</p>
+                        </div>
+                        <span class="deal-section-label">{{ included_items|length }} item{% if included_items|length != 1 %}s{% endif %}</span>
+                    </div>
+
+                    <div class="deal-included-list">
+                        {% for item in included_items %}
+                            <article class="deal-included-item">
+                                <span class="deal-included-quantity" aria-label="Quantity {{ item.quantity|default(1, true) }}">
+                                    {{ item.quantity|default(1, true) }}×
+                                </span>
+
+                                <span class="deal-included-copy">
+                                    {% if item.product_id|default('', true) %}
+                                        <a
+                                            class="deal-included-name"
+                                            href="{{ url_for('product_page', product_id=item.product_id|default('', true), outlet_id=current_outlet_id) }}"
+                                        >
+                                            {{ item.product_name|default('Included product', true) }}
+                                        </a>
+                                    {% else %}
+                                        <span class="deal-included-name">{{ item.product_name|default('Included item', true) }}</span>
+                                    {% endif %}
+
+                                    {% if item.description|default('', true) %}
+                                        <span class="deal-included-note">{{ item.description|default('', true) }}</span>
+                                    {% elif item.allow_customization|default(false) %}
+                                        <span class="deal-included-note">This included product is marked customizable in the deal configuration.</span>
+                                    {% endif %}
+                                </span>
+
+                                {% if item.allow_customization|default(false) %}
+                                    <span class="deal-customizable-pill">Customizable</span>
+                                {% endif %}
+                            </article>
+                        {% endfor %}
+                    </div>
+                </section>
+            {% endif %}
+
+            <!-- FUTURE BACKEND-GATED DEAL CHOICES -->
+            <section
+                class="deal-section-card deal-options-region"
+                id="deal-options-region"
+                hidden
+                aria-labelledby="deal-options-heading"
+            >
+                <div class="deal-section-heading">
+                    <div>
+                        <h2 id="deal-options-heading">Customize This Deal</h2>
+                        <p>Required choices are shown first. Extra charges update the estimate only.</p>
+                    </div>
+                </div>
+
+                <div id="deal-option-groups">
+                    {% for group in future_option_groups %}
+                        {% set group_key = group.group_key|default(group.id, true) %}
+                        {% set min_sel = group.min_selections|default(1 if group.required|default(false) else 0, true)|int %}
+                        {% set max_sel = group.max_selections|default(1, true)|int %}
+                        {% set single_choice = max_sel == 1 %}
+
+                        <fieldset
+                            class="deal-option-group"
+                            data-option-group
+                            data-group-key="{{ group_key }}"
+                            data-group-name="{{ group.name|default(group_key, true) }}"
+                            data-min-selections="{{ min_sel }}"
+                            data-max-selections="{{ max_sel }}"
+                        >
+                            <legend class="deal-option-legend">
+                                <span class="deal-option-legend-row">
+                                    <span>
+                                        <span class="deal-option-name">{{ group.name|default('Choose an option', true) }}</span>
+                                        <span class="deal-option-rule">
+                                            {% if min_sel == max_sel and min_sel > 0 %}
+                                                Choose exactly {{ min_sel }}
+                                            {% elif min_sel > 0 and max_sel > min_sel %}
+                                                Choose at least {{ min_sel }} and up to {{ max_sel }}
+                                            {% elif max_sel > 1 %}
+                                                Choose up to {{ max_sel }}
+                                            {% elif min_sel > 0 %}
+                                                Choose one
+                                            {% else %}
+                                                Optional
+                                            {% endif %}
+                                        </span>
+                                    </span>
+
+                                    {% if min_sel > 0 or group.required|default(false) %}
+                                        <span class="deal-required-pill">Required</span>
+                                    {% else %}
+                                        <span class="deal-optional-pill">Optional</span>
+                                    {% endif %}
+                                </span>
+                            </legend>
+
+                            <div class="deal-option-list">
+                                {% for option in group.options|default([], true) %}
+                                    {% set option_active = option.active|default(true) %}
+                                    {% set delta_minor = option.price_delta_minor|default(0, true)|int %}
+                                    <label
+                                        class="deal-option-choice"
+                                        data-selection-type="{{ 'single' if single_choice else 'multiple' }}"
+                                    >
+                                        <input
+                                            type="{{ 'radio' if single_choice else 'checkbox' }}"
+                                            name="deal-option-{{ group_key }}"
+                                            value="{{ option.id }}"
+                                            data-deal-option
+                                            data-group-key="{{ group_key }}"
+                                            data-option-id="{{ option.id }}"
+                                            data-option-name="{{ option.name|default(option.id, true) }}"
+                                            data-price-delta-minor="{{ delta_minor }}"
+                                            data-default="{{ '1' if option.default|default(false) else '0' }}"
+                                            data-active="{{ '1' if option_active else '0' }}"
+                                        >
+
+                                        <span class="deal-option-card">
+                                            <span class="deal-option-indicator" aria-hidden="true">
+                                                <svg class="icon" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></svg>
+                                            </span>
+
+                                            <span class="deal-option-copy">
+                                                <span class="deal-option-title">{{ option.name|default(option.id, true) }}</span>
+                                                {% if option.description %}
+                                                    <span class="deal-option-description">{{ option.description }}</span>
+                                                {% endif %}
+                                            </span>
+
+                                            {% if delta_minor > 0 %}
+                                                <span class="deal-option-price">
+                                                    + Rs. {{ '{:,.0f}'.format(delta_minor / 100) if delta_minor % 100 == 0 else '{:,.2f}'.format(delta_minor / 100) }}
+                                                </span>
+                                            {% elif delta_minor < 0 %}
+                                                <span class="deal-option-price">
+                                                    − Rs. {{ '{:,.0f}'.format((-delta_minor) / 100) if (-delta_minor) % 100 == 0 else '{:,.2f}'.format((-delta_minor) / 100) }}
+                                                </span>
+                                            {% endif %}
+                                        </span>
+                                    </label>
+                                {% endfor %}
+                            </div>
+
+                            <p class="deal-option-error" data-option-error role="alert"></p>
+                        </fieldset>
+                    {% endfor %}
+                </div>
+            </section>
+
+            <section class="deal-section-card deal-selection-summary" id="deal-selection-summary" hidden aria-labelledby="deal-selection-summary-heading">
+                <div class="deal-section-heading">
+                    <div>
+                        <h2 id="deal-selection-summary-heading">Your Selections</h2>
+                        <p>Review the choices currently included in your display estimate.</p>
+                    </div>
+                </div>
+                <ul class="deal-selection-list" id="deal-selection-list"></ul>
+            </section>
+
+            <!-- ORDER CARD -->
+            <section class="deal-order-card" aria-labelledby="deal-order-heading">
+                <div class="deal-section-heading">
+                    <div>
+                        <h2 id="deal-order-heading">Add This Deal</h2>
+                        <p>Final price and availability are revalidated by the server.</p>
+                    </div>
+                </div>
+
+                <div class="deal-quantity-row">
+                    <span class="deal-quantity-label">
+                        <strong>Quantity</strong>
+                        <span>Maximum supported by the current cart API: 20.</span>
+                    </span>
+
+                    <div class="deal-quantity-control" aria-label="Deal quantity">
+                        <button class="deal-quantity-button" id="deal-quantity-minus" type="button" aria-label="Decrease quantity">
+                            <svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M6 12h12"></path></svg>
+                        </button>
+                        <output class="deal-quantity-value" id="deal-quantity-value" aria-live="polite">1</output>
+                        <button class="deal-quantity-button" id="deal-quantity-plus" type="button" aria-label="Increase quantity">
+                            <svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"></path></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="deal-price-breakdown" aria-label="Estimated price breakdown">
+                    <div class="deal-price-line">
+                        <span>Deal price</span>
+                        <strong id="deal-breakdown-base">—</strong>
+                    </div>
+
+                    <div class="deal-price-line" id="deal-breakdown-extras-row" hidden>
+                        <span>Selected extras</span>
+                        <strong id="deal-breakdown-extras">—</strong>
+                    </div>
+
+                    <div class="deal-price-line">
+                        <span>Quantity</span>
+                        <strong id="deal-breakdown-quantity">1</strong>
+                    </div>
+
+                    <div class="deal-price-line is-total">
+                        <span>Estimated total</span>
+                        <strong id="deal-estimated-total">—</strong>
+                    </div>
+                </div>
+
+                <p class="deal-price-security-note">
+                    <svg class="icon" aria-hidden="true" viewBox="0 0 24 24">
+                        <path d="M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6l-7-3z"></path>
+                        <path d="M9 12l2 2 4-4"></path>
+                    </svg>
+                    <span>This is a display estimate only. The backend retrieves the current deal price and validates outlet, service mode and quantity before adding it to your cart.</span>
+                </p>
+
+                <button
+                    class="btn btn-primary deal-add-button"
+                    id="deal-add-button"
+                    type="button"
+                    disabled
+                >
+                    <span class="deal-add-spinner" aria-hidden="true"></span>
+                    <span id="deal-add-label">Add Deal to Cart</span>
+                </button>
+
+                <div class="deal-inline-error" id="deal-inline-error" role="alert"></div>
+            </section>
+
+            <!-- TERMS -->
+            {% if deal_terms or valid_hours or valid_days or outlet_ids or service_modes %}
+                <section class="deal-terms-section" aria-labelledby="deal-terms-heading">
+                    <button
+                        class="deal-terms-toggle"
+                        id="deal-terms-toggle"
+                        type="button"
+                        aria-expanded="false"
+                        aria-controls="deal-terms-content"
+                    >
+                        <span id="deal-terms-heading">Deal Terms & Conditions</span>
+                        <svg class="deal-terms-chevron icon" aria-hidden="true" viewBox="0 0 24 24">
+                            <path d="m6 9 6 6 6-6"></path>
+                        </svg>
+                    </button>
+
+                    <div class="deal-terms-content" id="deal-terms-content" hidden>
+                        <ul class="deal-terms-list">
+                            {% if deal_terms is string %}
+                                <li>{{ deal_terms }}</li>
+                            {% else %}
+                                {% for term in deal_terms %}
+                                    <li>{{ term }}</li>
+                                {% endfor %}
+                            {% endif %}
+
+                            {% if valid_days %}
+                                <li>Valid days: {{ valid_days }}</li>
+                            {% endif %}
+
+                            {% if valid_hours %}
+                                <li>Valid hours: {{ valid_hours }}</li>
+                            {% endif %}
+
+                            {% if service_modes %}
+                                <li>Supported service modes: {{ service_modes|join(', ') }}</li>
+                            {% endif %}
+
+                            {% if outlet_ids %}
+                                <li>Outlet restrictions apply to this deal.</li>
+                            {% endif %}
+                        </ul>
+                    </div>
+                </section>
+            {% endif %}
+        </section>
+    </main>
+
+    <!-- =========================================================
+         RELATED DEALS - ONLY WHEN BACKEND SUPPLIES THEM
+    ========================================================== -->
+
+    {% if related %}
+        <section class="deal-related-section" aria-labelledby="related-deals-heading">
+            <div class="deal-shell">
+                <div class="deal-related-head">
+                    <h2 id="related-deals-heading">You May Also Like</h2>
+                    <a href="{{ url_for('deals_page') }}">View all deals</a>
+                </div>
+
+                <div class="deal-related-grid">
+                    {% for related_deal in related[:4] %}
+                        {% set related_image = related_deal.image_url|default(related_deal.image, true) %}
+                        <article class="deal-related-card">
+                            <a class="deal-related-image-link" href="{{ url_for('deal_detail_page', deal_id=related_deal.id) }}">
+                                {% if related_image %}
+                                    <img src="{{ related_image }}" alt="{{ related_deal.name|default('Deal', true) }}" loading="lazy" decoding="async">
+                                {% else %}
+                                    <span class="deal-related-placeholder" aria-hidden="true">
+                                        <svg class="icon" viewBox="0 0 24 24"><path d="M4 7h16v13H4z"></path><path d="M8 7V5h8v2"></path></svg>
+                                    </span>
+                                {% endif %}
+                            </a>
+
+                            <div class="deal-related-body">
+                                <h3 class="deal-related-title">
+                                    <a href="{{ url_for('deal_detail_page', deal_id=related_deal.id) }}">{{ related_deal.name|default('Deal', true) }}</a>
+                                </h3>
+
+                                {% if related_deal.price_minor is defined %}
+                                    {% set related_minor = related_deal.price_minor|int %}
+                                    <span class="deal-related-price">
+                                        Rs. {{ '{:,.0f}'.format(related_minor / 100) if related_minor % 100 == 0 else '{:,.2f}'.format(related_minor / 100) }}
+                                    </span>
+                                {% endif %}
+
+                                <div class="deal-related-cta">
+                                    <a class="btn btn-outline" href="{{ url_for('deal_detail_page', deal_id=related_deal.id) }}">View Deal</a>
+                                </div>
+                            </div>
+                        </article>
+                    {% endfor %}
+                </div>
+            </div>
+        </section>
+    {% else %}
+        <section class="deal-related-section" aria-label="Continue browsing">
+            <div class="deal-shell">
+                <div class="deal-related-head">
+                    <h2>Continue Browsing</h2>
+                    <a href="{{ url_for('deals_page') }}">Back to Deals</a>
+                </div>
+            </div>
+        </section>
+    {% endif %}
+
+    <!-- =========================================================
+         MOBILE STICKY ADD-TO-CART CTA
+    ========================================================== -->
+
+    <div class="deal-mobile-cta" id="deal-mobile-cta">
+        <div class="deal-mobile-cta-inner">
+            <span>
+                <span class="deal-mobile-total-label">Estimated total</span>
+                <strong class="deal-mobile-total" id="deal-mobile-total">—</strong>
+            </span>
+
+            <button
+                class="btn btn-primary deal-mobile-add"
+                id="deal-mobile-add"
+                type="button"
+                disabled
+            >
+                <span class="deal-add-spinner" aria-hidden="true"></span>
+                <span id="deal-mobile-add-label">Add to Cart</span>
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    "use strict";
+
+    /* =========================================================
+       DOM / CONFIGURATION
+       All backend values are read from HTML data attributes so
+       this JavaScript block remains pure JavaScript.
+    ========================================================== */
+
+    const root = document.getElementById("deal-page-root");
+
+    if (!root) {
+        return;
+    }
+
+    const config = {
+        dealId: root.dataset.dealId || "",
+        basePriceMinor: Number(root.dataset.priceMinor || 0),
+        originalPriceMinor: Number(root.dataset.originalPriceMinor || 0),
+        pricingVersion: Number(root.dataset.pricingVersion || 1),
+        active: root.dataset.active === "1",
+        outletAvailable: root.dataset.outletAvailable === "1",
+        serviceMode: root.dataset.serviceMode || "",
+        outletId: root.dataset.outletId || "",
+        authenticated: root.dataset.authenticated === "1",
+        customer: root.dataset.customer === "1",
+        optionsEnabled: root.dataset.optionsEnabled === "1",
+        startAt: root.dataset.startAt || "",
+        endAt: root.dataset.endAt || "",
+        maxQuantity: Math.min(20, Math.max(1, Number(root.dataset.maxQuantity || 20))),
+        cartAddUrl: root.dataset.cartAddUrl || "",
+        cartUrl: root.dataset.cartUrl || "",
+        cartPageUrl: root.dataset.cartPageUrl || "/cart",
+        loginUrl: root.dataset.loginUrl || "/login",
+        homeUrl: root.dataset.homeUrl || "/",
+        dealsUrl: root.dataset.dealsUrl || "/deals"
+    };
+
+    const state = {
+        quantity: 1,
+        extrasMinor: 0,
+        estimatedUnitMinor: config.basePriceMinor,
+        estimatedTotalMinor: config.basePriceMinor,
+        submitting: false,
+        clientExpired: false
+    };
+
+    const reducedMotionQuery = window.matchMedia
+        ? window.matchMedia("(prefers-reduced-motion: reduce)")
+        : null;
+
+    function prefersReducedMotion() {
+        return Boolean(reducedMotionQuery && reducedMotionQuery.matches);
+    }
+
+    /* =========================================================
+       GLOBAL BASE HELPERS
+    ========================================================== */
+
+    function showToast(message, type = "info", options = {}) {
+        if (window.AppUI && typeof window.AppUI.showToast === "function") {
+            return window.AppUI.showToast(message, type, options);
+        }
+
+        if (typeof window.showToast === "function") {
+            return window.showToast(message, type, options);
+        }
+
+        return null;
+    }
+
+    function csrfFetch(url, options = {}) {
+        if (window.AppUI && typeof window.AppUI.csrfFetch === "function") {
+            return window.AppUI.csrfFetch(url, options);
+        }
+
+        return window.fetch(url, {
+            credentials: "same-origin",
+            ...options
+        });
+    }
+
+    async function fetchJson(url, options = {}) {
+        const response = await csrfFetch(url, options);
+        let payload = null;
+
+        try {
+            payload = await response.json();
+        } catch (error) {
+            throw Object.assign(
+                new Error("The server returned an unreadable response. Please try again."),
+                {
+                    code: "INVALID_RESPONSE",
+                    status: response.status
+                }
+            );
+        }
+
+        if (response.ok && payload && payload.success) {
+            return payload.data;
+        }
+
+        const message = payload && payload.error && payload.error.message
+            ? payload.error.message
+            : "Unable to complete this request. Please try again.";
+
+        throw Object.assign(new Error(message), {
+            code: payload && payload.error ? payload.error.code : "REQUEST_FAILED",
+            status: response.status,
+            details: payload && payload.error ? payload.error.details : null
+        });
+    }
+
+    function updateCartCount(count) {
+        if (window.AppUI && typeof window.AppUI.updateCartCount === "function") {
+            window.AppUI.updateCartCount(count);
+            return;
+        }
+
+        if (typeof window.updateCartCount === "function") {
+            window.updateCartCount(count);
+        }
+    }
+
+    /* =========================================================
+       MONEY / CART HELPERS
+    ========================================================== */
+
+    function formatMoneyMinor(minor) {
+        const numeric = Number(minor);
+
+        if (!Number.isFinite(numeric)) {
+            return "Price unavailable";
+        }
+
+        const amount = numeric / 100;
+
+        return `Rs. ${new Intl.NumberFormat("en-PK", {
+            minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+            maximumFractionDigits: 2
+        }).format(amount)}`;
+    }
+
+    function cartItemCount(cart) {
+        if (!cart || !Array.isArray(cart.items)) {
+            return 0;
+        }
+
+        return cart.items.reduce((sum, item) => {
+            return sum + Math.max(0, Number(item.quantity) || 0);
+        }, 0);
+    }
+
+    function newestDealCartItem(cart) {
+        if (!cart || !Array.isArray(cart.items)) {
+            return null;
+        }
+
+        for (let index = cart.items.length - 1; index >= 0; index -= 1) {
+            const item = cart.items[index];
+
+            if (item && item.item_type === "deal" && item.deal_id === config.dealId) {
+                return item;
+            }
+        }
+
+        return null;
+    }
+
+    /* =========================================================
+       MEDIA GALLERY
+    ========================================================== */
+
+    function initializeDealGallery() {
+        const thumbnails = document.getElementById("deal-media-thumbnails");
+        const buttons = thumbnails
+            ? Array.from(thumbnails.querySelectorAll("[data-media-url]"))
+            : [];
+        const image = document.getElementById("deal-main-image");
+        const video = document.getElementById("deal-main-video");
+        const placeholder = document.getElementById("deal-main-placeholder");
+
+        if (!thumbnails || buttons.length <= 1) {
+            if (thumbnails) {
+                thumbnails.hidden = true;
+            }
+            return;
+        }
+
+        thumbnails.hidden = false;
+
+        function showMedia(button) {
+            const type = button.dataset.mediaType || "image";
+            const url = button.dataset.mediaUrl || "";
+            const poster = button.dataset.mediaPoster || "";
+            const alt = button.dataset.mediaAlt || "Deal media";
+
+            if (!url) {
+                return;
+            }
+
+            buttons.forEach((item) => {
+                const active = item === button;
+                item.classList.toggle("is-active", active);
+                item.setAttribute("aria-pressed", active ? "true" : "false");
+            });
+
+            if (type === "video") {
+                if (image) {
+                    image.hidden = true;
+                }
+
+                if (placeholder) {
+                    placeholder.hidden = true;
+                }
+
+                if (video) {
+                    video.pause();
+                    video.src = url;
+                    video.poster = poster;
+                    video.hidden = false;
+                    video.load();
+                }
+
+                return;
+            }
+
+            if (video) {
+                video.pause();
+                video.removeAttribute("src");
+                video.load();
+                video.hidden = true;
+            }
+
+            if (image) {
+                image.src = url;
+                image.alt = alt;
+                image.hidden = false;
+            } else if (placeholder) {
+                placeholder.hidden = false;
+            }
+        }
+
+        buttons.forEach((button) => {
+            button.addEventListener("click", () => showMedia(button));
+        });
+
+        if (image) {
+            image.addEventListener("error", () => {
+                image.hidden = true;
+                if (placeholder) {
+                    placeholder.hidden = false;
+                }
+            });
+        }
+
+        if (video) {
+            video.addEventListener("error", () => {
+                video.hidden = true;
+
+                if (image && image.getAttribute("src")) {
+                    image.hidden = false;
+                } else if (placeholder) {
+                    placeholder.hidden = false;
+                }
+            });
+        }
+    }
+
+    /* =========================================================
+       SERVICE / OUTLET ACTION
+    ========================================================== */
+
+    function initializeServiceChange() {
+        const button = document.getElementById("deal-change-service");
+
+        if (!button) {
+            return;
+        }
+
+        button.addEventListener("click", () => {
+            if (typeof window.openServiceModal === "function") {
+                window.openServiceModal();
+                return;
+            }
+
+            if (window.AppUI && typeof window.AppUI.openServiceModal === "function") {
+                window.AppUI.openServiceModal();
+                return;
+            }
+
+            showToast(
+                "Service selection is managed from the homepage. Redirecting you there.",
+                "info"
+            );
+
+            window.setTimeout(() => {
+                window.location.href = config.homeUrl;
+            }, 450);
+        });
+
+        window.addEventListener("service-selection:changed", () => {
+            showToast("Service changed. Reloading this deal to recheck availability.", "info");
+            window.setTimeout(() => window.location.reload(), 300);
+        });
+    }
+
+    /* =========================================================
+       VALIDITY / REAL COUNTDOWN
+       Secondary UI only. Backend remains authoritative.
+    ========================================================== */
+
+    function initializeValidity() {
+        const text = document.getElementById("deal-validity-text");
+        const countdown = document.getElementById("deal-countdown");
+
+        const start = config.startAt ? new Date(config.startAt) : null;
+        const end = config.endAt ? new Date(config.endAt) : null;
+
+        const validStart = start && !Number.isNaN(start.getTime()) ? start : null;
+        const validEnd = end && !Number.isNaN(end.getTime()) ? end : null;
+
+        function formatDate(date) {
+            return new Intl.DateTimeFormat("en-PK", {
+                day: "numeric",
+                month: "short",
+                year: "numeric",
+                hour: "numeric",
+                minute: "2-digit"
+            }).format(date);
+        }
+
+        if (text) {
+            if (validStart && validEnd) {
+                text.textContent = `Valid from ${formatDate(validStart)} until ${formatDate(validEnd)}.`;
+            } else if (validEnd) {
+                text.textContent = `Available until ${formatDate(validEnd)}.`;
+            } else if (validStart) {
+                text.textContent = `Available from ${formatDate(validStart)}.`;
+            }
+        }
+
+        if (!validEnd || !countdown) {
+            return;
+        }
+
+        function tick() {
+            const remaining = validEnd.getTime() - Date.now();
+
+            if (remaining <= 0) {
+                countdown.hidden = false;
+                countdown.textContent = "This displayed validity window has ended.";
+                state.clientExpired = true;
+                setAvailabilityState(false, "This deal is no longer available.");
+                return false;
+            }
+
+            const seconds = Math.floor(remaining / 1000);
+            const days = Math.floor(seconds / 86400);
+            const hours = Math.floor((seconds % 86400) / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+
+            countdown.hidden = false;
+
+            if (days > 0) {
+                countdown.textContent = `Ends in ${days}d ${hours}h`;
+            } else if (hours > 0) {
+                countdown.textContent = `Ends in ${hours}h ${minutes}m`;
+            } else {
+                countdown.textContent = `Ends in ${Math.max(0, minutes)}m`;
+            }
+
+            return true;
+        }
+
+        if (!tick()) {
+            return;
+        }
+
+        window.setInterval(() => {
+            if (document.hidden) {
+                return;
+            }
+
+            tick();
+        }, 60000);
+    }
+
+    /* =========================================================
+       FUTURE BACKEND-GATED OPTION GROUPS
+    ========================================================== */
+
+    function initializeDealOptions() {
+        const region = document.getElementById("deal-options-region");
+
+        if (!config.optionsEnabled) {
+            if (region) {
+                region.hidden = true;
+            }
+            return;
+        }
+
+        const groups = Array.from(document.querySelectorAll("[data-option-group]"));
+
+        if (!groups.length) {
+            if (region) {
+                region.hidden = true;
+            }
+            return;
+        }
+
+        if (region) {
+            region.hidden = false;
+        }
+
+        groups.forEach((group) => {
+            const inputs = Array.from(group.querySelectorAll("[data-deal-option]"));
+
+            inputs.forEach((input) => {
+                input.disabled = input.dataset.active !== "1";
+
+                if (input.dataset.default === "1" && !input.disabled) {
+                    input.checked = true;
+                }
+
+                input.addEventListener("change", () => {
+                    enforceGroupMaximum(group, input);
+                    clearGroupError(group);
+                    calculateDisplayEstimate();
+                    renderSelectionSummary();
+                });
+            });
+        });
+
+        calculateDisplayEstimate();
+        renderSelectionSummary();
+    }
+
+    function selectedInputsForGroup(group) {
+        return Array.from(group.querySelectorAll("[data-deal-option]:checked"));
+    }
+
+    function enforceGroupMaximum(group, changedInput) {
+        const max = Number(group.dataset.maxSelections || 1);
+
+        if (max < 0) {
+            return;
+        }
+
+        const selected = selectedInputsForGroup(group);
+
+        if (selected.length <= max) {
+            return;
+        }
+
+        changedInput.checked = false;
+
+        const name = group.dataset.groupName || "this option group";
+        showToast(`Choose up to ${max} option${max === 1 ? "" : "s"} for ${name}.`, "warning");
+    }
+
+    function clearGroupError(group) {
+        group.classList.remove("has-error");
+        group.removeAttribute("aria-invalid");
+
+        const error = group.querySelector("[data-option-error]");
+        if (error) {
+            error.textContent = "";
+        }
+    }
+
+    function showGroupError(group, message) {
+        group.classList.add("has-error");
+        group.setAttribute("aria-invalid", "true");
+
+        const error = group.querySelector("[data-option-error]");
+        if (error) {
+            error.textContent = message;
+        }
+    }
+
+    function collectDealSelections() {
+        const selections = {};
+
+        if (!config.optionsEnabled) {
+            return selections;
+        }
+
+        document.querySelectorAll("[data-option-group]").forEach((group) => {
+            const groupKey = group.dataset.groupKey || "";
+
+            if (!groupKey) {
+                return;
+            }
+
+            selections[groupKey] = selectedInputsForGroup(group).map((input) => input.dataset.optionId || input.value);
+        });
+
+        return selections;
+    }
+
+    function validateDealSelection() {
+        const errors = [];
+        let firstInvalidGroup = null;
+
+        if (config.optionsEnabled) {
+            document.querySelectorAll("[data-option-group]").forEach((group) => {
+                clearGroupError(group);
+
+                const selectedCount = selectedInputsForGroup(group).length;
+                const min = Math.max(0, Number(group.dataset.minSelections || 0));
+                const max = Number(group.dataset.maxSelections || 1);
+                const name = group.dataset.groupName || "this option group";
+
+                if (selectedCount < min) {
+                    const message = `Select at least ${min} option${min === 1 ? "" : "s"} for ${name}.`;
+                    showGroupError(group, message);
+                    errors.push(message);
+                    firstInvalidGroup = firstInvalidGroup || group;
+                } else if (max >= 0 && selectedCount > max) {
+                    const message = `Select at most ${max} option${max === 1 ? "" : "s"} for ${name}.`;
+                    showGroupError(group, message);
+                    errors.push(message);
+                    firstInvalidGroup = firstInvalidGroup || group;
+                }
+            });
+        }
+
+        if (!Number.isInteger(state.quantity) || state.quantity < 1 || state.quantity > config.maxQuantity) {
+            errors.push(`Quantity must be between 1 and ${config.maxQuantity}.`);
+        }
+
+        if (!config.active || !config.outletAvailable || state.clientExpired) {
+            errors.push("This deal is currently unavailable.");
+        }
+
+        if (!config.serviceMode || !config.outletId) {
+            errors.push("Select Delivery, Pickup, or Dine-In and an outlet before adding this deal.");
+        }
+
+        if (errors.length && firstInvalidGroup) {
+            firstInvalidGroup.scrollIntoView({
+                behavior: prefersReducedMotion() ? "auto" : "smooth",
+                block: "center"
+            });
+
+            const firstInput = firstInvalidGroup.querySelector("[data-deal-option]:not(:disabled)");
+            if (firstInput) {
+                firstInput.focus({ preventScroll: true });
+            }
+        }
+
+        return {
+            valid: errors.length === 0,
+            errors,
+            selections: collectDealSelections()
+        };
+    }
+
+    function renderSelectionSummary() {
+        const section = document.getElementById("deal-selection-summary");
+        const list = document.getElementById("deal-selection-list");
+
+        if (!section || !list || !config.optionsEnabled) {
+            return;
+        }
+
+        const selected = Array.from(document.querySelectorAll("[data-deal-option]:checked"));
+        list.replaceChildren();
+
+        selected.forEach((input) => {
+            const item = document.createElement("li");
+            item.className = "deal-selection-chip";
+            item.textContent = input.dataset.optionName || input.value;
+            list.appendChild(item);
+        });
+
+        section.hidden = selected.length === 0;
+    }
+
+    /* =========================================================
+       QUANTITY
+    ========================================================== */
+
+    function initializeQuantity() {
+        const minus = document.getElementById("deal-quantity-minus");
+        const plus = document.getElementById("deal-quantity-plus");
+
+        function sync() {
+            const output = document.getElementById("deal-quantity-value");
+
+            if (output) {
+                output.textContent = String(state.quantity);
+            }
+
+            if (minus) {
+                minus.disabled = state.quantity <= 1;
+            }
+
+            if (plus) {
+                plus.disabled = state.quantity >= config.maxQuantity;
+            }
+
+            calculateDisplayEstimate();
+        }
+
+        if (minus) {
+            minus.addEventListener("click", () => {
+                state.quantity = Math.max(1, state.quantity - 1);
+                sync();
+            });
+        }
+
+        if (plus) {
+            plus.addEventListener("click", () => {
+                state.quantity = Math.min(config.maxQuantity, state.quantity + 1);
+                sync();
+            });
+        }
+
+        sync();
+    }
+
+    /* =========================================================
+       DISPLAY-ONLY PRICE ESTIMATE
+    ========================================================== */
+
+    function calculateDisplayEstimate() {
+        let extrasMinor = 0;
+
+        if (config.optionsEnabled) {
+            document.querySelectorAll("[data-deal-option]:checked").forEach((input) => {
+                const delta = Number(input.dataset.priceDeltaMinor || 0);
+
+                if (Number.isFinite(delta)) {
+                    extrasMinor += delta;
+                }
+            });
+        }
+
+        state.extrasMinor = extrasMinor;
+        state.estimatedUnitMinor = Math.max(0, config.basePriceMinor + extrasMinor);
+        state.estimatedTotalMinor = state.estimatedUnitMinor * state.quantity;
+
+        const base = document.getElementById("deal-breakdown-base");
+        const extras = document.getElementById("deal-breakdown-extras");
+        const extrasRow = document.getElementById("deal-breakdown-extras-row");
+        const quantity = document.getElementById("deal-breakdown-quantity");
+        const total = document.getElementById("deal-estimated-total");
+        const mobileTotal = document.getElementById("deal-mobile-total");
+        const addLabel = document.getElementById("deal-add-label");
+        const mobileAddLabel = document.getElementById("deal-mobile-add-label");
+
+        if (base) {
+            base.textContent = formatMoneyMinor(config.basePriceMinor);
+        }
+
+        if (extras && extrasRow) {
+            extras.textContent = formatMoneyMinor(extrasMinor);
+            extrasRow.hidden = extrasMinor === 0;
+        }
+
+        if (quantity) {
+            quantity.textContent = String(state.quantity);
+        }
+
+        if (total) {
+            total.textContent = formatMoneyMinor(state.estimatedTotalMinor);
+        }
+
+        if (mobileTotal) {
+            mobileTotal.textContent = formatMoneyMinor(state.estimatedTotalMinor);
+        }
+
+        if (addLabel && !state.submitting) {
+            addLabel.textContent = `Add Deal to Cart · ${formatMoneyMinor(state.estimatedTotalMinor)}`;
+        }
+
+        if (mobileAddLabel && !state.submitting) {
+            mobileAddLabel.textContent = `Add · ${formatMoneyMinor(state.estimatedTotalMinor)}`;
+        }
+    }
+
+    /* =========================================================
+       AVAILABILITY STATE
+    ========================================================== */
+
+    function setAvailabilityState(available, message = "") {
+        const status = document.getElementById("deal-status-pill");
+        const badge = document.getElementById("deal-media-availability-badge");
+        const addButton = document.getElementById("deal-add-button");
+        const mobileAdd = document.getElementById("deal-mobile-add");
+
+        if (!available) {
+            config.outletAvailable = false;
+        }
+
+        [addButton, mobileAdd].forEach((button) => {
+            if (button) {
+                button.disabled = !available || state.submitting;
+            }
+        });
+
+        if (status) {
+            status.textContent = available ? "Available now" : (message || "Currently unavailable");
+            status.classList.toggle("is-error", !available);
+        }
+
+        if (badge) {
+            badge.textContent = available ? "Available" : "Unavailable";
+            badge.classList.toggle("is-unavailable", !available);
+        }
+    }
+
+    /* =========================================================
+       ADD DEAL TO CART
+    ========================================================== */
+
+    function setSubmissionState(loading) {
+        state.submitting = loading;
+
+        const desktop = document.getElementById("deal-add-button");
+        const mobile = document.getElementById("deal-mobile-add");
+        const desktopLabel = document.getElementById("deal-add-label");
+        const mobileLabel = document.getElementById("deal-mobile-add-label");
+
+        [desktop, mobile].forEach((button) => {
+            if (!button) {
+                return;
+            }
+
+            button.classList.toggle("is-loading", loading);
+            button.setAttribute("aria-busy", loading ? "true" : "false");
+            button.disabled = loading || !config.active || !config.outletAvailable || state.clientExpired;
+        });
+
+        if (desktopLabel) {
+            desktopLabel.textContent = loading
+                ? "Adding…"
+                : `Add Deal to Cart · ${formatMoneyMinor(state.estimatedTotalMinor)}`;
+        }
+
+        if (mobileLabel) {
+            mobileLabel.textContent = loading
+                ? "Adding…"
+                : `Add · ${formatMoneyMinor(state.estimatedTotalMinor)}`;
+        }
+    }
+
+    function showInlineError(message) {
+        const box = document.getElementById("deal-inline-error");
+
+        if (!box) {
+            return;
+        }
+
+        box.textContent = message || "";
+        box.classList.toggle("is-visible", Boolean(message));
+    }
+
+    function dealErrorMessage(error) {
+        const messages = {
+            DEAL_UNAVAILABLE: "This deal is unavailable or has expired.",
+            OUTLET_UNAVAILABLE: "Your selected outlet is currently unavailable.",
+            SERVICE_UNAVAILABLE_AT_OUTLET: "This service is not available at your selected outlet.",
+            INVALID_SERVICE_MODE: "Choose Delivery, Pickup, or Dine-In before adding this deal.",
+            CART_OUTLET_MISMATCH: "Your cart contains items from another outlet. Clear the cart before ordering from this outlet.",
+            CART_SERVICE_MODE_MISMATCH: "Your cart uses a different service mode. Clear the cart before changing service mode.",
+            AUTH_REQUIRED: "Please sign in to add this deal to your cart.",
+            CUSTOMER_ONLY: "Only customer accounts can add deals to a cart.",
+            VALIDATION_ERROR: "Please review the deal quantity and try again."
+        };
+
+        return messages[error.code] || error.message || "Unable to add this deal right now. Please try again.";
+    }
+
+    async function addDealToCart() {
+        if (state.submitting) {
+            return;
+        }
+
+        showInlineError("");
+
+        if (!config.authenticated) {
+            showToast("Please sign in with a customer account to add deals to your cart.", "info");
+
+            window.setTimeout(() => {
+                window.location.href = config.loginUrl;
+            }, 650);
+
+            return;
+        }
+
+        if (!config.customer) {
+            showToast("Only customer accounts can add deals to a cart.", "warning");
+            return;
+        }
+
+        const validation = validateDealSelection();
+
+        if (!validation.valid) {
+            const message = validation.errors[0] || "Please review your deal selection.";
+            showInlineError(message);
+            showToast(message, "warning");
+
+            if (!config.serviceMode || !config.outletId) {
+                const serviceButton = document.getElementById("deal-change-service");
+                if (serviceButton) {
+                    serviceButton.focus();
+                }
+            }
+
+            return;
+        }
+
+        /*
+         * Current main.py deal-cart contract accepts deal_id + quantity.
+         * Deal option selections are intentionally NOT sent unless the
+         * backend explicitly enables that future contract.
+         */
+        if (config.optionsEnabled && Object.keys(validation.selections).length > 0) {
+            showToast(
+                "This deal has configurable selections, but the current cart backend must be upgraded to price and store those choices before they can be submitted safely.",
+                "warning"
+            );
+            showInlineError(
+                "Deal-choice submission is not enabled by the current backend. No selection has been silently ignored."
+            );
+            return;
+        }
+
+        setSubmissionState(true);
+
+        try {
+            const cart = await fetchJson(config.cartAddUrl, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json"
+                },
+                body: JSON.stringify({
+                    item_type: "deal",
+                    deal_id: config.dealId,
+                    quantity: state.quantity,
+                    service_mode: config.serviceMode,
+                    outlet_id: config.outletId
+                })
+            });
+
+            updateCartCount(cartItemCount(cart));
+
+            const addedItem = newestDealCartItem(cart);
+
+            if (addedItem && Number.isFinite(Number(addedItem.unit_price_minor))) {
+                const serverUnitMinor = Number(addedItem.unit_price_minor);
+
+                if (serverUnitMinor !== config.basePriceMinor) {
+                    config.basePriceMinor = serverUnitMinor;
+                    calculateDisplayEstimate();
+                    showToast(
+                        "Deal added to cart. The server revalidated a newer deal price, which is now reflected in your cart.",
+                        "info"
+                    );
+                } else {
+                    showToast("Deal added to cart.", "success");
+                }
+            } else {
+                showToast("Deal added to cart.", "success");
+            }
+        } catch (error) {
+            const message = dealErrorMessage(error);
+            const warningCodes = new Set([
+                "DEAL_UNAVAILABLE",
+                "OUTLET_UNAVAILABLE",
+                "SERVICE_UNAVAILABLE_AT_OUTLET",
+                "CART_OUTLET_MISMATCH",
+                "CART_SERVICE_MODE_MISMATCH"
+            ]);
+
+            if (error.code === "DEAL_UNAVAILABLE") {
+                state.clientExpired = true;
+                setAvailabilityState(false, "Deal unavailable");
+            }
+
+            showInlineError(message);
+            showToast(message, warningCodes.has(error.code) ? "warning" : "error");
+        } finally {
+            setSubmissionState(false);
+        }
+    }
+
+    function initializeAddToCart() {
+        const desktop = document.getElementById("deal-add-button");
+        const mobile = document.getElementById("deal-mobile-add");
+
+        [desktop, mobile].forEach((button) => {
+            if (!button) {
+                return;
+            }
+
+            button.addEventListener("click", addDealToCart);
+        });
+    }
+
+    /* =========================================================
+       TERMS ACCORDION
+    ========================================================== */
+
+    function initializeTermsAccordion() {
+        const toggle = document.getElementById("deal-terms-toggle");
+        const content = document.getElementById("deal-terms-content");
+
+        if (!toggle || !content) {
+            return;
+        }
+
+        toggle.addEventListener("click", () => {
+            const open = toggle.getAttribute("aria-expanded") === "true";
+            toggle.setAttribute("aria-expanded", open ? "false" : "true");
+            content.hidden = open;
+        });
+    }
+
+    /* =========================================================
+       INITIAL CART COUNT
+    ========================================================== */
+
+    async function loadCartCount() {
+        if (!config.authenticated || !config.cartUrl) {
+            return;
+        }
+
+        try {
+            const cart = await fetchJson(config.cartUrl, {
+                headers: {
+                    "Accept": "application/json"
+                }
+            });
+
+            updateCartCount(cartItemCount(cart));
+        } catch (error) {
+            /* Cart badge refresh is optional on initial page load. */
+        }
+    }
+
+    /* =========================================================
+       INITIALIZATION
+    ========================================================== */
+
+    document.addEventListener("DOMContentLoaded", () => {
+        initializeDealGallery();
+        initializeServiceChange();
+        initializeValidity();
+        initializeDealOptions();
+        initializeQuantity();
+        initializeAddToCart();
+        initializeTermsAccordion();
+        loadCartCount();
+        calculateDisplayEstimate();
+
+        setAvailabilityState(
+            config.active && config.outletAvailable && !state.clientExpired,
+            "Currently unavailable"
+        );
+    });
+}());
+
+/* =====================================================================
+   PREMIUM DEAL DETAILS VISUAL LAYER
+   Presentation-only JavaScript.
+   Existing price, cart, option, service, validation and backend flows stay
+   authoritative and are not modified by this layer.
+   ===================================================================== */
+(function () {
+    "use strict";
+
+    const root =
+        document.getElementById(
+            "deal-page-root"
+        );
+
+    if (
+        !root ||
+        root.dataset.luxDetailsReady ===
+            "true"
+    ) {
+        return;
+    }
+
+    root.dataset.luxDetailsReady =
+        "true";
+
+    const reducedMotion =
+        window.matchMedia &&
+        window.matchMedia(
+            "(prefers-reduced-motion: reduce)"
+        ).matches;
+
+    const finePointer =
+        window.matchMedia &&
+        window.matchMedia(
+            "(hover: hover) and (pointer: fine)"
+        ).matches;
+
+    function clamp(
+        value,
+        min,
+        max
+    ) {
+        return Math.min(
+            max,
+            Math.max(
+                min,
+                value
+            )
+        );
+    }
+
+    function ensureProgress() {
+        if (
+            root.querySelector(
+                ".deal-lux-progress"
+            )
+        ) {
+            return;
+        }
+
+        const bar =
+            document.createElement(
+                "div"
+            );
+
+        bar.className =
+            "deal-lux-progress";
+
+        bar.setAttribute(
+            "aria-hidden",
+            "true"
+        );
+
+        root.prepend(
+            bar
+        );
+    }
+
+    function updateProgress() {
+        const doc =
+            document.documentElement;
+
+        const max =
+            Math.max(
+                1,
+                doc.scrollHeight -
+                window.innerHeight
+            );
+
+        const ratio =
+            clamp(
+                (
+                    window.scrollY ||
+                    0
+                ) /
+                max,
+                0,
+                1
+            );
+
+        root.style.setProperty(
+            "--deal-lux-scroll",
+            (
+                ratio *
+                100
+            ).toFixed(2) +
+            "%"
+        );
+    }
+
+    function updateGlobalPointer(
+        event
+    ) {
+        if (
+            reducedMotion ||
+            !finePointer
+        ) {
+            return;
+        }
+
+        const x =
+            clamp(
+                (
+                    event.clientX /
+                    Math.max(
+                        window.innerWidth,
+                        1
+                    )
+                ) *
+                100,
+                0,
+                100
+            );
+
+        const y =
+            clamp(
+                (
+                    event.clientY /
+                    Math.max(
+                        window.innerHeight,
+                        1
+                    )
+                ) *
+                100,
+                0,
+                100
+            );
+
+        root.style.setProperty(
+            "--deal-lux-pointer-x",
+            x.toFixed(2) +
+            "%"
+        );
+
+        root.style.setProperty(
+            "--deal-lux-pointer-y",
+            y.toFixed(2) +
+            "%"
+        );
+    }
+
+    function wireDetailsPanel() {
+        const panel =
+            root.querySelector(
+                ".deal-details-column"
+            );
+
+        if (
+            !panel ||
+            panel.dataset.luxPanelReady ===
+                "true"
+        ) {
+            return;
+        }
+
+        panel.dataset.luxPanelReady =
+            "true";
+
+        panel.addEventListener(
+            "pointermove",
+            function (
+                event
+            ) {
+                if (
+                    reducedMotion ||
+                    !finePointer ||
+                    window.innerWidth <
+                        981
+                ) {
+                    return;
+                }
+
+                const rect =
+                    panel.getBoundingClientRect();
+
+                const px =
+                    clamp(
+                        (
+                            (
+                                event.clientX -
+                                rect.left
+                            ) /
+                            Math.max(
+                                rect.width,
+                                1
+                            )
+                        ) *
+                        100,
+                        0,
+                        100
+                    );
+
+                const py =
+                    clamp(
+                        (
+                            (
+                                event.clientY -
+                                rect.top
+                            ) /
+                            Math.max(
+                                rect.height,
+                                1
+                            )
+                        ) *
+                        100,
+                        0,
+                        100
+                    );
+
+                const nx =
+                    (
+                        px -
+                        50
+                    ) /
+                    50;
+
+                const ny =
+                    (
+                        py -
+                        50
+                    ) /
+                    50;
+
+                panel.style.setProperty(
+                    "--deal-lux-local-x",
+                    px.toFixed(2) +
+                    "%"
+                );
+
+                panel.style.setProperty(
+                    "--deal-lux-local-y",
+                    py.toFixed(2) +
+                    "%"
+                );
+
+                root.style.setProperty(
+                    "--deal-lux-detail-rx",
+                    (
+                        ny *
+                        -0.55
+                    ).toFixed(2) +
+                    "deg"
+                );
+
+                root.style.setProperty(
+                    "--deal-lux-detail-ry",
+                    (
+                        nx *
+                        0.68
+                    ).toFixed(2) +
+                    "deg"
+                );
+            },
+            {
+                passive:
+                    true
+            }
+        );
+
+        panel.addEventListener(
+            "pointerleave",
+            function () {
+                root.style.setProperty(
+                    "--deal-lux-detail-rx",
+                    "0deg"
+                );
+
+                root.style.setProperty(
+                    "--deal-lux-detail-ry",
+                    "0deg"
+                );
+
+                panel.style.setProperty(
+                    "--deal-lux-local-x",
+                    "83%"
+                );
+
+                panel.style.setProperty(
+                    "--deal-lux-local-y",
+                    "10%"
+                );
+            }
+        );
+    }
+
+    function wireMediaStage() {
+        const stage =
+            document.getElementById(
+                "deal-media-stage"
+            );
+
+        if (
+            !stage ||
+            stage.dataset.luxMediaReady ===
+                "true"
+        ) {
+            return;
+        }
+
+        stage.dataset.luxMediaReady =
+            "true";
+
+        stage.addEventListener(
+            "pointermove",
+            function (
+                event
+            ) {
+                if (
+                    reducedMotion ||
+                    !finePointer ||
+                    window.innerWidth <
+                        761
+                ) {
+                    return;
+                }
+
+                const rect =
+                    stage.getBoundingClientRect();
+
+                const px =
+                    clamp(
+                        (
+                            (
+                                event.clientX -
+                                rect.left
+                            ) /
+                            Math.max(
+                                rect.width,
+                                1
+                            )
+                        ) *
+                        100,
+                        0,
+                        100
+                    );
+
+                const py =
+                    clamp(
+                        (
+                            (
+                                event.clientY -
+                                rect.top
+                            ) /
+                            Math.max(
+                                rect.height,
+                                1
+                            )
+                        ) *
+                        100,
+                        0,
+                        100
+                    );
+
+                const nx =
+                    (
+                        px -
+                        50
+                    ) /
+                    50;
+
+                const ny =
+                    (
+                        py -
+                        50
+                    ) /
+                    50;
+
+                stage.style.setProperty(
+                    "--deal-lux-media-x",
+                    px.toFixed(2) +
+                    "%"
+                );
+
+                stage.style.setProperty(
+                    "--deal-lux-media-y",
+                    py.toFixed(2) +
+                    "%"
+                );
+
+                root.style.setProperty(
+                    "--deal-lux-media-rx",
+                    (
+                        ny *
+                        -1.8
+                    ).toFixed(2) +
+                    "deg"
+                );
+
+                root.style.setProperty(
+                    "--deal-lux-media-ry",
+                    (
+                        nx *
+                        2.1
+                    ).toFixed(2) +
+                    "deg"
+                );
+            },
+            {
+                passive:
+                    true
+            }
+        );
+
+        stage.addEventListener(
+            "pointerleave",
+            function () {
+                root.style.setProperty(
+                    "--deal-lux-media-rx",
+                    "0deg"
+                );
+
+                root.style.setProperty(
+                    "--deal-lux-media-ry",
+                    "0deg"
+                );
+
+                stage.style.setProperty(
+                    "--deal-lux-media-x",
+                    "78%"
+                );
+
+                stage.style.setProperty(
+                    "--deal-lux-media-y",
+                    "12%"
+                );
+            }
+        );
+    }
+
+    function wireSectionLight(
+        card
+    ) {
+        if (
+            !card ||
+            card.dataset.luxSectionReady ===
+                "true"
+        ) {
+            return;
+        }
+
+        card.dataset.luxSectionReady =
+            "true";
+
+        card.addEventListener(
+            "pointermove",
+            function (
+                event
+            ) {
+                if (
+                    reducedMotion ||
+                    !finePointer
+                ) {
+                    return;
+                }
+
+                const rect =
+                    card.getBoundingClientRect();
+
+                const px =
+                    clamp(
+                        (
+                            (
+                                event.clientX -
+                                rect.left
+                            ) /
+                            Math.max(
+                                rect.width,
+                                1
+                            )
+                        ) *
+                        100,
+                        0,
+                        100
+                    );
+
+                const py =
+                    clamp(
+                        (
+                            (
+                                event.clientY -
+                                rect.top
+                            ) /
+                            Math.max(
+                                rect.height,
+                                1
+                            )
+                        ) *
+                        100,
+                        0,
+                        100
+                    );
+
+                card.style.setProperty(
+                    "--deal-lux-section-x",
+                    px.toFixed(2) +
+                    "%"
+                );
+
+                card.style.setProperty(
+                    "--deal-lux-section-y",
+                    py.toFixed(2) +
+                    "%"
+                );
+            },
+            {
+                passive:
+                    true
+            }
+        );
+    }
+
+    function wireSections() {
+        root
+            .querySelectorAll(
+                [
+                    ".deal-section-card",
+                    ".deal-order-card",
+                    ".deal-terms-section"
+                ].join(
+                    ","
+                )
+            )
+            .forEach(
+                wireSectionLight
+            );
+    }
+
+    function wireRelatedCard(
+        card
+    ) {
+        if (
+            !card ||
+            card.dataset.luxRelatedReady ===
+                "true"
+        ) {
+            return;
+        }
+
+        card.dataset.luxRelatedReady =
+            "true";
+
+        card.addEventListener(
+            "pointermove",
+            function (
+                event
+            ) {
+                if (
+                    reducedMotion ||
+                    !finePointer ||
+                    window.innerWidth <
+                        761
+                ) {
+                    return;
+                }
+
+                const rect =
+                    card.getBoundingClientRect();
+
+                const px =
+                    clamp(
+                        (
+                            (
+                                event.clientX -
+                                rect.left
+                            ) /
+                            Math.max(
+                                rect.width,
+                                1
+                            )
+                        ) *
+                        100,
+                        0,
+                        100
+                    );
+
+                const py =
+                    clamp(
+                        (
+                            (
+                                event.clientY -
+                                rect.top
+                            ) /
+                            Math.max(
+                                rect.height,
+                                1
+                            )
+                        ) *
+                        100,
+                        0,
+                        100
+                    );
+
+                const nx =
+                    (
+                        px -
+                        50
+                    ) /
+                    50;
+
+                const ny =
+                    (
+                        py -
+                        50
+                    ) /
+                    50;
+
+                card.style.setProperty(
+                    "--deal-lux-card-x",
+                    px.toFixed(2) +
+                    "%"
+                );
+
+                card.style.setProperty(
+                    "--deal-lux-card-y",
+                    py.toFixed(2) +
+                    "%"
+                );
+
+                card.style.setProperty(
+                    "--deal-lux-card-rx",
+                    (
+                        ny *
+                        -1.15
+                    ).toFixed(2) +
+                    "deg"
+                );
+
+                card.style.setProperty(
+                    "--deal-lux-card-ry",
+                    (
+                        nx *
+                        1.35
+                    ).toFixed(2) +
+                    "deg"
+                );
+            },
+            {
+                passive:
+                    true
+            }
+        );
+
+        card.addEventListener(
+            "pointerleave",
+            function () {
+                card.style.setProperty(
+                    "--deal-lux-card-rx",
+                    "0deg"
+                );
+
+                card.style.setProperty(
+                    "--deal-lux-card-ry",
+                    "0deg"
+                );
+            }
+        );
+    }
+
+    function wireRelatedCards() {
+        root
+            .querySelectorAll(
+                ".deal-related-card"
+            )
+            .forEach(
+                wireRelatedCard
+            );
+    }
+
+    function ensureButtonShimmer() {
+        root
+            .querySelectorAll(
+                [
+                    ".deal-add-button",
+                    ".deal-mobile-add"
+                ].join(
+                    ","
+                )
+            )
+            .forEach(
+                function (
+                    button
+                ) {
+                    if (
+                        button.querySelector(
+                            ".deal-lux-shimmer"
+                        )
+                    ) {
+                        return;
+                    }
+
+                    const shine =
+                        document.createElement(
+                            "span"
+                        );
+
+                    shine.className =
+                        "deal-lux-shimmer";
+
+                    shine.setAttribute(
+                        "aria-hidden",
+                        "true"
+                    );
+
+                    button.appendChild(
+                        shine
+                    );
+                }
+            );
+    }
+
+    function createRipple(
+        button,
+        event
+    ) {
+        if (
+            reducedMotion ||
+            !button ||
+            button.disabled
+        ) {
+            return;
+        }
+
+        const rect =
+            button.getBoundingClientRect();
+
+        const ripple =
+            document.createElement(
+                "span"
+            );
+
+        ripple.className =
+            "deal-lux-ripple";
+
+        ripple.style.left =
+            (
+                event.clientX -
+                rect.left
+            ) +
+            "px";
+
+        ripple.style.top =
+            (
+                event.clientY -
+                rect.top
+            ) +
+            "px";
+
+        button.appendChild(
+            ripple
+        );
+
+        window.setTimeout(
+            function () {
+                ripple.remove();
+            },
+            650
+        );
+    }
+
+    function wireRipples() {
+        const selector =
+            [
+                ".deal-add-button",
+                ".deal-mobile-add",
+                ".deal-context-action",
+                ".deal-quantity-button",
+                ".deal-terms-toggle",
+                ".deal-related-cta .btn"
+            ].join(
+                ","
+            );
+
+        root
+            .querySelectorAll(
+                selector
+            )
+            .forEach(
+                function (
+                    button
+                ) {
+                    if (
+                        button.dataset.luxRippleReady ===
+                        "true"
+                    ) {
+                        return;
+                    }
+
+                    button.dataset.luxRippleReady =
+                        "true";
+
+                    button.addEventListener(
+                        "pointerdown",
+                        function (
+                            event
+                        ) {
+                            createRipple(
+                                button,
+                                event
+                            );
+                        }
+                    );
+                }
+            );
+    }
+
+    function revealTargets() {
+        const selector =
+            [
+                ".deal-media-stage",
+                ".deal-details-column",
+                ".deal-section-card",
+                ".deal-order-card",
+                ".deal-terms-section",
+                ".deal-related-head",
+                ".deal-related-card"
+            ].join(
+                ","
+            );
+
+        const nodes =
+            Array.from(
+                root.querySelectorAll(
+                    selector
+                )
+            );
+
+        nodes.forEach(
+            function (
+                node,
+                index
+            ) {
+                if (
+                    node.dataset.luxRevealReady ===
+                    "true"
+                ) {
+                    return;
+                }
+
+                node.dataset.luxRevealReady =
+                    "true";
+
+                node.classList.add(
+                    "deal-lux-reveal"
+                );
+
+                node.style.transitionDelay =
+                    Math.min(
+                        (
+                            index %
+                            6
+                        ) *
+                        42,
+                        190
+                    ) +
+                    "ms";
+            }
+        );
+
+        if (
+            reducedMotion ||
+            !(
+                "IntersectionObserver" in
+                window
+            )
+        ) {
+            nodes.forEach(
+                function (
+                    node
+                ) {
+                    node.classList.add(
+                        "is-visible"
+                    );
+                }
+            );
+
+            return;
+        }
+
+        const observer =
+            new IntersectionObserver(
+                function (
+                    entries,
+                    instance
+                ) {
+                    entries.forEach(
+                        function (
+                            entry
+                        ) {
+                            if (
+                                !entry.isIntersecting
+                            ) {
+                                return;
+                            }
+
+                            entry.target.classList.add(
+                                "is-visible"
+                            );
+
+                            instance.unobserve(
+                                entry.target
+                            );
+                        }
+                    );
+                },
+                {
+                    threshold:
+                        .08,
+
+                    rootMargin:
+                        "0px 0px -6% 0px"
+                }
+            );
+
+        nodes.forEach(
+            function (
+                node
+            ) {
+                observer.observe(
+                    node
+                );
+            }
+        );
+    }
+
+    function dynamicSupport() {
+        if (
+            !(
+                "MutationObserver" in
+                window
+            )
+        ) {
+            return;
+        }
+
+        const observer =
+            new MutationObserver(
+                function (
+                    records
+                ) {
+                    const meaningful =
+                        records.some(
+                            function (
+                                record
+                            ) {
+                                return (
+                                    record.type ===
+                                    "childList"
+                                ) ||
+                                (
+                                    record.type ===
+                                    "attributes" &&
+                                    record.attributeName ===
+                                    "hidden"
+                                );
+                            }
+                        );
+
+                    if (
+                        !meaningful
+                    ) {
+                        return;
+                    }
+
+                    window.requestAnimationFrame(
+                        function () {
+                            wireSections();
+                            wireRelatedCards();
+                            ensureButtonShimmer();
+                            wireRipples();
+                            revealTargets();
+                            updateProgress();
+                        }
+                    );
+                }
+            );
+
+        observer.observe(
+            root,
+            {
+                childList:
+                    true,
+
+                subtree:
+                    true,
+
+                attributes:
+                    true,
+
+                attributeFilter:
+                    [
+                        "hidden"
+                    ]
+            }
+        );
+    }
+
+    ensureProgress();
+    wireDetailsPanel();
+    wireMediaStage();
+    wireSections();
+    wireRelatedCards();
+    ensureButtonShimmer();
+    wireRipples();
+    revealTargets();
+    dynamicSupport();
+    updateProgress();
+
+    if (
+        !reducedMotion &&
+        finePointer
+    ) {
+        root.addEventListener(
+            "pointermove",
+            updateGlobalPointer,
+            {
+                passive:
+                    true
+            }
+        );
+    }
+
+    window.addEventListener(
+        "scroll",
+        updateProgress,
+        {
+            passive:
+                true
+        }
+    );
+
+    window.addEventListener(
+        "resize",
+        updateProgress
+    );
+}());
+
+</script>
+{% endblock %}

@@ -1,0 +1,2797 @@
+{% extends "base.html" %}
+
+{# =========================================================
+   SECURE CUSTOMER CHECKOUT — SINGLE FILE
+
+   CURRENT MAIN.PY SOURCE OF TRUTH
+   --------------------------------
+   GET /checkout -> checkout_page -> @customer_required
+     profile = authenticated Firestore user document
+     cart    = cart_public_data(get_cart(uid))
+
+   POST /checkout and POST /api/checkout -> checkout_submit
+     @customer_required, 20/hour, verified email required
+     Idempotency-Key required
+     validates payment method and checkout context
+     revalidates products/deals/pricing
+     validates cart revision inside Firestore transaction
+     atomically writes order/payment/history/idempotency
+     clears consumed cart only after the order transaction commits
+
+   GET /api/payment-methods -> payment_methods_api
+     returns customer-safe enabled payment configuration.
+
+   GET /api/cart -> get_cart_api
+   GET /api/locations -> locations_api
+
+   Backend checkout fields:
+     customer_name, phone, service_mode, outlet_id,
+     city, area, address, latitude, longitude,
+     order_notes, schedule_for, payment_method, bank_reference.
+
+   Never submit browser-authoritative identity, prices, totals,
+   payment/order status or timestamps.
+
+   IMPORTANT CURRENT LIMITATIONS
+   --------------------------------
+   - Checkout GET does not include payment-method configuration.
+     This page loads /api/payment-methods and only renders enabled methods.
+   - Checkout GET does not include selected outlet details.
+     This page resolves the cart outlet from /api/locations for display only.
+   - cart_public_data() currently calculates delivery_fee as 0. For Delivery,
+     this template does NOT show that placeholder as the final fee/total.
+   - main.py has no separate checkout quote/preflight endpoint.
+     No delivery fee or final Delivery total is invented in the browser.
+   - schedule_for exists; backend currently enforces a 20-minute minimum.
+   - Checkout does not silently change cart outlet/service.
+   - Easypaisa public_session shape is adapter-defined. This template does
+     not invent a provider redirect field.
+   - A lost final response is treated as ambiguous and is never auto-retried.
+========================================================= #}
+
+{% set profile_data = profile|default({}, true) %}
+{% if profile_data is not mapping %}{% set profile_data = {} %}{% endif %}
+{% set principal_data = principal|default({}, true) %}
+{% if principal_data is not mapping %}{% set principal_data = {} %}{% endif %}
+{% set cart_data = cart|default({}, true) %}
+{% if cart_data is not mapping %}{% set cart_data = {} %}{% endif %}
+{% set cart_items = cart_data.get("items", []) %}
+{% if cart_items is string or cart_items is not sequence %}{% set cart_items = [] %}{% endif %}
+{% set cart_totals = cart_data.get("totals", {}) %}
+{% if cart_totals is not mapping %}{% set cart_totals = {} %}{% endif %}
+
+{% set cart_service_mode = cart_data.get("service_mode", "")|default("", true)|string|lower|replace("-", "_") %}
+{% set cart_outlet_id = cart_data.get("outlet_id", "")|default("", true)|string %}
+{% set cart_revision = cart_data.get("revision", 0) %}
+{% set profile_name = profile_data.get("full_name", "")|default("", true)|string %}
+{% set profile_phone = profile_data.get("phone", "")|default("", true)|string %}
+{% set profile_email = profile_data.get("email", principal_data.get("email", ""))|default("", true)|string %}
+{% set profile_city = profile_data.get("city", "")|default("", true)|string %}
+{% set profile_area = profile_data.get("area", "")|default("", true)|string %}
+{% set profile_address = profile_data.get("address", "")|default("", true)|string %}
+{% set is_customer = principal_data.get("role", "") == "customer" %}
+{% set cart_has_items = cart_items|length > 0 %}
+{% set valid_cart_service = cart_service_mode in ["delivery", "pickup", "dine_in"] %}
+{% set checkout_ready_base = is_customer and cart_has_items and valid_cart_service and cart_outlet_id %}
+
+{% macro service_label(mode) -%}
+    {%- if mode == "delivery" -%}Delivery
+    {%- elif mode == "pickup" -%}Pickup
+    {%- elif mode == "dine_in" -%}Dine-In
+    {%- elif mode -%}{{ mode|replace("_", " ")|title }}
+    {%- else -%}Not selected
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro safe_image_url(raw_url) -%}
+    {%- set value = raw_url|default("", true)|string|trim -%}
+    {%- if (value.startswith("/") and not value.startswith("//")) or value.startswith("https://") or value.startswith("http://") -%}{{ value }}{%- endif -%}
+{%- endmacro %}
+
+{% macro money_from_minor(value, currency="PKR") -%}
+    {%- if value is number and value is not sameas true and value is not sameas false -%}
+        {%- set minor = value|int -%}
+        {%- set negative = minor < 0 -%}
+        {%- set absolute = -minor if negative else minor -%}
+        {%- set major = absolute // 100 -%}
+        {%- set cents = absolute % 100 -%}
+        {%- if negative -%}-{% endif -%}
+        {%- if currency == "PKR" -%}Rs.&nbsp;{{ "{:,}".format(major) }}.{{ "%02d"|format(cents) }}
+        {%- else -%}{{ currency }}&nbsp;{{ "{:,}".format(major) }}.{{ "%02d"|format(cents) }}
+        {%- endif -%}
+    {%- else -%}—
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro item_name(item) -%}
+    {%- if item.get("item_type") == "deal" -%}{{ item.get("deal_name", "Deal")|default("Deal", true) }}
+    {%- else -%}{{ item.get("product_name", "Item")|default("Item", true) }}
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro service_icon(mode) -%}
+    {% if mode == "delivery" %}
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v9H3z"></path><path d="M14 10h4l3 3v3h-7z"></path><circle cx="7" cy="18" r="2"></circle><circle cx="18" cy="18" r="2"></circle></svg>
+    {% elif mode == "pickup" %}
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9h14l-1 11H6L5 9Z"></path><path d="M8 9a4 4 0 0 1 8 0"></path></svg>
+    {% else %}
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v7a3 3 0 0 0 3 3V4"></path><path d="M4 8h3M7 14v6M16 4v16M13 4c0 4 1 6 3 6"></path></svg>
+    {% endif %}
+{%- endmacro %}
+
+{% block title %}Checkout | {{ business_name|default("Restaurant", true) }}{% endblock %}
+{% block meta_description %}Securely review your cart, fulfilment details and payment method before placing your order.{% endblock %}
+
+{% block head %}
+{{ super() }}
+<meta name="robots" content="noindex,nofollow">
+<meta name="googlebot" content="noindex,nofollow">
+<meta name="referrer" content="same-origin">
+{% endblock %}
+
+{% block styles %}
+<style>
+.checkout-page{
+    --co-primary:var(--primary-color,#b83222);--co-primary-hover:var(--primary-color-hover,#98281b);--co-primary-soft:var(--primary-color-soft,#fff0eb);--co-primary-contrast:var(--primary-contrast,#fff);
+    --co-bg:var(--background-color,#fffaf4);--co-bg-soft:var(--background-subtle,#f8f2ea);--co-surface:var(--surface-color,#fff);--co-surface-muted:var(--surface-muted,#f5eee5);
+    --co-text:var(--text-color,#201c19);--co-strong:var(--text-strong,#151210);--co-muted:var(--muted-text,#6f6760);--co-subtle:var(--subtle-text,#8c8279);
+    --co-border:var(--border-color,#e7ded4);--co-border-strong:var(--border-strong,#d3c6b9);--co-success:var(--success-color,#247a4a);--co-success-soft:var(--success-soft,#eaf7ef);
+    --co-warning:var(--warning-color,#9a6510);--co-warning-soft:var(--warning-soft,#fff5dc);--co-error:var(--error-color,#b42318);--co-error-soft:var(--error-soft,#fff0ee);--co-info:var(--info-color,#285ea8);--co-info-soft:var(--info-soft,#edf4ff);
+    --co-shadow:var(--shadow-sm,0 7px 20px rgba(31,24,19,.08));--co-shadow-lg:var(--shadow-md,0 18px 42px rgba(31,24,19,.12));--co-transition:var(--transition-fast,160ms ease);
+    min-height:74vh;padding:clamp(.85rem,2.5vw,1.5rem) 0 clamp(5rem,8vw,6.5rem);color:var(--co-text);
+    background:radial-gradient(circle at 4% 5%,color-mix(in srgb,var(--co-primary) 4%,transparent),transparent 30rem),radial-gradient(circle at 98% 45%,color-mix(in srgb,var(--accent-color,#d99b35) 3%,transparent),transparent 28rem)
+}
+.checkout-page,.checkout-page *,.checkout-page *::before,.checkout-page *::after{box-sizing:border-box}.checkout-page [hidden]{display:none!important}.checkout-page svg{display:block;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.checkout-shell{width:min(100% - 2rem,1240px);margin-inline:auto}
+.checkout-header{display:flex;align-items:flex-end;justify-content:space-between;gap:.9rem;flex-wrap:wrap;margin-bottom:.85rem}
+.checkout-eyebrow{display:inline-flex;align-items:center;gap:.4rem;margin:0 0 .36rem;color:var(--co-primary);font-size:.59rem;font-weight:870;letter-spacing:.08em;text-transform:uppercase}
+.checkout-eyebrow::before{content:"";width:22px;height:2px;border-radius:999px;background:currentColor}
+.checkout-header h1{margin:0;color:var(--co-strong);font-size:clamp(1.85rem,4.8vw,3.15rem);font-weight:930;line-height:1;letter-spacing:-.05em}
+.checkout-header__subtitle{max-width:68ch;margin:.48rem 0 0;color:var(--co-muted);font-size:.66rem;line-height:1.55}
+.checkout-progress{display:flex;align-items:center;gap:.25rem;flex-wrap:wrap;margin:0;padding:0;list-style:none}.checkout-progress li{display:inline-flex;align-items:center;gap:.25rem;color:var(--co-subtle);font-size:.49rem;font-weight:780}.checkout-progress li.is-current{color:var(--co-primary)}.checkout-progress__dot{width:7px;height:7px;border-radius:50%;background:currentColor}.checkout-progress__arrow{width:.55rem;height:.55rem;color:var(--co-subtle)}
+.checkout-alert{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.48rem;align-items:start;margin-bottom:.7rem;padding:.68rem .74rem;border:1px solid var(--co-border);border-radius:12px;background:var(--co-bg-soft);color:var(--co-muted);font-size:.54rem;line-height:1.48}
+.checkout-alert svg{width:.82rem;height:.82rem;margin-top:.02rem}.checkout-alert strong{display:block;color:currentColor;font-weight:860}.checkout-alert p{margin:.1rem 0 0;color:currentColor;opacity:.94}.checkout-alert__actions{display:flex;gap:.36rem;flex-wrap:wrap;margin-top:.48rem}
+.checkout-alert--error{border-color:color-mix(in srgb,var(--co-error) 26%,var(--co-border));background:var(--co-error-soft);color:var(--co-error)}.checkout-alert--warning{border-color:color-mix(in srgb,var(--co-warning) 26%,var(--co-border));background:var(--co-warning-soft);color:var(--co-warning)}.checkout-alert--info{border-color:color-mix(in srgb,var(--co-info) 24%,var(--co-border));background:var(--co-info-soft);color:var(--co-info)}.checkout-alert--success{border-color:color-mix(in srgb,var(--co-success) 24%,var(--co-border));background:var(--co-success-soft);color:var(--co-success)}
+.checkout-btn{min-height:42px;display:inline-flex;align-items:center;justify-content:center;gap:.34rem;padding:.53rem .66rem;border-radius:9px;font:inherit;font-size:.54rem;font-weight:830;line-height:1;text-decoration:none;transition:transform var(--co-transition),border-color var(--co-transition),background var(--co-transition),color var(--co-transition),opacity var(--co-transition)}
+button.checkout-btn{cursor:pointer}.checkout-btn svg{width:.74rem;height:.74rem}.checkout-btn--primary{border:1px solid var(--co-primary);background:var(--co-primary);color:var(--co-primary-contrast)}.checkout-btn--primary:hover:not(:disabled){transform:translateY(-1px);border-color:var(--co-primary-hover);background:var(--co-primary-hover)}.checkout-btn--secondary{border:1px solid var(--co-border);background:var(--co-surface);color:var(--co-text)}.checkout-btn--secondary:hover:not(:disabled){transform:translateY(-1px);border-color:var(--co-border-strong);background:var(--co-surface-muted)}.checkout-btn:disabled{cursor:not-allowed;opacity:.55;transform:none!important}
+.checkout-spinner{width:.78rem;height:.78rem;border:2px solid color-mix(in srgb,currentColor 30%,transparent);border-top-color:currentColor;border-radius:50%;animation:checkout-spin .82s linear infinite}@keyframes checkout-spin{to{transform:rotate(360deg)}}
+.checkout-layout{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(335px,.65fr);gap:.86rem;align-items:start}.checkout-main{min-width:0;display:grid;gap:.72rem}.checkout-sidebar{min-width:0}.checkout-summary-sticky{position:sticky;top:calc(var(--header-height,92px) + .8rem)}
+.checkout-card{overflow:hidden;border:1px solid var(--co-border);border-radius:15px;background:var(--co-surface);box-shadow:var(--co-shadow)}.checkout-card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:.65rem;padding:.72rem .8rem;border-bottom:1px solid var(--co-border)}.checkout-card__head h2{margin:0;color:var(--co-strong);font-size:.72rem;font-weight:880;line-height:1.35}.checkout-card__head p{margin:.14rem 0 0;color:var(--co-muted);font-size:.49rem;line-height:1.45}.checkout-card__body{padding:.78rem .8rem}.checkout-card__link{flex:0 0 auto;color:var(--co-primary);font-size:.49rem;font-weight:810;text-decoration:none}.checkout-card__link:hover{text-decoration:underline;text-underline-offset:.15em}
+.checkout-field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.62rem}.checkout-field-grid--single{grid-template-columns:1fr}.checkout-field{min-width:0}.checkout-field--full{grid-column:1/-1}.checkout-label{display:flex;align-items:center;justify-content:space-between;gap:.4rem;margin-bottom:.28rem;color:var(--co-text);font-size:.53rem;font-weight:810;line-height:1.35}.checkout-label__meta{color:var(--co-subtle);font-size:.45rem;font-weight:700}
+.checkout-input,.checkout-textarea{width:100%;border:1px solid var(--co-border-strong);border-radius:10px;background:var(--co-surface);color:var(--co-text);font:inherit;font-size:.58rem;line-height:1.42;outline:none;transition:border-color var(--co-transition),box-shadow var(--co-transition),background var(--co-transition)}.checkout-input{min-height:44px;padding:.55rem .62rem}.checkout-textarea{min-height:102px;padding:.58rem .62rem;resize:vertical}.checkout-input::placeholder,.checkout-textarea::placeholder{color:var(--co-subtle);opacity:1}.checkout-input:focus,.checkout-textarea:focus{border-color:var(--co-primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--co-primary) 16%,transparent)}.checkout-input[readonly]{background:var(--co-bg-soft);color:var(--co-muted);cursor:default}.checkout-input:disabled,.checkout-textarea:disabled{background:var(--co-surface-muted);color:var(--co-subtle);cursor:not-allowed;opacity:.72}.checkout-input[aria-invalid="true"],.checkout-textarea[aria-invalid="true"]{border-color:var(--co-error);box-shadow:0 0 0 2px color-mix(in srgb,var(--co-error) 10%,transparent)}
+.checkout-field-help{margin:.22rem 0 0;color:var(--co-subtle);font-size:.45rem;line-height:1.42}.checkout-field-error{margin:.2rem 0 0;color:var(--co-error);font-size:.47rem;font-weight:730;line-height:1.42}
+.checkout-email-row{display:flex;align-items:center;gap:.38rem;flex-wrap:wrap;margin-top:.34rem}.checkout-badge{min-height:27px;display:inline-flex;align-items:center;gap:.24rem;padding:.29rem .4rem;border:1px solid var(--co-border);border-radius:999px;background:var(--co-bg-soft);color:var(--co-muted);font-size:.45rem;font-weight:810;line-height:1}.checkout-badge svg{width:.65rem;height:.65rem}.checkout-badge--success{border-color:color-mix(in srgb,var(--co-success) 25%,var(--co-border));background:var(--co-success-soft);color:var(--co-success)}.checkout-badge--warning{border-color:color-mix(in srgb,var(--co-warning) 25%,var(--co-border));background:var(--co-warning-soft);color:var(--co-warning)}
+.checkout-service-box{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:.54rem;align-items:center;padding:.64rem;border:1px solid var(--co-border);border-radius:11px;background:var(--co-bg-soft)}.checkout-service-box__icon{width:38px;height:38px;display:grid;place-items:center;border-radius:10px;background:var(--co-primary-soft);color:var(--co-primary)}.checkout-service-box__icon svg{width:.88rem;height:.88rem}.checkout-service-box h3{margin:0;color:var(--co-strong);font-size:.61rem;font-weight:860;line-height:1.35}.checkout-service-box p{margin:.1rem 0 0;color:var(--co-muted);font-size:.49rem;line-height:1.42}
+.checkout-outlet-card{margin-top:.55rem;padding:.62rem;border:1px solid var(--co-border);border-radius:11px;background:var(--co-surface)}.checkout-outlet-card__loading{display:flex;align-items:center;gap:.38rem;color:var(--co-muted);font-size:.5rem}.checkout-outlet-card__title{margin:0;color:var(--co-strong);font-size:.59rem;font-weight:850;line-height:1.38;overflow-wrap:anywhere}.checkout-outlet-card__address{margin:.14rem 0 0;color:var(--co-muted);font-size:.49rem;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}.checkout-outlet-card__contact{margin:.18rem 0 0;color:var(--co-muted);font-size:.47rem;line-height:1.42}
+.checkout-geo{display:flex;align-items:center;justify-content:space-between;gap:.55rem;flex-wrap:wrap;margin-top:.5rem;padding:.52rem .58rem;border:1px solid var(--co-border);border-radius:10px;background:var(--co-bg-soft)}.checkout-geo__copy{min-width:0}.checkout-geo__copy strong{display:block;color:var(--co-text);font-size:.5rem;font-weight:820}.checkout-geo__copy p{margin:.08rem 0 0;color:var(--co-muted);font-size:.45rem;line-height:1.42}.checkout-geo__status{width:100%;margin:.15rem 0 0;color:var(--co-muted);font-size:.46rem;line-height:1.42}
+.checkout-choice-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.48rem}.checkout-choice{position:relative;min-width:0}.checkout-choice input{position:absolute;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none}.checkout-choice label{min-height:70px;display:flex;flex-direction:column;justify-content:center;gap:.12rem;padding:.58rem;border:1px solid var(--co-border);border-radius:11px;background:var(--co-bg-soft);color:var(--co-text);cursor:pointer;transition:border-color var(--co-transition),background var(--co-transition),box-shadow var(--co-transition)}.checkout-choice label strong{font-size:.54rem;font-weight:840}.checkout-choice label span{color:var(--co-muted);font-size:.45rem;line-height:1.38}.checkout-choice input:checked+label{border-color:var(--co-primary);background:var(--co-primary-soft);box-shadow:0 0 0 2px color-mix(in srgb,var(--co-primary) 11%,transparent)}.checkout-choice input:focus-visible+label{outline:3px solid color-mix(in srgb,var(--co-primary) 24%,transparent);outline-offset:2px}.checkout-schedule-field{margin-top:.56rem}
+.checkout-fieldset{min-width:0;margin:0;padding:0;border:0}.checkout-legend{width:100%;margin:0 0 .55rem;padding:0;color:var(--co-strong);font-size:.62rem;font-weight:860}.checkout-payment-loading{display:flex;align-items:center;gap:.4rem;min-height:52px;padding:.58rem;border:1px dashed var(--co-border-strong);border-radius:10px;color:var(--co-muted);font-size:.5rem}
+.checkout-payment-types{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.48rem}
+.checkout-payment-type{position:relative;min-width:0}.checkout-payment-type input{position:absolute;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none}
+.checkout-payment-type label{min-height:82px;display:flex;flex-direction:column;justify-content:center;gap:.12rem;padding:.62rem;border:1px solid var(--co-border);border-radius:11px;background:var(--co-bg-soft);cursor:pointer;transition:border-color var(--co-transition),background var(--co-transition),box-shadow var(--co-transition)}
+.checkout-payment-type label strong{color:var(--co-strong);font-size:.56rem;font-weight:860}.checkout-payment-type label span{color:var(--co-muted);font-size:.45rem;line-height:1.4}
+.checkout-payment-type input:checked+label{border-color:var(--co-primary);background:var(--co-primary-soft);box-shadow:0 0 0 2px color-mix(in srgb,var(--co-primary) 11%,transparent)}
+.checkout-payment-type input:disabled+label{cursor:not-allowed;opacity:.5}
+.checkout-advance-box{margin-top:.56rem;padding:.62rem;border:1px solid var(--co-border);border-radius:11px;background:var(--co-surface)}
+.checkout-advance-box__head{margin-bottom:.5rem}.checkout-advance-box__head strong{display:block;color:var(--co-strong);font-size:.57rem;font-weight:850}.checkout-advance-box__head span{display:block;margin-top:.08rem;color:var(--co-muted);font-size:.45rem;line-height:1.4}
+.checkout-payment-option.is-disabled label{cursor:not-allowed;opacity:.55}.checkout-payment-option__badge{display:inline-flex;align-items:center;padding:.2rem .34rem;border-radius:999px;background:var(--co-warning-soft);color:var(--co-warning);font-size:.41rem;font-weight:820;white-space:nowrap}
+.checkout-payment-list{display:grid;gap:.45rem}.checkout-payment-option{position:relative}.checkout-payment-option input{position:absolute;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none}.checkout-payment-option label{min-height:70px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:.5rem;align-items:center;padding:.6rem;border:1px solid var(--co-border);border-radius:11px;background:var(--co-bg-soft);cursor:pointer;transition:border-color var(--co-transition),background var(--co-transition),box-shadow var(--co-transition)}.checkout-payment-option input:checked+label{border-color:var(--co-primary);background:var(--co-primary-soft);box-shadow:0 0 0 2px color-mix(in srgb,var(--co-primary) 11%,transparent)}.checkout-payment-option input:focus-visible+label{outline:3px solid color-mix(in srgb,var(--co-primary) 24%,transparent);outline-offset:2px}
+.checkout-payment-option__icon{width:36px;height:36px;display:grid;place-items:center;border-radius:10px;background:var(--co-surface);color:var(--co-primary)}.checkout-payment-option__icon svg{width:.82rem;height:.82rem}.checkout-payment-option__copy strong{display:block;color:var(--co-strong);font-size:.56rem;font-weight:850}.checkout-payment-option__copy span{display:block;margin-top:.08rem;color:var(--co-muted);font-size:.45rem;line-height:1.4}.checkout-payment-option__radio{width:16px;height:16px;display:grid;place-items:center;border:1.5px solid var(--co-border-strong);border-radius:50%;background:var(--co-surface)}.checkout-payment-option input:checked+label .checkout-payment-option__radio{border-color:var(--co-primary)}.checkout-payment-option input:checked+label .checkout-payment-option__radio::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--co-primary)}
+.checkout-payment-details{margin-top:.56rem;padding:.62rem;border:1px solid var(--co-border);border-radius:11px;background:var(--co-bg-soft)}.checkout-payment-details h3{margin:0;color:var(--co-strong);font-size:.57rem;font-weight:850}.checkout-payment-details p{margin:.18rem 0 0;color:var(--co-muted);font-size:.48rem;line-height:1.47;white-space:pre-wrap;overflow-wrap:anywhere}.checkout-bank-list{display:grid;gap:.34rem;margin:.5rem 0 0}.checkout-bank-row{display:grid;grid-template-columns:minmax(92px,.42fr) minmax(0,1fr) auto;gap:.4rem;align-items:center;padding-top:.34rem;border-top:1px solid var(--co-border);font-size:.48rem;line-height:1.42}.checkout-bank-row dt{color:var(--co-subtle);font-weight:720}.checkout-bank-row dd{min-width:0;margin:0;color:var(--co-text);font-weight:780;overflow-wrap:anywhere}.checkout-copy-btn{min-height:32px;padding:.34rem .42rem;border:1px solid var(--co-border);border-radius:8px;background:var(--co-surface);color:var(--co-text);font:inherit;font-size:.44rem;font-weight:790;cursor:pointer}.checkout-wallet-field{margin-top:.6rem;padding-top:.56rem;border-top:1px solid var(--co-border)}.checkout-wallet-field .checkout-field-help{max-width:68ch}.checkout-wallet-preview{display:flex;align-items:center;gap:.32rem;margin-top:.4rem;color:var(--co-muted);font-size:.45rem;line-height:1.4}.checkout-wallet-preview svg{width:.68rem;height:.68rem;color:var(--co-primary);flex:0 0 auto}
+.checkout-summary-items{display:grid;gap:.5rem;margin:0;padding:0;list-style:none}.checkout-summary-item{display:grid;grid-template-columns:50px minmax(0,1fr) auto;gap:.48rem;align-items:start}.checkout-summary-item__media{width:50px;height:50px;overflow:hidden;display:grid;place-items:center;border:1px solid var(--co-border);border-radius:9px;background:var(--co-bg-soft);color:var(--co-subtle)}.checkout-summary-item__media img{width:100%;height:100%;object-fit:cover}.checkout-summary-item__media svg{width:.92rem;height:.92rem}.checkout-summary-item__copy{min-width:0}.checkout-summary-item__copy strong{display:block;color:var(--co-strong);font-size:.53rem;font-weight:830;line-height:1.38;overflow-wrap:anywhere}.checkout-summary-item__copy p{margin:.08rem 0 0;color:var(--co-muted);font-size:.44rem;line-height:1.4;overflow-wrap:anywhere}.checkout-summary-item__options{display:grid;gap:.06rem;margin:.18rem 0 0;padding:0;list-style:none}.checkout-summary-item__options li{color:var(--co-subtle);font-size:.42rem;line-height:1.36}.checkout-summary-item__amount{color:var(--co-text);font-size:.49rem;font-weight:830;white-space:nowrap;font-variant-numeric:tabular-nums}
+.checkout-summary-divider{height:1px;margin:.65rem 0;border:0;background:var(--co-border)}.checkout-totals{display:grid;gap:.38rem;margin:0}.checkout-total-row{display:flex;align-items:baseline;justify-content:space-between;gap:.6rem;font-size:.52rem;line-height:1.4}.checkout-total-row dt{color:var(--co-muted);font-weight:720}.checkout-total-row dd{margin:0;color:var(--co-text);font-weight:820;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}.checkout-total-row--grand{margin-top:.18rem;padding-top:.48rem;border-top:1px solid var(--co-border)}.checkout-total-row--grand dt{color:var(--co-strong);font-size:.62rem;font-weight:900}.checkout-total-row--grand dd{color:var(--co-strong);font-size:.7rem;font-weight:930}.checkout-total-row__pending{max-width:180px;color:var(--co-warning)!important;white-space:normal!important}
+.checkout-price-note{margin:.55rem 0 0;padding:.5rem .54rem;border:1px solid var(--co-border);border-radius:9px;background:var(--co-bg-soft);color:var(--co-muted);font-size:.45rem;line-height:1.43}.checkout-submit{margin-top:.7rem}.checkout-submit .checkout-btn{width:100%;min-height:48px}.checkout-legal{margin:.5rem 0 0;color:var(--co-subtle);font-size:.44rem;line-height:1.45;text-align:center}.checkout-legal a{color:var(--co-primary);font-weight:760}.checkout-sensitive-note{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.35rem;margin-top:.5rem;color:var(--co-muted);font-size:.44rem;line-height:1.42}.checkout-sensitive-note svg{width:.68rem;height:.68rem;color:var(--co-warning)}
+.checkout-empty{padding:clamp(1rem,4vw,1.55rem);border:1px solid var(--co-border);border-radius:16px;background:var(--co-surface);box-shadow:var(--co-shadow);text-align:center}.checkout-empty__icon{width:48px;height:48px;display:grid;place-items:center;margin:0 auto .48rem;border-radius:14px;background:var(--co-primary-soft);color:var(--co-primary)}.checkout-empty__icon svg{width:1.05rem;height:1.05rem}.checkout-empty h2{margin:0;color:var(--co-strong);font-size:.78rem;font-weight:880}.checkout-empty p{max-width:58ch;margin:.24rem auto 0;color:var(--co-muted);font-size:.54rem;line-height:1.5}.checkout-empty__actions{display:flex;align-items:center;justify-content:center;gap:.4rem;flex-wrap:wrap;margin-top:.68rem}
+.checkout-page a:focus-visible,.checkout-page button:focus-visible,.checkout-page input:focus-visible,.checkout-page textarea:focus-visible{outline:3px solid color-mix(in srgb,var(--co-primary) 23%,transparent);outline-offset:2px}.checkout-page input:-webkit-autofill,.checkout-page textarea:-webkit-autofill{-webkit-text-fill-color:var(--co-text);box-shadow:0 0 0 1000px var(--co-surface) inset;transition:background-color 9999s ease-out}
+@media(max-width:920px){.checkout-layout{grid-template-columns:1fr}.checkout-summary-sticky{position:static}}
+@media(max-width:680px){.checkout-shell{width:min(100% - 1rem,760px)}.checkout-field-grid,.checkout-choice-grid,.checkout-payment-types{grid-template-columns:1fr}.checkout-service-box{grid-template-columns:auto minmax(0,1fr)}.checkout-service-box .checkout-btn{grid-column:1/-1;width:100%}.checkout-bank-row{grid-template-columns:1fr}.checkout-copy-btn{width:fit-content}}
+@media(max-width:460px){.checkout-page{padding-top:.62rem}.checkout-shell{width:min(100% - .72rem,760px)}.checkout-header{align-items:flex-start;flex-direction:column}.checkout-card__head,.checkout-card__body{padding-right:.65rem;padding-left:.65rem}.checkout-summary-item{grid-template-columns:44px minmax(0,1fr);gap:.4rem}.checkout-summary-item__media{width:44px;height:44px}.checkout-summary-item__amount{grid-column:2;justify-self:start}.checkout-alert__actions,.checkout-empty__actions{align-items:stretch;flex-direction:column}.checkout-alert__actions .checkout-btn,.checkout-empty__actions .checkout-btn{width:100%}}
+@media(prefers-reduced-motion:reduce){.checkout-page *,.checkout-page *::before,.checkout-page *::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-iteration-count:1!important}.checkout-spinner{animation-duration:1.4s}}
+</style>
+{% endblock %}
+
+{% block content %}
+<section
+    class="checkout-page"
+    id="checkout-page-root"
+    data-submit-url="{{ url_for('checkout_submit') }}"
+    data-cart-url="{{ url_for('get_cart_api') }}"
+    data-payment-methods-url="{{ url_for('payment_methods_api') }}"
+    data-locations-url="{{ url_for('locations_api') }}"
+    data-order-url-template="{{ url_for('order_detail_page', order_id='__ORDER_ID__') }}"
+    data-cart-outlet-id="{{ cart_outlet_id }}"
+    data-cart-service-mode="{{ cart_service_mode }}"
+    data-cart-revision="{{ cart_revision }}"
+    data-cart-has-items="{{ 'true' if cart_has_items else 'false' }}"
+>
+    <span class="visually-hidden" id="checkout-live-region" role="status" aria-live="polite" aria-atomic="true"></span>
+
+    <div class="checkout-shell">
+        <header class="checkout-header">
+            <div>
+                <p class="checkout-eyebrow">Final Review</p>
+                <h1>Checkout</h1>
+                <p class="checkout-header__subtitle">
+                    Review your customer details, fulfilment context, payment method and server-provided cart summary before placing the order.
+                </p>
+            </div>
+
+            <ol class="checkout-progress" aria-label="Order progress">
+                <li><span class="checkout-progress__dot" aria-hidden="true"></span>Cart</li>
+                <li aria-hidden="true"><svg class="checkout-progress__arrow" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"></path></svg></li>
+                <li class="is-current" aria-current="step"><span class="checkout-progress__dot" aria-hidden="true"></span>Checkout</li>
+                <li aria-hidden="true"><svg class="checkout-progress__arrow" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"></path></svg></li>
+                <li><span class="checkout-progress__dot" aria-hidden="true"></span>Confirmation</li>
+            </ol>
+        </header>
+
+        <div class="checkout-alert checkout-alert--error" id="checkout-wide-error" role="alert" tabindex="-1" hidden>
+            <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5M12 16.5h.01"></path></svg>
+            <div>
+                <strong id="checkout-wide-error-title">Please review your checkout.</strong>
+                <p id="checkout-wide-error-message">Some information needs attention.</p>
+                <div class="checkout-alert__actions" id="checkout-wide-error-actions" hidden>
+                    <a class="checkout-btn checkout-btn--secondary" id="checkout-error-cart-link" href="{{ url_for('cart_page') }}">Review Cart</a>
+                    <a class="checkout-btn checkout-btn--secondary" id="checkout-error-orders-link" href="{{ url_for('orders_page') }}" hidden>Check My Orders</a>
+                    <a class="checkout-btn checkout-btn--secondary" id="checkout-error-login-link" href="{{ url_for('login_page') }}" hidden>Sign In Again</a>
+                </div>
+            </div>
+        </div>
+
+        {% if not is_customer %}
+            <section class="checkout-empty" aria-labelledby="checkout-customer-only-title">
+                <span class="checkout-empty__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3"></circle><path d="M5 20c.6-4.2 3-6.4 7-6.4s6.4 2.2 7 6.4"></path></svg>
+                </span>
+                <h2 id="checkout-customer-only-title">Customer checkout requires a customer account</h2>
+                <p>The backend protects Checkout with the authenticated customer session.</p>
+                <div class="checkout-empty__actions"><a class="checkout-btn checkout-btn--primary" href="{{ url_for('login_page') }}">Sign In</a></div>
+            </section>
+
+        {% elif not cart_has_items %}
+            <section class="checkout-empty" aria-labelledby="checkout-empty-cart-title">
+                <span class="checkout-empty__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M3 4h2l2.2 10h9.8l2-7H7"></path><circle cx="9" cy="19" r="1.4"></circle><circle cx="17" cy="19" r="1.4"></circle></svg>
+                </span>
+                <h2 id="checkout-empty-cart-title">Your cart is empty</h2>
+                <p>Add menu items before returning to Checkout.</p>
+                <div class="checkout-empty__actions"><a class="checkout-btn checkout-btn--primary" href="{{ url_for('menu_page') }}">Browse Menu</a></div>
+            </section>
+
+        {% elif not valid_cart_service or not cart_outlet_id %}
+            <section class="checkout-empty" aria-labelledby="checkout-context-missing-title">
+                <span class="checkout-empty__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M12 21s6-5.3 6-11a6 6 0 1 0-12 0c0 5.7 6 11 6 11Z"></path><circle cx="12" cy="10" r="2"></circle></svg>
+                </span>
+                <h2 id="checkout-context-missing-title">Select a valid service and outlet first</h2>
+                <p>This cart does not currently have the backend outlet/service context required for Checkout.</p>
+                <div class="checkout-empty__actions">
+                    <a class="checkout-btn checkout-btn--primary" href="{{ url_for('locations_page') }}">Choose Location</a>
+                    <a class="checkout-btn checkout-btn--secondary" href="{{ url_for('cart_page') }}">Review Cart</a>
+                </div>
+            </section>
+
+        {% else %}
+
+            {% if cart_service_mode == "delivery" %}
+                <section class="checkout-alert checkout-alert--info" aria-label="Delivery pricing notice">
+                    <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v6M12 7h.01"></path></svg>
+                    <div>
+                        <strong>Delivery pricing is server-calculated</strong>
+                        <p>
+                            The current Checkout GET response does not include an address-specific delivery fee quote.
+                            This page therefore does not display the cart's zero-fee placeholder as a confirmed delivery fee or final total.
+                        </p>
+                    </div>
+                </section>
+            {% endif %}
+
+            <form id="checkout-form" action="{{ url_for('checkout_submit') }}" method="post" novalidate>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" id="checkout-idempotency-key" name="idempotency_key" value="">
+                <input type="hidden" id="checkout-service-mode" name="service_mode" value="{{ cart_service_mode }}">
+                <input type="hidden" id="checkout-outlet-id" name="outlet_id" value="{{ cart_outlet_id }}">
+                <input type="hidden" id="checkout-latitude" name="latitude" value="">
+                <input type="hidden" id="checkout-longitude" name="longitude" value="">
+
+                <div class="checkout-layout">
+                    <div class="checkout-main">
+                        <section class="checkout-card" aria-labelledby="checkout-customer-title">
+                            <header class="checkout-card__head">
+                                <div>
+                                    <h2 id="checkout-customer-title">Customer Information</h2>
+                                    <p>Order contact details are separate from Profile editing.</p>
+                                </div>
+                                <a class="checkout-card__link" href="{{ url_for('profile_page') }}">Update saved details</a>
+                            </header>
+
+                            <div class="checkout-card__body">
+                                <div class="checkout-field-grid">
+                                    <div class="checkout-field">
+                                        <label class="checkout-label" for="checkout-customer-name">Full Name</label>
+                                        <input class="checkout-input" id="checkout-customer-name" name="customer_name" type="text" value="{{ profile_name }}" autocomplete="name" minlength="2" maxlength="120" required aria-describedby="checkout-customer-name-error">
+                                        <p class="checkout-field-error" id="checkout-customer-name-error" role="alert" hidden></p>
+                                    </div>
+
+                                    <div class="checkout-field">
+                                        <label class="checkout-label" for="checkout-phone">Phone</label>
+                                        <input class="checkout-input" id="checkout-phone" name="phone" type="tel" value="{{ profile_phone }}" autocomplete="tel" maxlength="22" required aria-describedby="checkout-phone-error">
+                                        <p class="checkout-field-error" id="checkout-phone-error" role="alert" hidden></p>
+                                    </div>
+
+                                    <div class="checkout-field checkout-field--full">
+                                        <label class="checkout-label" for="checkout-email">
+                                            Account Email
+                                            <span class="checkout-label__meta">Identity email</span>
+                                        </label>
+                                        <input class="checkout-input" id="checkout-email" type="email" value="{{ profile_email }}" autocomplete="email" readonly aria-describedby="checkout-email-help">
+                                        <div class="checkout-email-row">
+                                            <span class="checkout-badge checkout-badge--success">
+                                                <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="m8 12 2.6 2.6L16.5 9"></path></svg>
+                                                Signed in
+                                            </span>
+                                        </div>
+                                        <p class="checkout-field-help" id="checkout-email-help">Checkout does not change your authenticated account email.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="checkout-card" aria-labelledby="checkout-service-title">
+                            <header class="checkout-card__head">
+                                <div>
+                                    <h2 id="checkout-service-title">Service &amp; Outlet</h2>
+                                    <p>Your non-empty cart owns this context. Checkout does not silently switch it.</p>
+                                </div>
+                                <a class="checkout-card__link" href="{{ url_for('locations_page') }}">Change Location</a>
+                            </header>
+
+                            <div class="checkout-card__body">
+                                <div class="checkout-service-box">
+                                    <span class="checkout-service-box__icon" aria-hidden="true">{{ service_icon(cart_service_mode) }}</span>
+                                    <div>
+                                        <h3>{{ service_label(cart_service_mode) }}</h3>
+                                        <p>Backend cart service context.</p>
+                                    </div>
+                                    <a class="checkout-btn checkout-btn--secondary" href="{{ url_for('cart_page') }}">Review Cart</a>
+                                </div>
+
+                                <div class="checkout-outlet-card" id="checkout-outlet-card" aria-live="polite">
+                                    <div class="checkout-outlet-card__loading" id="checkout-outlet-loading">
+                                        <span class="checkout-spinner" aria-hidden="true"></span>
+                                        Loading selected outlet details...
+                                    </div>
+                                    <div id="checkout-outlet-content" hidden>
+                                        <h3 class="checkout-outlet-card__title" id="checkout-outlet-name"></h3>
+                                        <p class="checkout-outlet-card__address" id="checkout-outlet-address"></p>
+                                        <p class="checkout-outlet-card__contact" id="checkout-outlet-contact" hidden></p>
+                                    </div>
+                                    <p class="checkout-field-error" id="checkout-outlet-error" role="alert" hidden></p>
+                                </div>
+                            </div>
+                        </section>
+
+                        {% if cart_service_mode == "delivery" %}
+                            <section class="checkout-card" aria-labelledby="checkout-delivery-title">
+                                <header class="checkout-card__head">
+                                    <div>
+                                        <h2 id="checkout-delivery-title">Delivery Address</h2>
+                                        <p>Manual address entry always remains available.</p>
+                                    </div>
+                                </header>
+
+                                <div class="checkout-card__body">
+                                    <div class="checkout-field-grid">
+                                        <div class="checkout-field">
+                                            <label class="checkout-label" for="checkout-city">City</label>
+                                            <input class="checkout-input" id="checkout-city" name="city" type="text" value="{{ profile_city }}" autocomplete="address-level2" maxlength="100" required aria-describedby="checkout-city-error">
+                                            <p class="checkout-field-error" id="checkout-city-error" role="alert" hidden></p>
+                                        </div>
+
+                                        <div class="checkout-field">
+                                            <label class="checkout-label" for="checkout-area">Area</label>
+                                            <input class="checkout-input" id="checkout-area" name="area" type="text" value="{{ profile_area }}" autocomplete="address-level3" maxlength="120" required aria-describedby="checkout-area-error">
+                                            <p class="checkout-field-error" id="checkout-area-error" role="alert" hidden></p>
+                                        </div>
+
+                                        <div class="checkout-field checkout-field--full">
+                                            <label class="checkout-label" for="checkout-address">Delivery Address</label>
+                                            <textarea class="checkout-textarea" id="checkout-address" name="address" autocomplete="street-address" maxlength="400" required aria-describedby="checkout-address-help checkout-address-error">{{ profile_address }}</textarea>
+                                            <p class="checkout-field-help" id="checkout-address-help">
+                                                The backend validates the final delivery context. Changing this order address does not update your Profile.
+                                            </p>
+                                            <p class="checkout-field-error" id="checkout-address-error" role="alert" hidden></p>
+                                        </div>
+                                    </div>
+
+                                    <div class="checkout-geo">
+                                        <div class="checkout-geo__copy">
+                                            <strong>Optional current-location coordinates</strong>
+                                            <p>Requested only after your explicit click. Manual address fields remain required.</p>
+                                        </div>
+                                        <button class="checkout-btn checkout-btn--secondary" id="checkout-use-location" type="button">
+                                            <span class="checkout-spinner" id="checkout-geo-spinner" aria-hidden="true" hidden></span>
+                                            <svg id="checkout-geo-icon" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg>
+                                            <span id="checkout-geo-label">Use My Current Location</span>
+                                        </button>
+                                        <p class="checkout-geo__status" id="checkout-geo-status" role="status" aria-live="polite">Location permission has not been requested.</p>
+                                    </div>
+                                </div>
+                            </section>
+                        {% endif %}
+
+                        <section class="checkout-card" aria-labelledby="checkout-timing-title">
+                            <header class="checkout-card__head">
+                                <div>
+                                    <h2 id="checkout-timing-title">Order Timing</h2>
+                                    <p>The backend accepts optional schedule_for and requires scheduled orders to be at least 20 minutes in the future.</p>
+                                </div>
+                            </header>
+
+                            <div class="checkout-card__body">
+                                <fieldset class="checkout-fieldset">
+                                    <legend class="checkout-legend">When should we process this order?</legend>
+                                    <div class="checkout-choice-grid">
+                                        <div class="checkout-choice">
+                                            <input id="checkout-timing-asap" name="checkout_timing" type="radio" value="asap" checked>
+                                            <label for="checkout-timing-asap">
+                                                <strong>ASAP</strong>
+                                                <span>No guaranteed preparation or delivery ETA is implied.</span>
+                                            </label>
+                                        </div>
+                                        <div class="checkout-choice">
+                                            <input id="checkout-timing-scheduled" name="checkout_timing" type="radio" value="scheduled">
+                                            <label for="checkout-timing-scheduled">
+                                                <strong>Schedule for Later</strong>
+                                                <span>Enter restaurant-local date and time.</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </fieldset>
+
+                                <div class="checkout-schedule-field checkout-field" id="checkout-schedule-wrap" hidden>
+                                    <label class="checkout-label" for="checkout-schedule-for">
+                                        Scheduled Date &amp; Time
+                                        <span class="checkout-label__meta">Restaurant local time</span>
+                                    </label>
+                                    <input class="checkout-input" id="checkout-schedule-for" name="schedule_for" type="datetime-local" aria-describedby="checkout-schedule-help checkout-schedule-error" disabled>
+                                    <p class="checkout-field-help" id="checkout-schedule-help">The server is final authority for timing validity. Browser timezone is not used as restaurant-time authority.</p>
+                                    <p class="checkout-field-error" id="checkout-schedule-error" role="alert" hidden></p>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="checkout-card" aria-labelledby="checkout-notes-title">
+                            <header class="checkout-card__head">
+                                <div>
+                                    <h2 id="checkout-notes-title">Order Notes</h2>
+                                    <p>Optional plain-text instructions for this order.</p>
+                                </div>
+                            </header>
+                            <div class="checkout-card__body">
+                                <div class="checkout-field">
+                                    <label class="checkout-label" for="checkout-order-notes">
+                                        Notes
+                                        <span class="checkout-label__meta"><span id="checkout-notes-count">0</span>/500</span>
+                                    </label>
+                                    <textarea class="checkout-textarea" id="checkout-order-notes" name="order_notes" maxlength="500" placeholder="Add delivery or preparation notes" aria-describedby="checkout-notes-help checkout-notes-error"></textarea>
+                                    <p class="checkout-field-help" id="checkout-notes-help">Do not include passwords, PINs, OTPs, wallet passwords or sensitive banking information.</p>
+                                    <p class="checkout-field-error" id="checkout-notes-error" role="alert" hidden></p>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="checkout-card" aria-labelledby="checkout-payment-title">
+                            <header class="checkout-card__head">
+                                <div>
+                                    <h2 id="checkout-payment-title">Payment</h2>
+                                    <p>Choose Cash on Delivery or pay in advance using an enabled online method.</p>
+                                </div>
+                            </header>
+
+                            <div class="checkout-card__body">
+                                <fieldset class="checkout-fieldset">
+                                    <legend class="checkout-legend">Choose payment type</legend>
+
+                                    <div class="checkout-payment-loading" id="checkout-payment-loading" role="status">
+                                        <span class="checkout-spinner" aria-hidden="true"></span>
+                                        Loading available payment methods...
+                                    </div>
+
+                                    <div class="checkout-payment-types" id="checkout-payment-type-list" hidden>
+                                        <div class="checkout-payment-type" id="checkout-payment-type-cod-wrap">
+                                            <input id="checkout-payment-type-cod" name="payment_type" type="radio" value="cod">
+                                            <label for="checkout-payment-type-cod">
+                                                <strong>Cash on Delivery</strong>
+                                                <span>Pay when the order is delivered or collected.</span>
+                                            </label>
+                                        </div>
+
+                                        <div class="checkout-payment-type" id="checkout-payment-type-advance-wrap">
+                                            <input id="checkout-payment-type-advance" name="payment_type" type="radio" value="advance">
+                                            <label for="checkout-payment-type-advance">
+                                                <strong>Advance Payment</strong>
+                                                <span>Pay online before restaurant processing starts.</span>
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div class="checkout-advance-box" id="checkout-advance-methods" hidden>
+                                        <div class="checkout-advance-box__head">
+                                            <strong>Choose online payment method</strong>
+                                            <span>Easypaisa is available in this demo. Bank Transfer is ready for future setup.</span>
+                                        </div>
+                                        <div class="checkout-payment-list" id="checkout-payment-list"></div>
+                                    </div>
+
+                                    <p class="checkout-field-error" id="checkout-payment-method-error" role="alert" hidden></p>
+                                </fieldset>
+
+                                <div class="checkout-payment-details" id="checkout-payment-details" hidden>
+                                    <div id="checkout-cod-details" hidden>
+                                        <h3>Cash on Delivery</h3>
+                                        <p>Payment stays Pending until staff confirms that cash was collected.</p>
+                                    </div>
+
+                                    <div id="checkout-easypaisa-details" hidden>
+                                        <h3>Easypaisa Advance Payment</h3>
+                                        <p id="checkout-easypaisa-instructions">
+                                            Enter the Easypaisa mobile number you want to use. After the order is created,
+                                            the backend will send a demo payment request and redirect you to the provider-style approval page.
+                                        </p>
+
+                                        <div class="checkout-wallet-field checkout-field">
+                                            <label class="checkout-label" for="checkout-easypaisa-phone">
+                                                Easypaisa Mobile Number
+                                                <span class="checkout-label__meta">Customer wallet</span>
+                                            </label>
+                                            <input
+                                                class="checkout-input"
+                                                id="checkout-easypaisa-phone"
+                                                name="easypaisa_phone"
+                                                type="tel"
+                                                inputmode="numeric"
+                                                autocomplete="tel"
+                                                maxlength="16"
+                                                placeholder="03XXXXXXXXX"
+                                                disabled
+                                                aria-describedby="checkout-easypaisa-phone-help checkout-easypaisa-phone-error"
+                                            >
+                                            <p class="checkout-field-help" id="checkout-easypaisa-phone-help">
+                                                Use the mobile number linked to the customer's Easypaisa wallet.
+                                                This restaurant Checkout never asks for an Easypaisa PIN, OTP or wallet password.
+                                            </p>
+                                            <p class="checkout-field-error" id="checkout-easypaisa-phone-error" role="alert" hidden></p>
+
+                                            <div class="checkout-wallet-preview">
+                                                <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"></path><path d="M9 7h6M9 11h6M10 17h4"></path></svg>
+                                                <span>Next step: payment request → Easypaisa approval page → Paid or Cancelled.</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div id="checkout-bank-details" hidden>
+                                        <h3>Bank Transfer</h3>
+                                        <p id="checkout-bank-instructions">Bank Transfer is not configured yet.</p>
+                                        <dl class="checkout-bank-list" id="checkout-bank-list"></dl>
+
+                                        <div class="checkout-field" id="checkout-bank-reference-wrap" style="margin-top:.62rem">
+                                            <label class="checkout-label" for="checkout-bank-reference">
+                                                Transfer Reference
+                                                <span class="checkout-label__meta">Optional</span>
+                                            </label>
+                                            <input class="checkout-input" id="checkout-bank-reference" name="bank_reference" type="text" maxlength="120" autocomplete="off" disabled aria-describedby="checkout-bank-reference-help checkout-bank-reference-error">
+                                            <p class="checkout-field-help" id="checkout-bank-reference-help">Bank Transfer will only be selectable after real account details are configured.</p>
+                                            <p class="checkout-field-error" id="checkout-bank-reference-error" role="alert" hidden></p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="checkout-sensitive-note">
+                                    <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3 5 6v5.4c0 4.3 2.8 7.5 7 9.1 4.2-1.6 7-4.8 7-9.1V6l-7-3Z"></path><path d="M9 12h6"></path></svg>
+                                    <span>Demo or live payment pages should never ask you to type a PIN or OTP into this restaurant Checkout.</span>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+
+                    <aside class="checkout-sidebar">
+                        <section class="checkout-card checkout-summary-sticky" aria-labelledby="checkout-summary-title" id="checkout-summary-card">
+                            <header class="checkout-card__head">
+                                <div>
+                                    <h2 id="checkout-summary-title">Order Summary</h2>
+                                    <p>{{ cart_items|length }} {{ "cart line" if cart_items|length == 1 else "cart lines" }}</p>
+                                </div>
+                                <a class="checkout-card__link" href="{{ url_for('cart_page') }}">Edit Cart</a>
+                            </header>
+
+                            <div class="checkout-card__body">
+                                <ul class="checkout-summary-items">
+                                    {% for item in cart_items %}
+                                        {% if item is mapping %}
+                                            {% set image_url = safe_image_url(item.get("image", ""))|trim %}
+                                            {% set selected_options = item.get("selected_options", []) %}
+                                            {% if selected_options is string or selected_options is not sequence %}{% set selected_options = [] %}{% endif %}
+                                            {% set included_items = item.get("included_items", []) %}
+                                            {% if included_items is string or included_items is not sequence %}{% set included_items = [] %}{% endif %}
+
+                                            <li class="checkout-summary-item">
+                                                <span class="checkout-summary-item__media">
+                                                    {% if image_url %}
+                                                        <img src="{{ image_url }}" alt="" width="50" height="50" loading="lazy" decoding="async" data-checkout-image>
+                                                    {% else %}
+                                                        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 4h14v16H5z"></path><path d="M8 8h8M8 12h8M8 16h5"></path></svg>
+                                                    {% endif %}
+                                                </span>
+
+                                                <div class="checkout-summary-item__copy">
+                                                    <strong>
+                                                        {{ item_name(item) }}
+                                                        {% if item.get("quantity") is number %}× {{ item.get("quantity")|int }}{% endif %}
+                                                    </strong>
+                                                    <p>{{ "Deal" if item.get("item_type") == "deal" else "Menu item" }}</p>
+
+                                                    {% if selected_options %}
+                                                        <ul class="checkout-summary-item__options">
+                                                            {% for option in selected_options %}
+                                                                {% if option is mapping and option.get("option_name") %}
+                                                                    <li>{% if option.get("group_name") %}{{ option.get("group_name") }}: {% endif %}{{ option.get("option_name") }}</li>
+                                                                {% endif %}
+                                                            {% endfor %}
+                                                        </ul>
+                                                    {% elif included_items %}
+                                                        <ul class="checkout-summary-item__options">
+                                                            {% for included in included_items %}
+                                                                {% if included is mapping and included.get("product_name") %}
+                                                                    <li>{{ included.get("product_name") }}{% if included.get("quantity") is number %} × {{ included.get("quantity")|int }}{% endif %}</li>
+                                                                {% endif %}
+                                                            {% endfor %}
+                                                        </ul>
+                                                    {% endif %}
+                                                </div>
+
+                                                <span class="checkout-summary-item__amount">{{ money_from_minor(item.get("line_total_minor"), "PKR") }}</span>
+                                            </li>
+                                        {% endif %}
+                                    {% endfor %}
+                                </ul>
+
+                                <hr class="checkout-summary-divider">
+
+                                <dl class="checkout-totals">
+                                    <div class="checkout-total-row">
+                                        <dt>Subtotal</dt>
+                                        <dd>{% if cart_totals.get("subtotal_minor") is number %}{{ money_from_minor(cart_totals.get("subtotal_minor"), "PKR") }}{% else %}—{% endif %}</dd>
+                                    </div>
+
+                                    <div class="checkout-total-row">
+                                        <dt>Delivery Fee</dt>
+                                        {% if cart_service_mode == "delivery" %}
+                                            <dd class="checkout-total-row__pending">Calculated by server for the final address</dd>
+                                        {% else %}
+                                            <dd>Rs.&nbsp;0.00</dd>
+                                        {% endif %}
+                                    </div>
+
+                                    <div class="checkout-total-row checkout-total-row--grand">
+                                        <dt>{% if cart_service_mode == "delivery" %}Final Total{% else %}Total{% endif %}</dt>
+                                        {% if cart_service_mode == "delivery" %}
+                                            <dd class="checkout-total-row__pending">Subtotal + backend delivery fee</dd>
+                                        {% else %}
+                                            <dd>{% if cart_totals.get("total_minor") is number %}{{ money_from_minor(cart_totals.get("total_minor"), "PKR") }}{% else %}—{% endif %}</dd>
+                                        {% endif %}
+                                    </div>
+                                </dl>
+
+                                <p class="checkout-price-note">
+                                    The browser does not submit subtotal, delivery fee, item prices, payment status or order status as trusted values.
+                                    The backend revalidates items and pricing before committing the order.
+                                </p>
+
+                                <div class="checkout-submit">
+                                    <button class="checkout-btn checkout-btn--primary" id="checkout-place-order" type="submit" disabled>
+                                        <span class="checkout-spinner" id="checkout-submit-spinner" aria-hidden="true" hidden></span>
+                                        <svg id="checkout-submit-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M5 4h14v16H5z"></path><path d="M8 8h8M8 12h8M8 16h5"></path></svg>
+                                        <span id="checkout-submit-label">Place Order</span>
+                                    </button>
+                                </div>
+
+                                <p class="checkout-legal">
+                                    By placing your order, you agree to the
+                                    <a href="{{ url_for('terms_page') }}">Terms</a>
+                                    and
+                                    <a href="{{ url_for('privacy_page') }}">Privacy Policy</a>.
+                                </p>
+                            </div>
+                        </section>
+                    </aside>
+                </div>
+            </form>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    "use strict";
+
+    const root = document.getElementById("checkout-page-root");
+    if (!root) return;
+
+    const SVG_NS = "http://www.w3.org/2000/svg";
+
+    const elements = {
+        form: document.getElementById("checkout-form"),
+        submit: document.getElementById("checkout-place-order"),
+        submitSpinner: document.getElementById("checkout-submit-spinner"),
+        submitIcon: document.getElementById("checkout-submit-icon"),
+        submitLabel: document.getElementById("checkout-submit-label"),
+        idempotency: document.getElementById("checkout-idempotency-key"),
+        serviceMode: document.getElementById("checkout-service-mode"),
+        outletId: document.getElementById("checkout-outlet-id"),
+        customerName: document.getElementById("checkout-customer-name"),
+        phone: document.getElementById("checkout-phone"),
+        city: document.getElementById("checkout-city"),
+        area: document.getElementById("checkout-area"),
+        address: document.getElementById("checkout-address"),
+        latitude: document.getElementById("checkout-latitude"),
+        longitude: document.getElementById("checkout-longitude"),
+        orderNotes: document.getElementById("checkout-order-notes"),
+        notesCount: document.getElementById("checkout-notes-count"),
+        timingAsap: document.getElementById("checkout-timing-asap"),
+        timingScheduled: document.getElementById("checkout-timing-scheduled"),
+        scheduleWrap: document.getElementById("checkout-schedule-wrap"),
+        scheduleFor: document.getElementById("checkout-schedule-for"),
+        paymentLoading: document.getElementById("checkout-payment-loading"),
+        paymentTypeList: document.getElementById("checkout-payment-type-list"),
+        paymentTypeCodWrap: document.getElementById("checkout-payment-type-cod-wrap"),
+        paymentTypeAdvanceWrap: document.getElementById("checkout-payment-type-advance-wrap"),
+        paymentTypeCod: document.getElementById("checkout-payment-type-cod"),
+        paymentTypeAdvance: document.getElementById("checkout-payment-type-advance"),
+        advanceMethods: document.getElementById("checkout-advance-methods"),
+        paymentList: document.getElementById("checkout-payment-list"),
+        paymentDetails: document.getElementById("checkout-payment-details"),
+        codDetails: document.getElementById("checkout-cod-details"),
+        easypaisaDetails: document.getElementById("checkout-easypaisa-details"),
+        easypaisaInstructions: document.getElementById("checkout-easypaisa-instructions"),
+        easypaisaPhone: document.getElementById("checkout-easypaisa-phone"),
+        bankDetails: document.getElementById("checkout-bank-details"),
+        bankInstructions: document.getElementById("checkout-bank-instructions"),
+        bankList: document.getElementById("checkout-bank-list"),
+        bankReference: document.getElementById("checkout-bank-reference"),
+        geoButton: document.getElementById("checkout-use-location"),
+        geoSpinner: document.getElementById("checkout-geo-spinner"),
+        geoIcon: document.getElementById("checkout-geo-icon"),
+        geoLabel: document.getElementById("checkout-geo-label"),
+        geoStatus: document.getElementById("checkout-geo-status"),
+        outletLoading: document.getElementById("checkout-outlet-loading"),
+        outletContent: document.getElementById("checkout-outlet-content"),
+        outletName: document.getElementById("checkout-outlet-name"),
+        outletAddress: document.getElementById("checkout-outlet-address"),
+        outletContact: document.getElementById("checkout-outlet-contact"),
+        outletError: document.getElementById("checkout-outlet-error"),
+        wideError: document.getElementById("checkout-wide-error"),
+        wideErrorTitle: document.getElementById("checkout-wide-error-title"),
+        wideErrorMessage: document.getElementById("checkout-wide-error-message"),
+        wideErrorActions: document.getElementById("checkout-wide-error-actions"),
+        errorCartLink: document.getElementById("checkout-error-cart-link"),
+        errorOrdersLink: document.getElementById("checkout-error-orders-link"),
+        errorLoginLink: document.getElementById("checkout-error-login-link"),
+        live: document.getElementById("checkout-live-region")
+    };
+
+    const state = {
+        paymentConfig: null,
+        paymentType: "",
+        paymentMethod: "",
+        paymentConfigLoaded: false,
+        outletLoaded: false,
+        submitInFlight: false,
+        outcomeAmbiguous: false,
+        blockedByConflict: false,
+        geolocationCaptured: false,
+        idempotencyKey: "",
+        unloadGuard: false
+    };
+
+    const fieldMap = {
+        customer_name: {
+            input: elements.customerName,
+            error: document.getElementById("checkout-customer-name-error")
+        },
+        phone: {
+            input: elements.phone,
+            error: document.getElementById("checkout-phone-error")
+        },
+        city: {
+            input: elements.city,
+            error: document.getElementById("checkout-city-error")
+        },
+        area: {
+            input: elements.area,
+            error: document.getElementById("checkout-area-error")
+        },
+        address: {
+            input: elements.address,
+            error: document.getElementById("checkout-address-error")
+        },
+        schedule_for: {
+            input: elements.scheduleFor,
+            error: document.getElementById("checkout-schedule-error")
+        },
+        order_notes: {
+            input: elements.orderNotes,
+            error: document.getElementById("checkout-notes-error")
+        },
+        easypaisa_phone: {
+            input: elements.easypaisaPhone,
+            error: document.getElementById("checkout-easypaisa-phone-error")
+        },
+        bank_reference: {
+            input: elements.bankReference,
+            error: document.getElementById("checkout-bank-reference-error")
+        },
+        payment_method: {
+            input: null,
+            error: document.getElementById("checkout-payment-method-error")
+        }
+    };
+
+    function announce(message) {
+        if (window.AppUI && typeof window.AppUI.announce === "function") {
+            window.AppUI.announce(message);
+        }
+
+        if (!elements.live) return;
+        elements.live.textContent = "";
+        window.setTimeout(function () {
+            elements.live.textContent = String(message || "");
+        }, 30);
+    }
+
+    function toast(message, type) {
+        if (window.AppUI && typeof window.AppUI.showToast === "function") {
+            window.AppUI.showToast(message, type || "info");
+            return;
+        }
+
+        if (typeof window.showToast === "function") {
+            window.showToast(message, type || "info");
+        }
+    }
+
+    async function csrfFetch(url, options) {
+        if (window.AppUI && typeof window.AppUI.csrfFetch === "function") {
+            return window.AppUI.csrfFetch(url, options || {});
+        }
+
+        throw new Error("CSRF helper unavailable");
+    }
+
+    async function parseJson(response) {
+        try {
+            return await response.json();
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function safeSameOriginPath(value) {
+        const text = String(value || "").trim();
+
+        if (!text || !text.startsWith("/") || text.startsWith("//")) {
+            return "";
+        }
+
+        return text;
+    }
+
+    function submitUrl() {
+        return safeSameOriginPath(root.dataset.submitUrl);
+    }
+
+    function paymentMethodsUrl() {
+        return safeSameOriginPath(root.dataset.paymentMethodsUrl);
+    }
+
+    function locationsUrl() {
+        return safeSameOriginPath(root.dataset.locationsUrl);
+    }
+
+    function serviceMode() {
+        return String(root.dataset.cartServiceMode || "");
+    }
+
+    function outletId() {
+        return String(root.dataset.cartOutletId || "").trim();
+    }
+
+    function cartHasItems() {
+        return root.dataset.cartHasItems === "true";
+    }
+
+    function normalizeText(value) {
+        return typeof value === "string" ? value.trim() : "";
+    }
+
+    function serviceLabel(mode) {
+        if (mode === "delivery") return "Delivery";
+        if (mode === "pickup") return "Pickup";
+        if (mode === "dine_in") return "Dine-In";
+        return "Service";
+    }
+
+    function svgElement(name) {
+        return document.createElementNS(SVG_NS, name);
+    }
+
+    function appendPath(svg, d) {
+        const path = svgElement("path");
+        path.setAttribute("d", d);
+        svg.appendChild(path);
+    }
+
+    function generateIdempotencyKey() {
+        if (window.crypto && typeof window.crypto.randomUUID === "function") {
+            return window.crypto.randomUUID();
+        }
+
+        if (window.crypto && typeof window.crypto.getRandomValues === "function") {
+            const bytes = new Uint8Array(20);
+            window.crypto.getRandomValues(bytes);
+
+            return "chk_" + Array.from(bytes).map(function (value) {
+                return value.toString(16).padStart(2, "0");
+            }).join("");
+        }
+
+        return "";
+    }
+
+    function initializeIdempotency() {
+        state.idempotencyKey = generateIdempotencyKey();
+
+        if (elements.idempotency) {
+            elements.idempotency.value = state.idempotencyKey;
+        }
+
+        if (!state.idempotencyKey) {
+            state.blockedByConflict = true;
+            showWideError(
+                "Secure request initialization unavailable",
+                "This browser could not create the cryptographically random Checkout request key required for duplicate-order protection.",
+                {showCart: false, focus: false}
+            );
+        }
+    }
+
+    function setFieldError(field, message) {
+        const entry = fieldMap[field];
+        if (!entry) return;
+
+        const text = String(message || "");
+
+        if (entry.error) {
+            entry.error.textContent = text;
+            entry.error.hidden = !text;
+        }
+
+        if (entry.input) {
+            entry.input.setAttribute("aria-invalid", text ? "true" : "false");
+        }
+    }
+
+    function clearFieldErrors() {
+        Object.keys(fieldMap).forEach(function (field) {
+            setFieldError(field, "");
+        });
+    }
+
+    function showWideError(title, message, options) {
+        if (!elements.wideError) return;
+
+        const settings = options || {};
+
+        if (elements.wideErrorTitle) {
+            elements.wideErrorTitle.textContent = String(
+                title || "Please review your checkout."
+            );
+        }
+
+        if (elements.wideErrorMessage) {
+            elements.wideErrorMessage.textContent = String(
+                message || "Some information needs attention."
+            );
+        }
+
+        if (elements.errorCartLink) {
+            elements.errorCartLink.hidden = settings.showCart === false;
+        }
+
+        if (elements.errorOrdersLink) {
+            elements.errorOrdersLink.hidden = !settings.showOrders;
+        }
+
+        if (elements.errorLoginLink) {
+            elements.errorLoginLink.hidden = !settings.showLogin;
+        }
+
+        if (elements.wideErrorActions) {
+            elements.wideErrorActions.hidden = !(
+                settings.showCart !== false ||
+                settings.showOrders ||
+                settings.showLogin
+            );
+        }
+
+        elements.wideError.hidden = false;
+
+        if (settings.focus !== false) {
+            elements.wideError.focus();
+        }
+    }
+
+    function clearWideError() {
+        if (elements.wideError) {
+            elements.wideError.hidden = true;
+        }
+    }
+
+    function setSubmitLoading(loading) {
+        state.submitInFlight = Boolean(loading);
+
+        if (!elements.submit) return;
+
+        elements.submit.disabled =
+            state.submitInFlight ||
+            state.outcomeAmbiguous ||
+            state.blockedByConflict ||
+            !state.paymentConfigLoaded ||
+            !state.paymentMethod ||
+            !cartHasItems();
+
+        elements.submit.setAttribute(
+            "aria-busy",
+            state.submitInFlight ? "true" : "false"
+        );
+
+        if (elements.submitSpinner) {
+            elements.submitSpinner.hidden = !state.submitInFlight;
+        }
+
+        if (elements.submitIcon) {
+            elements.submitIcon.hidden = state.submitInFlight;
+        }
+
+        if (elements.submitLabel) {
+            if (state.submitInFlight) {
+                elements.submitLabel.textContent =
+                    state.paymentMethod === "easypaisa"
+                        ? "Sending Payment Request..."
+                        : "Placing Order...";
+            } else {
+                elements.submitLabel.textContent =
+                    state.paymentMethod === "easypaisa"
+                        ? "Continue to Easypaisa"
+                        : "Place Order";
+            }
+        }
+
+        state.unloadGuard = state.submitInFlight;
+    }
+
+    function refreshSubmitAvailability() {
+        setSubmitLoading(state.submitInFlight);
+    }
+
+    function disableFinalSubmissionForAmbiguity() {
+        state.outcomeAmbiguous = true;
+        state.submitInFlight = false;
+        state.unloadGuard = false;
+
+        if (elements.submit) {
+            elements.submit.disabled = true;
+            elements.submit.setAttribute("aria-busy", "false");
+        }
+
+        if (elements.submitSpinner) {
+            elements.submitSpinner.hidden = true;
+        }
+
+        if (elements.submitIcon) {
+            elements.submitIcon.hidden = false;
+        }
+
+        if (elements.submitLabel) {
+            elements.submitLabel.textContent = "Check My Orders Before Retrying";
+        }
+    }
+
+    function createPaymentIcon(method) {
+        const svg = svgElement("svg");
+        svg.setAttribute("viewBox", "0 0 24 24");
+        svg.setAttribute("aria-hidden", "true");
+
+        if (method === "cod") {
+            appendPath(svg, "M4 7h16v10H4z");
+            appendPath(svg, "M8 10h8M8 14h5");
+        } else if (method === "easypaisa") {
+            appendPath(svg, "M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z");
+            appendPath(svg, "M9 7h6M9 11h6M10 17h4");
+        } else {
+            appendPath(svg, "M3 9h18");
+            appendPath(svg, "M5 9V20M9 9V20M15 9V20M19 9V20");
+            appendPath(svg, "M2 20h20M12 3 3 7h18l-9-4Z");
+        }
+
+        return svg;
+    }
+
+    function paymentLabel(method) {
+        if (method === "cod") return "Cash on Delivery";
+        if (method === "easypaisa") return "Easypaisa";
+        if (method === "bank_transfer") return "Bank Transfer";
+        return "Payment Method";
+    }
+
+    function paymentDescription(method) {
+        if (method === "easypaisa") {
+            const ep = state.paymentConfig && state.paymentConfig.easypaisa;
+            if (ep && ep.mode === "demo") {
+                return "Demo wallet request. Enter your Easypaisa mobile number, then approve or decline on the payment page.";
+            }
+            return "A payment request will be initiated through the configured Easypaisa provider.";
+        }
+
+        if (method === "bank_transfer") {
+            const bank = state.paymentConfig && state.paymentConfig.bank_transfer;
+            if (bank && bank.coming_soon === true && bank.enabled !== true) {
+                return "Coming soon — bank account details are not configured yet.";
+            }
+            return "Transfer using the verified business bank instructions.";
+        }
+
+        return "Payment method";
+    }
+
+    function paymentConfigEnabled(config, method) {
+        const entry = config && config[method];
+
+        return Boolean(
+            entry &&
+            typeof entry === "object" &&
+            entry.enabled === true
+        );
+    }
+
+    function createPaymentOption(method, disabled) {
+        const wrapper = document.createElement("div");
+        wrapper.className = "checkout-payment-option" + (disabled ? " is-disabled" : "");
+
+        const input = document.createElement("input");
+        input.type = "radio";
+        input.name = "payment_method";
+        input.value = method;
+        input.id = "checkout-payment-" + method;
+        input.required = !disabled;
+        input.disabled = Boolean(disabled);
+
+        const label = document.createElement("label");
+        label.setAttribute("for", input.id);
+
+        const icon = document.createElement("span");
+        icon.className = "checkout-payment-option__icon";
+        icon.appendChild(createPaymentIcon(method));
+
+        const copy = document.createElement("span");
+        copy.className = "checkout-payment-option__copy";
+
+        const strong = document.createElement("strong");
+        strong.textContent = paymentLabel(method);
+
+        const description = document.createElement("span");
+        description.textContent = paymentDescription(method);
+
+        copy.append(strong, description);
+
+        let trailing;
+        if (disabled) {
+            trailing = document.createElement("span");
+            trailing.className = "checkout-payment-option__badge";
+            trailing.textContent = "Coming Soon";
+        } else {
+            trailing = document.createElement("span");
+            trailing.className = "checkout-payment-option__radio";
+            trailing.setAttribute("aria-hidden", "true");
+        }
+
+        label.append(icon, copy, trailing);
+        wrapper.append(input, label);
+
+        input.addEventListener("change", function () {
+            if (input.checked) {
+                setPaymentMethod(method);
+            }
+        });
+
+        return {wrapper: wrapper, input: input};
+    }
+
+    function createBankRow(label, value) {
+        const clean = normalizeText(value);
+        if (!clean) return null;
+
+        const row = document.createElement("div");
+        row.className = "checkout-bank-row";
+
+        const dt = document.createElement("dt");
+        dt.textContent = label;
+
+        const dd = document.createElement("dd");
+        dd.textContent = clean;
+
+        const copy = document.createElement("button");
+        copy.className = "checkout-copy-btn";
+        copy.type = "button";
+        copy.textContent = "Copy";
+        copy.dataset.copyValue = clean;
+        copy.dataset.copyLabel = label;
+
+        row.append(dt, dd, copy);
+
+        return row;
+    }
+
+    function renderEasypaisaDetails() {
+        if (!state.paymentConfig) return;
+
+        const easypaisa = state.paymentConfig.easypaisa;
+        if (!easypaisa || typeof easypaisa !== "object") {
+            return;
+        }
+
+        if (elements.easypaisaInstructions) {
+            elements.easypaisaInstructions.textContent =
+                easypaisa.mode === "demo"
+                    ? "Demo flow: enter the customer's Easypaisa mobile number. After Place Order, the backend creates a payment request and opens the provider-style approval page. No real money is moved."
+                    : "Enter the customer wallet number requested by the configured provider. After Place Order, the backend starts the Easypaisa payment flow. Never enter a PIN, OTP or wallet password on this restaurant Checkout.";
+        }
+
+        if (
+            elements.easypaisaPhone &&
+            !elements.easypaisaPhone.value.trim() &&
+            elements.phone &&
+            elements.phone.value.trim()
+        ) {
+            const candidate = elements.phone.value.trim();
+            const digits = candidate.replace(/\D/g, "");
+            if (
+                /^03\d{9}$/.test(digits) ||
+                /^923\d{9}$/.test(digits) ||
+                /^3\d{9}$/.test(digits)
+            ) {
+                elements.easypaisaPhone.value = candidate;
+            }
+        }
+    }
+
+    function renderBankDetails() {
+        if (!elements.bankList || !state.paymentConfig) return;
+
+        const bank = state.paymentConfig.bank_transfer;
+
+        if (!bank || typeof bank !== "object") {
+            elements.bankList.replaceChildren();
+            return;
+        }
+
+        const fragment = document.createDocumentFragment();
+
+        [
+            ["Bank", bank.bank_name],
+            ["Account Title", bank.account_title],
+            ["Account Number", bank.account_number],
+            ["IBAN", bank.iban]
+        ].forEach(function (entry) {
+            const row = createBankRow(entry[0], entry[1]);
+
+            if (row) {
+                fragment.appendChild(row);
+            }
+        });
+
+        elements.bankList.replaceChildren(fragment);
+
+        if (elements.bankInstructions) {
+            const instructions = normalizeText(bank.instructions);
+
+            elements.bankInstructions.textContent =
+                instructions ||
+                (bank.enabled === true
+                    ? "Use the verified business bank destination shown below. The order remains awaiting verification until staff confirms payment."
+                    : "Bank Transfer is coming soon. Add real bank account details later to enable it.");
+        }
+    }
+
+    function setPaymentMethod(method) {
+        state.paymentMethod = method || "";
+        setFieldError("payment_method", "");
+
+        if (elements.paymentDetails) {
+            elements.paymentDetails.hidden = !state.paymentMethod;
+        }
+
+        if (elements.codDetails) {
+            elements.codDetails.hidden = state.paymentMethod !== "cod";
+        }
+
+        if (elements.easypaisaDetails) {
+            elements.easypaisaDetails.hidden = state.paymentMethod !== "easypaisa";
+        }
+
+        if (elements.bankDetails) {
+            elements.bankDetails.hidden = state.paymentMethod !== "bank_transfer";
+        }
+
+        if (elements.easypaisaPhone) {
+            elements.easypaisaPhone.disabled = state.paymentMethod !== "easypaisa";
+            elements.easypaisaPhone.required = state.paymentMethod === "easypaisa";
+        }
+
+        if (elements.bankReference) {
+            elements.bankReference.disabled = state.paymentMethod !== "bank_transfer";
+        }
+
+        if (state.paymentMethod !== "easypaisa") {
+            setFieldError("easypaisa_phone", "");
+        }
+
+        if (state.paymentMethod === "easypaisa") {
+            renderEasypaisaDetails();
+        }
+
+        if (state.paymentMethod === "bank_transfer") {
+            renderBankDetails();
+        }
+
+        refreshSubmitAvailability();
+    }
+
+    function choosePaymentType(type) {
+        state.paymentType = type || "";
+
+        if (type === "cod") {
+            if (elements.advanceMethods) {
+                elements.advanceMethods.hidden = true;
+            }
+            if (elements.paymentList) {
+                elements.paymentList.querySelectorAll("input[type='radio']").forEach(function (input) {
+                    input.checked = false;
+                });
+            }
+            setPaymentMethod("cod");
+            return;
+        }
+
+        if (type === "advance") {
+            if (elements.advanceMethods) {
+                elements.advanceMethods.hidden = false;
+            }
+            setPaymentMethod("");
+            return;
+        }
+
+        if (elements.advanceMethods) {
+            elements.advanceMethods.hidden = true;
+        }
+        setPaymentMethod("");
+    }
+
+    function renderPaymentMethods(config) {
+        if (!elements.paymentList) return;
+
+        const codEnabled = paymentConfigEnabled(config, "cod");
+        const easypaisaEnabled = paymentConfigEnabled(config, "easypaisa");
+        const bankEnabled = paymentConfigEnabled(config, "bank_transfer");
+        const bank = config && config.bank_transfer;
+        const bankComingSoon = Boolean(
+            bank &&
+            typeof bank === "object" &&
+            bank.coming_soon === true &&
+            bank.enabled !== true
+        );
+        const advanceEnabled = easypaisaEnabled || bankEnabled;
+
+        if (elements.paymentTypeCod) {
+            elements.paymentTypeCod.disabled = !codEnabled;
+            elements.paymentTypeCod.checked = false;
+        }
+        if (elements.paymentTypeCodWrap) {
+            elements.paymentTypeCodWrap.hidden = !codEnabled;
+        }
+
+        if (elements.paymentTypeAdvance) {
+            elements.paymentTypeAdvance.disabled = !advanceEnabled;
+            elements.paymentTypeAdvance.checked = false;
+        }
+        if (elements.paymentTypeAdvanceWrap) {
+            elements.paymentTypeAdvanceWrap.hidden = !advanceEnabled;
+        }
+
+        const fragment = document.createDocumentFragment();
+        if (easypaisaEnabled) {
+            fragment.appendChild(createPaymentOption("easypaisa", false).wrapper);
+        }
+        if (bankEnabled) {
+            fragment.appendChild(createPaymentOption("bank_transfer", false).wrapper);
+        } else if (bankComingSoon) {
+            fragment.appendChild(createPaymentOption("bank_transfer", true).wrapper);
+        }
+        elements.paymentList.replaceChildren(fragment);
+
+        if (elements.paymentLoading) {
+            elements.paymentLoading.hidden = true;
+        }
+        if (elements.paymentTypeList) {
+            elements.paymentTypeList.hidden = false;
+        }
+        if (elements.advanceMethods) {
+            elements.advanceMethods.hidden = true;
+        }
+
+        state.paymentConfigLoaded = true;
+        state.paymentType = "";
+        state.paymentMethod = "";
+
+        if (!codEnabled && !advanceEnabled) {
+            setFieldError(
+                "payment_method",
+                "No checkout payment method is currently enabled by the backend configuration."
+            );
+
+            showWideError(
+                "No payment method is available",
+                "The backend payment configuration does not currently expose an enabled customer payment method.",
+                {showCart: false, focus: false}
+            );
+
+            refreshSubmitAvailability();
+            return;
+        }
+
+        refreshSubmitAvailability();
+    }
+
+    function initializePaymentTypes() {
+        if (elements.paymentTypeCod) {
+            elements.paymentTypeCod.addEventListener("change", function () {
+                if (elements.paymentTypeCod.checked) {
+                    choosePaymentType("cod");
+                }
+            });
+        }
+
+        if (elements.paymentTypeAdvance) {
+            elements.paymentTypeAdvance.addEventListener("change", function () {
+                if (elements.paymentTypeAdvance.checked) {
+                    choosePaymentType("advance");
+                }
+            });
+        }
+    }
+
+    function providerRedirectUrl(payload) {
+        if (
+            !payload ||
+            payload.success !== true ||
+            !payload.data ||
+            typeof payload.data !== "object" ||
+            !payload.data.provider ||
+            typeof payload.data.provider !== "object"
+        ) {
+            return "";
+        }
+
+        const provider = payload.data.provider;
+        const raw = normalizeText(
+            provider.redirect_url ||
+            provider.checkout_url ||
+            provider.url
+        );
+        if (!raw) return "";
+
+        try {
+            const target = new URL(raw, window.location.origin);
+
+            if (provider.mode === "demo" && target.origin !== window.location.origin) {
+                return "";
+            }
+
+            if (
+                target.origin !== window.location.origin &&
+                target.protocol !== "https:"
+            ) {
+                return "";
+            }
+
+            if (!["http:", "https:"].includes(target.protocol)) {
+                return "";
+            }
+
+            return target.href;
+        } catch (error) {
+            return "";
+        }
+    }
+
+    async function loadPaymentMethods() {
+        const url = paymentMethodsUrl();
+
+        if (!url) {
+            showWideError(
+                "Payment configuration unavailable",
+                "Checkout could not resolve the backend payment-method endpoint.",
+                {showCart: false}
+            );
+            return;
+        }
+
+        try {
+            const response = await fetch(url, {
+                method: "GET",
+                credentials: "same-origin",
+                headers: {Accept: "application/json"},
+                cache: "no-store"
+            });
+
+            const payload = await parseJson(response);
+
+            if (response.status === 401) {
+                showWideError(
+                    "Session expired",
+                    "Please sign in again before continuing Checkout.",
+                    {showCart: false, showLogin: true}
+                );
+                return;
+            }
+
+            if (
+                !response.ok ||
+                !payload ||
+                payload.success !== true ||
+                !payload.data ||
+                typeof payload.data !== "object"
+            ) {
+                throw new Error("Backend payment configuration could not be loaded.");
+            }
+
+            state.paymentConfig = payload.data;
+            renderPaymentMethods(state.paymentConfig);
+        } catch (error) {
+            if (elements.paymentLoading) {
+                elements.paymentLoading.hidden = true;
+            }
+
+            setFieldError(
+                "payment_method",
+                "Available payment methods could not be loaded. The order was not submitted."
+            );
+
+            showWideError(
+                "Payment methods could not be loaded",
+                "Refresh the page or try again later. Checkout will not guess which payment methods are enabled.",
+                {showCart: false}
+            );
+
+            refreshSubmitAvailability();
+        }
+    }
+
+    function setOutletError(message) {
+        if (!elements.outletError) return;
+
+        const text = String(message || "");
+        elements.outletError.textContent = text;
+        elements.outletError.hidden = !text;
+    }
+
+    async function loadSelectedOutlet() {
+        const base = locationsUrl();
+        const selectedId = outletId();
+
+        if (!base || !selectedId) {
+            setOutletError(
+                "Selected outlet details are unavailable. Review your cart/location before placing the order."
+            );
+
+            if (elements.outletLoading) {
+                elements.outletLoading.hidden = true;
+            }
+
+            return;
+        }
+
+        try {
+            const url = new URL(base, window.location.origin);
+            const mode = serviceMode();
+
+            if (["delivery", "pickup", "dine_in"].includes(mode)) {
+                url.searchParams.set("service_mode", mode);
+            }
+
+            const response = await fetch(url.pathname + url.search, {
+                method: "GET",
+                credentials: "same-origin",
+                headers: {Accept: "application/json"},
+                cache: "no-store"
+            });
+
+            const payload = await parseJson(response);
+
+            if (
+                !response.ok ||
+                !payload ||
+                payload.success !== true ||
+                !payload.data ||
+                !Array.isArray(payload.data.locations)
+            ) {
+                throw new Error("Outlet list unavailable");
+            }
+
+            const outlet = payload.data.locations.find(function (item) {
+                return (
+                    item &&
+                    typeof item === "object" &&
+                    String(item.id || "") === selectedId
+                );
+            });
+
+            if (!outlet) {
+                setOutletError(
+                    "The cart's selected outlet is not currently available for this service. Review Cart or choose another location."
+                );
+
+                state.blockedByConflict = true;
+                refreshSubmitAvailability();
+                return;
+            }
+
+            if (elements.outletName) {
+                elements.outletName.textContent =
+                    normalizeText(outlet.name) || "Selected Outlet";
+            }
+
+            if (elements.outletAddress) {
+                const parts = [
+                    normalizeText(outlet.address),
+                    [
+                        normalizeText(outlet.area),
+                        normalizeText(outlet.city)
+                    ].filter(Boolean).join(", ")
+                ].filter(Boolean);
+
+                elements.outletAddress.textContent = parts.join("\n");
+            }
+
+            if (elements.outletContact) {
+                const phone = normalizeText(outlet.phone);
+                elements.outletContact.textContent =
+                    phone ? "Public phone: " + phone : "";
+                elements.outletContact.hidden = !phone;
+            }
+
+            if (elements.outletContent) {
+                elements.outletContent.hidden = false;
+            }
+
+            if (elements.outletLoading) {
+                elements.outletLoading.hidden = true;
+            }
+
+            state.outletLoaded = true;
+        } catch (error) {
+            if (elements.outletLoading) {
+                elements.outletLoading.hidden = true;
+            }
+
+            setOutletError(
+                "Selected outlet details could not be loaded for display. The backend will still validate outlet/service context at final submission."
+            );
+        }
+    }
+
+    function updateScheduleState() {
+        if (!elements.timingScheduled || !elements.scheduleWrap || !elements.scheduleFor) {
+            return;
+        }
+
+        const scheduled = elements.timingScheduled.checked;
+
+        elements.scheduleWrap.hidden = !scheduled;
+        elements.scheduleFor.disabled = !scheduled;
+        elements.scheduleFor.required = scheduled;
+
+        if (!scheduled) {
+            setFieldError("schedule_for", "");
+        }
+    }
+
+    function initializeSchedule() {
+        [elements.timingAsap, elements.timingScheduled].forEach(function (input) {
+            if (!input) return;
+            input.addEventListener("change", updateScheduleState);
+        });
+
+        updateScheduleState();
+    }
+
+    function updateNotesCount() {
+        if (!elements.orderNotes || !elements.notesCount) return;
+        elements.notesCount.textContent = String(elements.orderNotes.value.length);
+    }
+
+    function initializeNotesCounter() {
+        if (!elements.orderNotes) return;
+        elements.orderNotes.addEventListener("input", updateNotesCount);
+        updateNotesCount();
+    }
+
+    function clearCapturedCoordinates(message) {
+        if (elements.latitude) elements.latitude.value = "";
+        if (elements.longitude) elements.longitude.value = "";
+
+        if (state.geolocationCaptured && elements.geoStatus) {
+            elements.geoStatus.textContent =
+                message ||
+                "Captured coordinates were cleared after the manual address changed.";
+        }
+
+        state.geolocationCaptured = false;
+    }
+
+    function setGeolocationLoading(loading) {
+        if (!elements.geoButton) return;
+
+        elements.geoButton.disabled = Boolean(loading);
+
+        if (elements.geoSpinner) {
+            elements.geoSpinner.hidden = !loading;
+        }
+
+        if (elements.geoIcon) {
+            elements.geoIcon.hidden = Boolean(loading);
+        }
+
+        if (elements.geoLabel) {
+            elements.geoLabel.textContent =
+                loading ? "Getting Location..." : "Use My Current Location";
+        }
+    }
+
+    function geolocationErrorMessage(error) {
+        if (!error) {
+            return "Your location could not be obtained. Continue with the manual address.";
+        }
+
+        if (error.code === 1) {
+            return "Location permission was denied. Continue with the manual address.";
+        }
+
+        if (error.code === 2) {
+            return "Your location is currently unavailable. Continue with the manual address.";
+        }
+
+        if (error.code === 3) {
+            return "Location request timed out. Continue with the manual address.";
+        }
+
+        return "Your location could not be obtained. Continue with the manual address.";
+    }
+
+    function requestCurrentLocation() {
+        if (!elements.geoButton) return;
+
+        if (
+            !navigator.geolocation ||
+            typeof navigator.geolocation.getCurrentPosition !== "function"
+        ) {
+            if (elements.geoStatus) {
+                elements.geoStatus.textContent =
+                    "Geolocation is not supported in this browser. Continue with the manual address.";
+            }
+            return;
+        }
+
+        setGeolocationLoading(true);
+
+        if (elements.geoStatus) {
+            elements.geoStatus.textContent = "Waiting for location permission...";
+        }
+
+        navigator.geolocation.getCurrentPosition(
+            function (position) {
+                const latitude = Number(position.coords.latitude);
+                const longitude = Number(position.coords.longitude);
+
+                if (
+                    !Number.isFinite(latitude) ||
+                    !Number.isFinite(longitude) ||
+                    latitude < -90 ||
+                    latitude > 90 ||
+                    longitude < -180 ||
+                    longitude > 180
+                ) {
+                    if (elements.geoStatus) {
+                        elements.geoStatus.textContent =
+                            "The browser returned invalid coordinates. Continue with the manual address.";
+                    }
+
+                    setGeolocationLoading(false);
+                    return;
+                }
+
+                if (elements.latitude) {
+                    elements.latitude.value = latitude.toFixed(7);
+                }
+
+                if (elements.longitude) {
+                    elements.longitude.value = longitude.toFixed(7);
+                }
+
+                state.geolocationCaptured = true;
+
+                if (elements.geoStatus) {
+                    elements.geoStatus.textContent =
+                        "Coordinates captured for backend delivery context. Manual City, Area and Address remain required.";
+                }
+
+                setGeolocationLoading(false);
+                announce("Location coordinates captured.");
+            },
+            function (error) {
+                if (elements.geoStatus) {
+                    elements.geoStatus.textContent = geolocationErrorMessage(error);
+                }
+
+                setGeolocationLoading(false);
+            },
+            {
+                enableHighAccuracy: false,
+                timeout: 10000,
+                maximumAge: 120000
+            }
+        );
+    }
+
+    function initializeGeolocation() {
+        if (!elements.geoButton) return;
+
+        elements.geoButton.addEventListener("click", requestCurrentLocation);
+
+        [elements.city, elements.area, elements.address].forEach(function (input) {
+            if (!input) return;
+
+            input.addEventListener("input", function () {
+                if (state.geolocationCaptured) {
+                    clearCapturedCoordinates(
+                        "Captured coordinates were cleared because the manual delivery address changed."
+                    );
+                }
+            });
+        });
+    }
+
+    function copyText(value, label) {
+        const text = String(value || "");
+        if (!text) return;
+
+        if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
+            toast(
+                "Automatic copy is unavailable. The value remains visible and selectable.",
+                "warning"
+            );
+            return;
+        }
+
+        navigator.clipboard.writeText(text).then(function () {
+            toast((label || "Value") + " copied.", "success");
+        }).catch(function () {
+            toast(
+                "Automatic copy is unavailable. The value remains visible and selectable.",
+                "warning"
+            );
+        });
+    }
+
+    function initializeCopyButtons() {
+        document.addEventListener("click", function (event) {
+            const button = event.target.closest("[data-copy-value]");
+            if (!button) return;
+
+            event.preventDefault();
+            copyText(button.dataset.copyValue, button.dataset.copyLabel);
+        });
+    }
+
+    function validateTextField(field, input, options) {
+        if (!input) return true;
+
+        const settings = options || {};
+        const value = input.value.trim();
+
+        if (settings.required && !value) {
+            setFieldError(
+                field,
+                settings.requiredMessage || "This field is required."
+            );
+            return false;
+        }
+
+        if (
+            value &&
+            settings.minLength &&
+            value.length < settings.minLength
+        ) {
+            setFieldError(
+                field,
+                settings.minMessage || "This value is too short."
+            );
+            return false;
+        }
+
+        if (
+            value &&
+            settings.maxLength &&
+            value.length > settings.maxLength
+        ) {
+            setFieldError(
+                field,
+                settings.maxMessage || "This value is too long."
+            );
+            return false;
+        }
+
+        setFieldError(field, "");
+        return true;
+    }
+
+    function validateCheckout() {
+        clearFieldErrors();
+        clearWideError();
+
+        let firstInvalid = null;
+
+        function remember(input) {
+            if (!firstInvalid && input) {
+                firstInvalid = input;
+            }
+        }
+
+        if (!validateTextField(
+            "customer_name",
+            elements.customerName,
+            {
+                required: true,
+                minLength: 2,
+                maxLength: 120,
+                requiredMessage: "Full Name is required.",
+                minMessage: "Full Name must contain at least 2 characters.",
+                maxMessage: "Full Name can be at most 120 characters."
+            }
+        )) {
+            remember(elements.customerName);
+        }
+
+        if (!validateTextField(
+            "phone",
+            elements.phone,
+            {
+                required: true,
+                maxLength: 22,
+                requiredMessage: "Phone number is required.",
+                maxMessage: "Phone number is too long."
+            }
+        )) {
+            remember(elements.phone);
+        }
+
+        if (serviceMode() === "delivery") {
+            if (!validateTextField(
+                "city",
+                elements.city,
+                {
+                    required: true,
+                    maxLength: 100,
+                    requiredMessage: "City is required for Delivery."
+                }
+            )) {
+                remember(elements.city);
+            }
+
+            if (!validateTextField(
+                "area",
+                elements.area,
+                {
+                    required: true,
+                    maxLength: 120,
+                    requiredMessage: "Area is required for Delivery."
+                }
+            )) {
+                remember(elements.area);
+            }
+
+            if (!validateTextField(
+                "address",
+                elements.address,
+                {
+                    required: true,
+                    maxLength: 400,
+                    requiredMessage: "Delivery Address is required."
+                }
+            )) {
+                remember(elements.address);
+            }
+        }
+
+        if (
+            elements.timingScheduled &&
+            elements.timingScheduled.checked
+        ) {
+            if (!validateTextField(
+                "schedule_for",
+                elements.scheduleFor,
+                {
+                    required: true,
+                    requiredMessage: "Choose a scheduled date and time."
+                }
+            )) {
+                remember(elements.scheduleFor);
+            }
+        }
+
+        if (!validateTextField(
+            "order_notes",
+            elements.orderNotes,
+            {
+                maxLength: 500,
+                maxMessage: "Order Notes can be at most 500 characters."
+            }
+        )) {
+            remember(elements.orderNotes);
+        }
+
+        if (state.paymentMethod === "easypaisa") {
+            if (!validateTextField(
+                "easypaisa_phone",
+                elements.easypaisaPhone,
+                {
+                    required: true,
+                    maxLength: 16,
+                    requiredMessage: "Enter the Easypaisa mobile number you want to pay from.",
+                    maxMessage: "Easypaisa mobile number is too long."
+                }
+            )) {
+                remember(elements.easypaisaPhone);
+            } else if (elements.easypaisaPhone) {
+                const rawWallet = elements.easypaisaPhone.value.trim();
+                let walletDigits = rawWallet.replace(/\D/g, "");
+
+                if (walletDigits.startsWith("0092")) {
+                    walletDigits = walletDigits.slice(4);
+                } else if (walletDigits.startsWith("92")) {
+                    walletDigits = walletDigits.slice(2);
+                }
+
+                if (/^3\d{9}$/.test(walletDigits)) {
+                    walletDigits = "0" + walletDigits;
+                }
+
+                if (!/^03\d{9}$/.test(walletDigits)) {
+                    setFieldError(
+                        "easypaisa_phone",
+                        "Enter a valid Pakistan mobile number, for example 03XXXXXXXXX."
+                    );
+                    remember(elements.easypaisaPhone);
+                }
+            }
+        }
+
+        if (
+            state.paymentMethod === "bank_transfer" &&
+            !validateTextField(
+                "bank_reference",
+                elements.bankReference,
+                {
+                    maxLength: 120,
+                    maxMessage: "Transfer Reference can be at most 120 characters."
+                }
+            )
+        ) {
+            remember(elements.bankReference);
+        }
+
+        if (!state.paymentMethod) {
+            setFieldError(
+                "payment_method",
+                "Choose an enabled payment method."
+            );
+
+            const firstPayment = elements.paymentList
+                ? elements.paymentList.querySelector("input[type='radio']")
+                : null;
+
+            remember(firstPayment);
+        }
+
+        if (state.blockedByConflict) {
+            showWideError(
+                "Cart or outlet context requires review",
+                "Review your Cart or choose a valid Location before placing the order.",
+                {
+                    showCart: true,
+                    focus: false
+                }
+            );
+
+            return {
+                valid: false,
+                firstInvalid: firstInvalid
+            };
+        }
+
+        if (firstInvalid) {
+            showWideError(
+                "Please review the highlighted information",
+                "Checkout contains missing or invalid information.",
+                {
+                    showCart: false,
+                    focus: false
+                }
+            );
+
+            return {
+                valid: false,
+                firstInvalid: firstInvalid
+            };
+        }
+
+        return {
+            valid: true,
+            firstInvalid: null
+        };
+    }
+
+    function collectCheckoutPayload() {
+        const payload = {
+            customer_name: elements.customerName
+                ? elements.customerName.value.trim()
+                : "",
+            phone: elements.phone
+                ? elements.phone.value.trim()
+                : "",
+            service_mode: serviceMode(),
+            payment_method: state.paymentMethod,
+            order_notes: elements.orderNotes
+                ? elements.orderNotes.value.trim()
+                : ""
+        };
+
+        if (serviceMode() === "delivery") {
+            payload.city = elements.city
+                ? elements.city.value.trim()
+                : "";
+
+            payload.area = elements.area
+                ? elements.area.value.trim()
+                : "";
+
+            payload.address = elements.address
+                ? elements.address.value.trim()
+                : "";
+
+            const latitude = elements.latitude
+                ? elements.latitude.value.trim()
+                : "";
+
+            const longitude = elements.longitude
+                ? elements.longitude.value.trim()
+                : "";
+
+            if (latitude && longitude) {
+                payload.latitude = latitude;
+                payload.longitude = longitude;
+            }
+
+            /*
+             * Do not send an arbitrary browser outlet override for Delivery.
+             * The cart/session/backend context remains authoritative.
+             */
+        } else {
+            payload.outlet_id = outletId();
+        }
+
+        if (
+            elements.timingScheduled &&
+            elements.timingScheduled.checked &&
+            elements.scheduleFor
+        ) {
+            payload.schedule_for = elements.scheduleFor.value;
+        }
+
+        if (
+            state.paymentMethod === "easypaisa" &&
+            elements.easypaisaPhone
+        ) {
+            payload.easypaisa_phone = elements.easypaisaPhone.value.trim();
+        }
+
+        if (
+            state.paymentMethod === "bank_transfer" &&
+            elements.bankReference
+        ) {
+            payload.bank_reference = elements.bankReference.value.trim();
+        }
+
+        return payload;
+    }
+
+    function fieldFromServer(payload) {
+        if (
+            !payload ||
+            !payload.error ||
+            !payload.error.details ||
+            typeof payload.error.details !== "object"
+        ) {
+            return "";
+        }
+
+        return normalizeText(payload.error.details.field);
+    }
+
+    function errorCode(payload) {
+        return payload && payload.error
+            ? normalizeText(payload.error.code)
+            : "";
+    }
+
+    function safeServerMessage(response, payload) {
+        const code = errorCode(payload);
+
+        if (response.status === 400) {
+            if (code === "INVALID_IDEMPOTENCY_KEY") {
+                return "Checkout could not initialize a valid request key. Refresh the page before trying again.";
+            }
+
+            return (
+                payload &&
+                payload.error &&
+                typeof payload.error.message === "string" &&
+                payload.error.message
+            )
+                ? payload.error.message
+                : "The checkout request was invalid.";
+        }
+
+        if (response.status === 401) {
+            return "Your session has expired. Please sign in again before placing another order.";
+        }
+
+        if (response.status === 403) {
+            return (
+                payload &&
+                payload.error &&
+                typeof payload.error.message === "string" &&
+                payload.error.message
+            )
+                ? payload.error.message
+                : "Your account cannot complete this checkout action.";
+        }
+
+        if (response.status === 404) {
+            return "A cart, outlet or menu item needed for this order is no longer available. Review your Cart.";
+        }
+
+        if (response.status === 409) {
+            if (code === "PRICE_CHANGED") {
+                return "Pricing changed during checkout. Review your Cart before placing the order again.";
+            }
+
+            if (code === "CART_CHANGED") {
+                return "Your Cart changed during checkout. Review it before trying again.";
+            }
+
+            if (
+                code === "PRODUCT_UNAVAILABLE" ||
+                code === "DEAL_UNAVAILABLE" ||
+                code === "ITEM_UNAVAILABLE"
+            ) {
+                return "An item in your Cart is no longer available. Review your Cart; nothing was silently removed here.";
+            }
+
+            if (
+                code === "CART_OUTLET_MISMATCH" ||
+                code === "CART_SERVICE_MODE_MISMATCH"
+            ) {
+                return "Your Cart outlet/service context no longer matches Checkout. Review your Cart or Location.";
+            }
+
+            if (code === "PAYMENT_METHOD_UNAVAILABLE") {
+                return "The selected payment method is no longer available. Choose another enabled method.";
+            }
+
+            return (
+                payload &&
+                payload.error &&
+                typeof payload.error.message === "string" &&
+                payload.error.message
+            )
+                ? payload.error.message
+                : "Checkout state changed. Review your Cart before trying again.";
+        }
+
+        if (response.status === 422) {
+            return (
+                payload &&
+                payload.error &&
+                typeof payload.error.message === "string" &&
+                payload.error.message
+            )
+                ? payload.error.message
+                : "Some checkout information is invalid.";
+        }
+
+        if (response.status === 429) {
+            return "Too many checkout attempts. Please wait and try again.";
+        }
+
+        if (response.status >= 500) {
+            return (
+                payload &&
+                payload.error &&
+                typeof payload.error.message === "string" &&
+                payload.error.message
+            )
+                ? payload.error.message
+                : "The server could not complete Checkout right now.";
+        }
+
+        return "We couldn't complete Checkout.";
+    }
+
+    function orderIdFromSuccess(payload) {
+        if (
+            !payload ||
+            payload.success !== true ||
+            !payload.data ||
+            typeof payload.data !== "object" ||
+            !payload.data.order ||
+            typeof payload.data.order !== "object"
+        ) {
+            return "";
+        }
+
+        return normalizeText(
+            payload.data.order.id ||
+            payload.data.order.order_id
+        );
+    }
+
+    function orderDetailUrl(orderId) {
+        const template = safeSameOriginPath(root.dataset.orderUrlTemplate);
+        const cleanId = normalizeText(orderId);
+
+        if (!template || !cleanId) {
+            return "";
+        }
+
+        return template.replace(
+            "__ORDER_ID__",
+            encodeURIComponent(cleanId)
+        );
+    }
+
+    function applyServerFieldError(payload, message) {
+        const field = fieldFromServer(payload);
+
+        if (!field || !fieldMap[field]) {
+            return false;
+        }
+
+        setFieldError(field, message);
+
+        const input = fieldMap[field].input;
+
+        if (input && typeof input.focus === "function") {
+            input.focus();
+        }
+
+        return true;
+    }
+
+    function handleAmbiguousSubmission(message) {
+        disableFinalSubmissionForAmbiguity();
+
+        showWideError(
+            "Order submission outcome is uncertain",
+            message ||
+                "We couldn't confirm whether the order was committed. Do not submit again yet. Check My Orders first.",
+            {
+                showCart: false,
+                showOrders: true,
+                focus: true
+            }
+        );
+
+        toast(
+            "Check My Orders before trying Checkout again.",
+            "warning"
+        );
+
+        announce(
+            "Order result uncertain. Check My Orders before trying again."
+        );
+    }
+
+    async function reloadPaymentMethodsAfterConflict() {
+        state.paymentConfigLoaded = false;
+        state.paymentType = "";
+        state.paymentMethod = "";
+
+        if (elements.paymentList) {
+            elements.paymentList.replaceChildren();
+        }
+
+        if (elements.paymentTypeList) {
+            elements.paymentTypeList.hidden = true;
+        }
+
+        if (elements.advanceMethods) {
+            elements.advanceMethods.hidden = true;
+        }
+
+        if (elements.paymentDetails) {
+            elements.paymentDetails.hidden = true;
+        }
+
+        if (elements.paymentLoading) {
+            elements.paymentLoading.hidden = false;
+        }
+
+        await loadPaymentMethods();
+    }
+
+    async function submitOrder() {
+        if (
+            state.submitInFlight ||
+            state.outcomeAmbiguous ||
+            state.blockedByConflict
+        ) {
+            return;
+        }
+
+        const validation = validateCheckout();
+
+        if (!validation.valid) {
+            if (
+                validation.firstInvalid &&
+                typeof validation.firstInvalid.focus === "function"
+            ) {
+                validation.firstInvalid.focus();
+            }
+
+            return;
+        }
+
+        const url = submitUrl();
+
+        if (!url) {
+            showWideError(
+                "Checkout endpoint unavailable",
+                "The order was not submitted because the configured Checkout endpoint could not be resolved.",
+                {showCart: false}
+            );
+            return;
+        }
+
+        if (navigator.onLine === false) {
+            showWideError(
+                "You're offline",
+                "The order was not submitted. Reconnect before using Place Order.",
+                {showCart: false}
+            );
+            return;
+        }
+
+        const payload = collectCheckoutPayload();
+
+        setSubmitLoading(true);
+        clearWideError();
+        clearFieldErrors();
+
+        let requestDispatched = false;
+
+        try {
+            requestDispatched = true;
+
+            /*
+             * No AbortController and no automatic retry.
+             * Once the mutation is sent, a lost response may hide a
+             * successfully committed order.
+             */
+            const response = await csrfFetch(
+                url,
+                {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: {
+                        Accept: "application/json",
+                        "Content-Type": "application/json",
+                        "Idempotency-Key": state.idempotencyKey
+                    },
+                    body: JSON.stringify(payload)
+                }
+            );
+
+            const result = await parseJson(response);
+
+            if (
+                response.ok &&
+                result &&
+                result.success === true
+            ) {
+                const orderId = orderIdFromSuccess(result);
+                const nextUrl = orderDetailUrl(orderId);
+                const paymentUrl =
+                    state.paymentMethod === "easypaisa"
+                        ? providerRedirectUrl(result)
+                        : "";
+
+                if (!orderId || !nextUrl) {
+                    handleAmbiguousSubmission(
+                        "The backend reported success, but this page could not resolve the confirmed order destination. Check My Orders before trying again."
+                    );
+                    return;
+                }
+
+                if (
+                    window.AppUI &&
+                    typeof window.AppUI.updateCartCount === "function"
+                ) {
+                    window.AppUI.updateCartCount(0);
+                } else if (typeof window.updateCartCount === "function") {
+                    window.updateCartCount(0);
+                }
+
+                toast(
+                    result.data && result.data.duplicate
+                        ? "Existing order confirmed."
+                        : "Order submitted successfully.",
+                    "success"
+                );
+
+                state.unloadGuard = false;
+
+                if (paymentUrl) {
+                    announce("Order created. Opening the payment page.");
+                    window.location.assign(paymentUrl);
+                    return;
+                }
+
+                announce("Order confirmed. Opening order details.");
+                window.location.assign(nextUrl);
+                return;
+            }
+
+            const message = safeServerMessage(response, result);
+            const code = errorCode(result);
+
+            /*
+             * A server failure after this final request may be ambiguous:
+             * order transaction can have committed before downstream
+             * provider initiation fails.
+             */
+            if (response.status >= 500) {
+                const definitelyPreCommitCodes = new Set([
+                    "DELIVERY_FEE_NOT_CONFIGURED",
+                    "FIREBASE_UNAVAILABLE",
+                    "AUTH_SERVICE_UNAVAILABLE"
+                ]);
+
+                if (definitelyPreCommitCodes.has(code)) {
+                    showWideError(
+                        code === "DELIVERY_FEE_NOT_CONFIGURED"
+                            ? "Delivery pricing needs configuration"
+                            : "Checkout service is temporarily unavailable",
+                        message,
+                        {showCart: false}
+                    );
+                    return;
+                }
+
+                handleAmbiguousSubmission(
+                    "The server returned an error after the final order request was sent. The order may still exist. Check My Orders before trying again."
+                );
+                return;
+            }
+
+            if (response.status === 409) {
+                if (code === "PAYMENT_METHOD_UNAVAILABLE") {
+                    await reloadPaymentMethodsAfterConflict();
+
+                    showWideError(
+                        "Payment method changed",
+                        message,
+                        {showCart: false}
+                    );
+                    return;
+                }
+
+                state.blockedByConflict = true;
+
+                showWideError(
+                    "Checkout state changed",
+                    message,
+                    {showCart: true}
+                );
+                return;
+            }
+
+            if (response.status === 401) {
+                showWideError(
+                    "Session expired",
+                    message,
+                    {
+                        showCart: false,
+                        showLogin: true
+                    }
+                );
+                return;
+            }
+
+            const applied = applyServerFieldError(result, message);
+
+            if (!applied) {
+                showWideError(
+                    response.status === 429
+                        ? "Too many attempts"
+                        : "Checkout could not be completed",
+                    message,
+                    {
+                        showCart: response.status === 404
+                    }
+                );
+            }
+        } catch (error) {
+            if (requestDispatched) {
+                handleAmbiguousSubmission(
+                    "The connection ended before the final order response could be confirmed. Do not submit again yet. Check My Orders first."
+                );
+                return;
+            }
+
+            showWideError(
+                "Checkout request failed",
+                "The order was not submitted. Please try again.",
+                {showCart: false}
+            );
+        } finally {
+            if (!state.outcomeAmbiguous) {
+                setSubmitLoading(false);
+            }
+        }
+    }
+
+    function initializeFormSubmission() {
+        if (!elements.form) return;
+
+        elements.form.addEventListener("submit", function (event) {
+            event.preventDefault();
+            submitOrder();
+        });
+    }
+
+    function initializeFieldErrorClearing() {
+        Object.keys(fieldMap).forEach(function (field) {
+            const entry = fieldMap[field];
+            if (!entry.input) return;
+
+            entry.input.addEventListener("input", function () {
+                setFieldError(field, "");
+
+                if (!state.blockedByConflict) {
+                    clearWideError();
+                }
+            });
+        });
+    }
+
+    function initializeImageFallbacks() {
+        document.querySelectorAll("[data-checkout-image]").forEach(function (image) {
+            image.addEventListener("error", function () {
+                const media = image.closest(".checkout-summary-item__media");
+                image.remove();
+
+                if (!media) return;
+
+                const svg = svgElement("svg");
+                svg.setAttribute("viewBox", "0 0 24 24");
+                svg.setAttribute("aria-hidden", "true");
+
+                appendPath(svg, "M5 4h14v16H5z");
+                appendPath(svg, "M8 8h8M8 12h8M8 16h5");
+
+                media.appendChild(svg);
+            }, {once: true});
+        });
+    }
+
+    function initializeBeforeUnloadGuard() {
+        window.addEventListener("beforeunload", function (event) {
+            if (!state.unloadGuard) return;
+
+            event.preventDefault();
+            event.returnValue = "";
+        });
+    }
+
+    function initializeNetworkState() {
+        window.addEventListener("offline", function () {
+            if (!state.submitInFlight) {
+                toast(
+                    "You're offline. Place Order requires a connection.",
+                    "warning"
+                );
+            }
+        });
+
+        window.addEventListener("online", function () {
+            if (!state.outcomeAmbiguous) {
+                toast("Connection restored.", "info");
+            }
+        });
+    }
+
+    function initializeCheckout() {
+        if (!elements.form) return;
+
+        initializeIdempotency();
+        initializeSchedule();
+        initializeNotesCounter();
+        initializeGeolocation();
+        initializeCopyButtons();
+        initializeFormSubmission();
+        initializeFieldErrorClearing();
+        initializeImageFallbacks();
+        initializeBeforeUnloadGuard();
+        initializeNetworkState();
+
+        loadSelectedOutlet();
+        initializePaymentTypes();
+        loadPaymentMethods();
+
+        /*
+         * Intentionally absent:
+         * - automatic geolocation
+         * - client pricing/tax/delivery-fee calculation
+         * - direct Firestore writes
+         * - Firebase ID-token handling
+         * - localStorage cart/service authority
+         * - frontend paid-state mutation
+         * - automatic final-order retry
+         */
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener(
+            "DOMContentLoaded",
+            initializeCheckout,
+            {once: true}
+        );
+    } else {
+        initializeCheckout();
+    }
+}());
+</script>
+{% endblock %}

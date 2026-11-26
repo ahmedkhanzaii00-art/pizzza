@@ -1,0 +1,2806 @@
+
+{% extends "base.html" %}
+
+{# =========================================================
+   ONE REUSABLE STAFF DASHBOARD
+
+   Current main.py is the authority:
+   - trusted roles: owner, super_admin, admin, chef, customer
+   - trusted permissions are loaded server-side
+   - owner gets all permissions server-side
+   - current dashboard routes pass principal + metrics
+   - no outlet assignment scope is currently passed
+   - no backend-approved per-order transition list is currently passed
+   - no payment-summary / alert / management-link bundle is currently passed
+
+   This template therefore renders only real supplied data and exposes
+   richer optional modules only when a future backend explicitly sends
+   safe structures.
+========================================================= #}
+
+{% set principal_data = principal|default({}, true) %}
+{% if principal_data is not mapping %}
+    {% set principal_data = {} %}
+{% endif %}
+
+{% set metrics_data = metrics|default({}, true) %}
+{% if metrics_data is not mapping %}
+    {% set metrics_data = {} %}
+{% endif %}
+
+{% set dashboard_data = dashboard|default({}, true) %}
+{% if dashboard_data is not mapping %}
+    {% set dashboard_data = {} %}
+{% endif %}
+
+{% set role = principal_data.get("role", "")|default("", true) %}
+{% set permissions = principal_data.get("permissions", [])|default([], true) %}
+{% if permissions is string or permissions is not sequence %}
+    {% set permissions = [] %}
+{% endif %}
+
+{% set role_labels = {
+    "owner": "Owner",
+    "super_admin": "Super Admin",
+    "admin": "Admin",
+    "chef": "Chef"
+} %}
+
+{% set role_label = dashboard_data.get("role_label", role_labels.get(role, "Staff"))|default("Staff", true) %}
+{% set staff_name = dashboard_data.get("staff_display_name", principal_data.get("name", ""))|default("", true) %}
+
+{% set is_owner = role == "owner" %}
+{% set is_chef = role == "chef" %}
+{% set is_staff = role in ["owner", "super_admin", "admin", "chef"] %}
+
+{% set can_view_dashboard = is_owner or "view_dashboard" in permissions or (is_chef and "kitchen_access" in permissions) %}
+{% set can_view_orders = is_owner or "view_orders" in permissions or "update_orders" in permissions or "kitchen_access" in permissions %}
+{% set can_update_orders = is_owner or "update_orders" in permissions %}
+{% set can_view_finance = is_owner or "view_finance" in permissions %}
+{% set can_view_reports = is_owner or "view_reports" in permissions %}
+{% set can_view_customers = is_owner or "view_customers" in permissions or "manage_customers" in permissions %}
+{% set can_view_reviews = is_owner or "view_reviews" in permissions or "moderate_reviews" in permissions %}
+{% set can_view_bookings = is_owner or "view_bookings" in permissions or "manage_bookings" in permissions %}
+{% set can_view_payments = is_owner or "view_payments" in permissions or "verify_payments" in permissions %}
+
+{% set scope_data = dashboard_data.get("scope", {}) %}
+{% if scope_data is not mapping %}
+    {% set scope_data = {} %}
+{% endif %}
+{% set scope_label = scope_data.get("label", dashboard_data.get("scope_label", ""))|default("", true) %}
+{% set business_day_label = dashboard_data.get("business_day_label", business_day_label|default("", true))|default("", true) %}
+{% set last_updated_label = dashboard_data.get("last_updated_label", last_updated_label|default("", true))|default("", true) %}
+
+{% set dashboard_refresh_enabled = dashboard_data.get("refresh_enabled", dashboard_refresh_enabled|default(false)) %}
+{% set raw_refresh_url = dashboard_data.get("refresh_url", dashboard_refresh_url|default("", true))|default("", true)|string|trim %}
+{% if raw_refresh_url.startswith("/") and not raw_refresh_url.startswith("//") %}
+    {% set safe_refresh_url = raw_refresh_url %}
+{% else %}
+    {% set safe_refresh_url = "" %}
+{% endif %}
+
+{% set raw_poll_seconds = dashboard_data.get("poll_seconds", dashboard_poll_seconds|default(0, true)) %}
+{% if raw_poll_seconds is number %}
+    {% set poll_seconds = raw_poll_seconds|int %}
+{% else %}
+    {% set poll_seconds = 0 %}
+{% endif %}
+{% if poll_seconds < 20 or poll_seconds > 60 or not dashboard_refresh_enabled or not safe_refresh_url %}
+    {% set poll_seconds = 0 %}
+{% endif %}
+
+{% set recent_orders = metrics_data.get("recent_orders", []) %}
+{% if recent_orders is string or recent_orders is not sequence %}
+    {% set recent_orders = [] %}
+{% endif %}
+
+{% set scheduled_orders = dashboard_data.get("scheduled_orders", []) %}
+{% if scheduled_orders is string or scheduled_orders is not sequence %}
+    {% set scheduled_orders = [] %}
+{% endif %}
+
+{% set alerts = dashboard_data.get("alerts", []) %}
+{% if alerts is string or alerts is not sequence %}
+    {% set alerts = [] %}
+{% endif %}
+
+{% set payment_summary = dashboard_data.get("payment_summary", []) %}
+{% if payment_summary is string or payment_summary is not sequence %}
+    {% set payment_summary = [] %}
+{% endif %}
+
+{% set quick_links = dashboard_data.get("quick_links", []) %}
+{% if quick_links is string or quick_links is not sequence %}
+    {% set quick_links = [] %}
+{% endif %}
+
+{% set recent_audit = dashboard_data.get("recent_audit", []) %}
+{% if recent_audit is string or recent_audit is not sequence %}
+    {% set recent_audit = [] %}
+{% endif %}
+
+{% set terminal_statuses = ["delivered", "picked_up", "completed", "cancelled"] %}
+
+{% set safe_quick_link_routes = {
+    "profile_page": url_for("profile_page"),
+    "change_password_page": url_for("change_password_page"),
+    "home_page": url_for("home_page"),
+    "menu_page": url_for("menu_page"),
+    "contact_page": url_for("contact_page"),
+    "support_page": url_for("support_page"),
+    "locations_page": url_for("locations_page")
+} %}
+
+{% macro metric_value(value, money=false) -%}
+    {%- if money and value is mapping -%}
+        <span class="dashboard-money">
+            <span class="dashboard-money__currency">{{ value.get("currency", "") }}</span>
+            <span class="dashboard-money__amount">{{ value.get("amount", "—") }}</span>
+        </span>
+    {%- elif value is none -%}
+        —
+    {%- else -%}
+        {{ value }}
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro metric_card(key, label, value, icon="orders", money=false, tone="neutral", hint="") -%}
+<article class="dashboard-kpi dashboard-kpi--{{ tone }}" data-metric-key="{{ key }}">
+    <div class="dashboard-kpi__top">
+        <span class="dashboard-kpi__icon" aria-hidden="true">
+            {% if icon == "money" %}
+                <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M7 9h10M7 15h10"></path><circle cx="12" cy="12" r="2.2"></circle></svg>
+            {% elif icon == "clock" %}
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+            {% elif icon == "calendar" %}
+                <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"></rect><path d="M8 3v4M16 3v4M4 10h16"></path></svg>
+            {% elif icon == "check" %}
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="m8 12 2.7 2.7L16.5 9"></path></svg>
+            {% elif icon == "cancel" %}
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M8 8l8 8M16 8l-8 8"></path></svg>
+            {% elif icon == "customers" %}
+                <svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"></circle><circle cx="17" cy="10" r="2"></circle><path d="M3 20c.6-4.2 2.6-6.2 6-6.2s5.4 2 6 6.2"></path></svg>
+            {% else %}
+                <svg viewBox="0 0 24 24"><path d="M5 4h14v16H5z"></path><path d="M8 8h8M8 12h8M8 16h5"></path></svg>
+            {% endif %}
+        </span>
+        <span class="dashboard-kpi__label">{{ label }}</span>
+    </div>
+
+    <p class="dashboard-kpi__value" data-metric-value="{{ key }}">
+        {{ metric_value(value, money) }}
+    </p>
+
+    {% if hint %}
+        <p class="dashboard-kpi__hint">{{ hint }}</p>
+    {% endif %}
+</article>
+{%- endmacro %}
+
+{% macro status_chip(status) -%}
+    {% set raw = status|default("unknown", true)|string|lower %}
+    {% if raw in ["delivered", "picked_up", "completed", "served"] %}
+        {% set tone = "success" %}
+    {% elif raw in ["cancelled", "failed", "rejected"] %}
+        {% set tone = "danger" %}
+    {% elif raw in ["preparing", "packing", "sent_to_kitchen", "serving", "rider_assigned", "out_for_delivery"] %}
+        {% set tone = "progress" %}
+    {% elif raw in ["ready", "ready_for_pickup", "confirmed", "received"] %}
+        {% set tone = "ready" %}
+    {% else %}
+        {% set tone = "pending" %}
+    {% endif %}
+    <span class="dashboard-chip dashboard-chip--{{ tone }}">
+        <span class="dashboard-chip__dot" aria-hidden="true"></span>
+        <span>{{ raw|replace("_", " ")|title }}</span>
+    </span>
+{%- endmacro %}
+
+{% macro service_chip(mode) -%}
+    {% set raw = mode|default("service", true)|string|lower %}
+    <span class="dashboard-service">
+        {% if raw == "delivery" %}
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 7h10v9H3z"></path><path d="M13 10h4l3 3v3h-7z"></path><circle cx="7" cy="18" r="1.5"></circle><circle cx="17" cy="18" r="1.5"></circle></svg>
+        {% elif raw == "pickup" %}
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 8h14l-1 12H6L5 8Z"></path><path d="M9 8V6a3 3 0 0 1 6 0v2"></path></svg>
+        {% else %}
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 3v8M3 7h4M5 11v10"></path><path d="M15 3v18M15 3c3 1 4 3 4 6s-1 5-4 6"></path></svg>
+        {% endif %}
+        <span>{{ raw|replace("_", " ")|title }}</span>
+    </span>
+{%- endmacro %}
+
+{% macro order_items_preview(order, chef=false) -%}
+    {% set items = order.get("items", []) if order is mapping else [] %}
+    {% if items is string or items is not sequence %}
+        {% set items = [] %}
+    {% endif %}
+
+    {% if items %}
+        <ul class="dashboard-order-items">
+            {% for item in items[:4] %}
+                {% if item is mapping %}
+                    {% set item_name = item.get("product_name", item.get("deal_name", "Item"))|default("Item", true) %}
+                    <li>
+                        <div class="dashboard-order-item__line">
+                            <span class="dashboard-order-item__qty">{{ item.get("quantity", 1) }}×</span>
+                            <span class="dashboard-order-item__name">{{ item_name }}</span>
+                        </div>
+
+                        {% if chef %}
+                            {% set selected_options = item.get("selected_options", []) %}
+                            {% if selected_options is sequence and selected_options is not string and selected_options %}
+                                <p class="dashboard-order-item__options">
+                                    {% for option in selected_options[:6] %}
+                                        {% if option is mapping and option.get("option_name") %}
+                                            <span>{{ option.get("group_name", "Option") }}: {{ option.get("option_name") }}</span>
+                                        {% endif %}
+                                    {% endfor %}
+                                </p>
+                            {% endif %}
+                        {% endif %}
+                    </li>
+                {% endif %}
+            {% endfor %}
+            {% if items|length > 4 %}
+                <li class="dashboard-order-items__more">+{{ items|length - 4 }} more item lines</li>
+            {% endif %}
+        </ul>
+    {% endif %}
+{%- endmacro %}
+
+{% macro order_card(order, chef=false) -%}
+    {% if order is mapping %}
+        {% set reference = order.get("order_reference", "Order")|default("Order", true) %}
+        {% set order_status = order.get("order_status", "order_placed")|default("order_placed", true) %}
+        {% set mode = order.get("service_mode", "service")|default("service", true) %}
+        {% set outlet_snapshot = order.get("outlet_snapshot", {}) %}
+        {% if outlet_snapshot is not mapping %}
+            {% set outlet_snapshot = {} %}
+        {% endif %}
+
+        <article class="dashboard-order-card" data-order-id="{{ order.get('id', '') }}" data-order-status="{{ order_status }}">
+            <header class="dashboard-order-card__head">
+                <div>
+                    <p class="dashboard-order-card__eyebrow">Order</p>
+                    <h3 class="dashboard-order-card__title">{{ reference }}</h3>
+                </div>
+                {{ status_chip(order_status) }}
+            </header>
+
+            <div class="dashboard-order-card__meta">
+                {{ service_chip(mode) }}
+                {% if outlet_snapshot.get("name") %}
+                    <span class="dashboard-order-card__meta-item">
+                        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 21s6-5.3 6-11a6 6 0 1 0-12 0c0 5.7 6 11 6 11Z"></path><circle cx="12" cy="10" r="2"></circle></svg>
+                        {{ outlet_snapshot.get("name") }}
+                    </span>
+                {% endif %}
+                {% if order.get("schedule_for_display") %}
+                    <span class="dashboard-order-card__meta-item">
+                        <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+                        Scheduled {{ order.get("schedule_for_display") }}
+                    </span>
+                {% endif %}
+            </div>
+
+            {{ order_items_preview(order, chef) }}
+
+            {% if chef and order.get("customer_notes") %}
+                <div class="dashboard-kitchen-note">
+                    <strong>Preparation note</strong>
+                    <p>{{ order.get("customer_notes") }}</p>
+                </div>
+            {% endif %}
+
+            {% set allowed_actions = order.get("dashboard_status_actions", []) %}
+            {% if allowed_actions is sequence and allowed_actions is not string and allowed_actions and can_update_orders %}
+                <div class="dashboard-order-card__actions" aria-label="Backend-approved actions for {{ reference }}">
+                    {% for action in allowed_actions[:3] %}
+                        {% if action is mapping %}
+                            {% set target = action.get("status", "")|default("", true)|string|lower|trim %}
+                            {% set label = action.get("label", "")|default("", true) %}
+                            {% set action_url = action.get("url", "")|default("", true)|string|trim %}
+                            {% if target and label and action_url.startswith("/") and not action_url.startswith("//") %}
+                                <button
+                                    class="dashboard-order-action"
+                                    type="button"
+                                    data-dashboard-order-action
+                                    data-order-id="{{ order.get('id', '') }}"
+                                    data-target-status="{{ target }}"
+                                    data-action-url="{{ action_url }}"
+                                >
+                                    <span>{{ label }}</span>
+                                    <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12h14M14 7l5 5-5 5"></path></svg>
+                                </button>
+                            {% endif %}
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </article>
+    {% endif %}
+{%- endmacro %}
+
+{% macro quick_link(link) -%}
+    {% if link is mapping %}
+        {% set endpoint = link.get("endpoint", "")|default("", true) %}
+        {% set raw_href = link.get("url", link.get("href", ""))|default("", true)|string|trim %}
+        {% set label = link.get("label", "")|default("", true) %}
+
+        {% if endpoint in safe_quick_link_routes %}
+            {% set href = safe_quick_link_routes.get(endpoint) %}
+        {% elif raw_href.startswith("/") and not raw_href.startswith("//") %}
+            {% set href = raw_href %}
+        {% else %}
+            {% set href = "" %}
+        {% endif %}
+
+        {% if href and label %}
+            <a class="dashboard-quick-link" href="{{ href }}">
+                <span class="dashboard-quick-link__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M5 4h14v16H5z"></path><path d="M8 8h8M8 12h8M8 16h5"></path></svg>
+                </span>
+                <span class="dashboard-quick-link__copy">
+                    <strong>{{ label }}</strong>
+                    {% if link.get("description") %}
+                        <small>{{ link.get("description") }}</small>
+                    {% endif %}
+                </span>
+                <svg class="dashboard-quick-link__arrow" aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12h14M14 7l5 5-5 5"></path></svg>
+            </a>
+        {% endif %}
+    {% endif %}
+{%- endmacro %}
+
+{% block title %}Dashboard | {{ business_name|default("Restaurant", true) }}{% endblock %}
+{% block meta_description %}Secure staff operations dashboard for {{ business_name|default("the restaurant", true) }}.{% endblock %}
+
+{% block head %}
+    {{ super() }}
+    <meta name="robots" content="noindex,nofollow">
+{% endblock %}
+
+{% block styles %}
+<style>
+    .dashboard-page {
+        --db-primary: var(--primary-color, #b83222);
+        --db-primary-hover: var(--primary-color-hover, #98281b);
+        --db-primary-soft: var(--primary-color-soft, #fff0eb);
+        --db-primary-contrast: var(--primary-contrast, #fff);
+        --db-bg: var(--background-color, #fffaf4);
+        --db-bg-soft: var(--background-subtle, #f8f2ea);
+        --db-surface: var(--surface-color, #fff);
+        --db-surface-muted: var(--surface-muted, #f5eee5);
+        --db-text: var(--text-color, #201c19);
+        --db-strong: var(--text-strong, #151210);
+        --db-muted: var(--muted-text, #6f6760);
+        --db-subtle: var(--subtle-text, #8c8279);
+        --db-border: var(--border-color, #e7ded4);
+        --db-border-strong: var(--border-strong, #d3c6b9);
+        --db-success: var(--success-color, #247a4a);
+        --db-success-soft: var(--success-soft, #eaf7ef);
+        --db-warning: var(--warning-color, #9a6510);
+        --db-warning-soft: var(--warning-soft, #fff5dc);
+        --db-error: var(--error-color, #b42318);
+        --db-error-soft: var(--error-soft, #fff0ee);
+        --db-info: var(--info-color, #285ea8);
+        --db-info-soft: var(--info-soft, #edf4ff);
+        --db-radius-xl: var(--radius-xl, 26px);
+        --db-shadow-sm: var(--shadow-sm, 0 6px 18px rgba(31,24,19,.08));
+        --db-shadow-md: var(--shadow-md, 0 16px 36px rgba(31,24,19,.12));
+        --db-transition: var(--transition-fast, 160ms ease);
+
+        min-height: 72vh;
+        padding: clamp(.8rem, 2.4vw, 1.35rem) 0 clamp(4rem, 7vw, 5.5rem);
+        color: var(--db-text);
+        background:
+            radial-gradient(circle at 0 5%, color-mix(in srgb, var(--db-primary) 4%, transparent), transparent 30rem),
+            radial-gradient(circle at 100% 55%, color-mix(in srgb, var(--accent-color, #d99b35) 3%, transparent), transparent 24rem);
+    }
+
+    .dashboard-page,
+    .dashboard-page *,
+    .dashboard-page *::before,
+    .dashboard-page *::after {
+        box-sizing: border-box;
+    }
+
+    .dashboard-page [hidden] { display: none !important; }
+
+    .dashboard-page svg {
+        display: block;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+
+    .dashboard-shell {
+        width: min(100% - 2rem, 1360px);
+        margin-inline: auto;
+    }
+
+    .dashboard-section { margin-top: .85rem; }
+
+    .dashboard-panel {
+        overflow: hidden;
+        border: 1px solid var(--db-border);
+        border-radius: 16px;
+        background: var(--db-surface);
+        box-shadow: var(--db-shadow-sm);
+    }
+
+    .dashboard-panel__head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: .75rem;
+        padding: .78rem .86rem;
+        border-bottom: 1px solid var(--db-border);
+    }
+
+    .dashboard-panel__head h2 {
+        margin: 0;
+        color: var(--db-strong);
+        font-size: .82rem;
+        font-weight: 880;
+        line-height: 1.3;
+    }
+
+    .dashboard-panel__head p {
+        max-width: 62ch;
+        margin: .18rem 0 0;
+        color: var(--db-muted);
+        font-size: .55rem;
+        line-height: 1.45;
+    }
+
+    .dashboard-panel__body { padding: .78rem .86rem; }
+
+    .dashboard-header {
+        position: relative;
+        overflow: hidden;
+        display: grid;
+        grid-template-columns: minmax(0,1fr) auto;
+        gap: 1rem;
+        align-items: center;
+        padding: clamp(.9rem,2.5vw,1.3rem);
+        border: 1px solid var(--db-border);
+        border-radius: var(--db-radius-xl);
+        background: linear-gradient(140deg, color-mix(in srgb, var(--db-primary-soft) 54%, var(--db-surface)), var(--db-surface));
+        box-shadow: var(--db-shadow-sm);
+    }
+
+    .dashboard-header::after {
+        content: "";
+        position: absolute;
+        top: -80px;
+        right: -80px;
+        width: 230px;
+        height: 230px;
+        border: 1px solid color-mix(in srgb, var(--db-primary) 10%, transparent);
+        border-radius: 50%;
+        pointer-events: none;
+    }
+
+    .dashboard-header__content,
+    .dashboard-header__actions { position: relative; z-index: 1; }
+
+    .dashboard-eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        margin: 0 0 .34rem;
+        color: var(--db-primary);
+        font-size: .58rem;
+        font-weight: 860;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+    }
+
+    .dashboard-eyebrow::before {
+        content: "";
+        width: 22px;
+        height: 2px;
+        border-radius: 999px;
+        background: currentColor;
+    }
+
+    .dashboard-header h1 {
+        margin: 0;
+        color: var(--db-strong);
+        font-size: clamp(1.55rem, 4vw, 2.65rem);
+        font-weight: 920;
+        line-height: 1.05;
+        letter-spacing: -.045em;
+        text-wrap: balance;
+    }
+
+    .dashboard-header__subline {
+        display: flex;
+        align-items: center;
+        gap: .42rem;
+        flex-wrap: wrap;
+        margin-top: .52rem;
+    }
+
+    .dashboard-role-chip,
+    .dashboard-scope-chip,
+    .dashboard-date-chip {
+        min-height: 30px;
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        padding: .34rem .45rem;
+        border: 1px solid var(--db-border);
+        border-radius: 999px;
+        background: var(--db-surface);
+        color: var(--db-muted);
+        font-size: .5rem;
+        font-weight: 760;
+        line-height: 1;
+    }
+
+    .dashboard-role-chip {
+        border-color: color-mix(in srgb, var(--db-primary) 20%, var(--db-border));
+        background: var(--db-primary-soft);
+        color: var(--db-primary);
+    }
+
+    .dashboard-role-chip svg,
+    .dashboard-scope-chip svg,
+    .dashboard-date-chip svg { width: .68rem; height: .68rem; }
+
+    .dashboard-header__actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: .42rem;
+        flex-wrap: wrap;
+    }
+
+    .dashboard-refresh-status {
+        margin: .2rem 0 0;
+        color: var(--db-subtle);
+        font-size: .49rem;
+        line-height: 1.4;
+        text-align: end;
+    }
+
+    .dashboard-btn {
+        min-height: 42px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: .36rem;
+        padding: .56rem .7rem;
+        border-radius: 9px;
+        font: inherit;
+        font-size: .56rem;
+        font-weight: 820;
+        line-height: 1;
+        text-decoration: none;
+        transition: transform var(--db-transition), border-color var(--db-transition), background var(--db-transition), opacity var(--db-transition);
+    }
+
+    button.dashboard-btn { cursor: pointer; }
+
+    .dashboard-btn svg { width: .8rem; height: .8rem; }
+
+    .dashboard-btn--secondary {
+        border: 1px solid var(--db-border);
+        background: var(--db-bg);
+        color: var(--db-text);
+    }
+
+    .dashboard-btn--secondary:hover:not(:disabled) {
+        transform: translateY(-1px);
+        border-color: var(--db-border-strong);
+        background: var(--db-surface-muted);
+    }
+
+    .dashboard-btn:disabled {
+        cursor: not-allowed;
+        opacity: .58;
+        transform: none !important;
+    }
+
+    .dashboard-spinner {
+        width: .76rem;
+        height: .76rem;
+        border: 2px solid color-mix(in srgb, currentColor 28%, transparent);
+        border-top-color: currentColor;
+        border-radius: 50%;
+        animation: dashboard-spin .8s linear infinite;
+    }
+
+    @keyframes dashboard-spin { to { transform: rotate(360deg); } }
+
+    .dashboard-status-banner {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: .6rem;
+        margin-top: .65rem;
+        padding: .58rem .65rem;
+        border: 1px solid color-mix(in srgb, var(--db-warning) 24%, var(--db-border));
+        border-radius: 11px;
+        background: var(--db-warning-soft);
+        color: color-mix(in srgb, var(--db-warning) 80%, var(--db-text));
+        font-size: .54rem;
+        line-height: 1.45;
+    }
+
+    .dashboard-status-banner__main {
+        display: flex;
+        align-items: flex-start;
+        gap: .42rem;
+    }
+
+    .dashboard-status-banner svg {
+        width: .8rem;
+        height: .8rem;
+        flex: 0 0 .8rem;
+        margin-top: .02rem;
+    }
+
+    .dashboard-kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: .58rem;
+    }
+
+    .dashboard-kpi {
+        min-width: 0;
+        padding: .72rem;
+        border: 1px solid var(--db-border);
+        border-radius: 13px;
+        background: var(--db-surface);
+        box-shadow: var(--db-shadow-sm);
+    }
+
+    .dashboard-kpi--success { border-color: color-mix(in srgb, var(--db-success) 20%, var(--db-border)); }
+    .dashboard-kpi--warning { border-color: color-mix(in srgb, var(--db-warning) 22%, var(--db-border)); }
+    .dashboard-kpi--danger { border-color: color-mix(in srgb, var(--db-error) 18%, var(--db-border)); }
+    .dashboard-kpi--finance { border-color: color-mix(in srgb, var(--db-info) 20%, var(--db-border)); }
+
+    .dashboard-kpi__top {
+        display: flex;
+        align-items: center;
+        gap: .42rem;
+    }
+
+    .dashboard-kpi__icon {
+        width: 31px;
+        height: 31px;
+        display: grid;
+        place-items: center;
+        flex: 0 0 31px;
+        border-radius: 9px;
+        background: var(--db-bg-soft);
+        color: var(--db-primary);
+    }
+
+    .dashboard-kpi__icon svg { width: .82rem; height: .82rem; }
+
+    .dashboard-kpi__label {
+        min-width: 0;
+        color: var(--db-muted);
+        font-size: .54rem;
+        font-weight: 760;
+        line-height: 1.35;
+    }
+
+    .dashboard-kpi__value {
+        margin: .48rem 0 0;
+        color: var(--db-strong);
+        font-size: clamp(1.2rem, 3vw, 1.72rem);
+        font-weight: 920;
+        line-height: 1;
+        letter-spacing: -.04em;
+        font-variant-numeric: tabular-nums;
+        overflow-wrap: anywhere;
+    }
+
+    .dashboard-kpi__hint {
+        margin: .3rem 0 0;
+        color: var(--db-subtle);
+        font-size: .48rem;
+        line-height: 1.4;
+    }
+
+    .dashboard-money {
+        display: inline-flex;
+        align-items: baseline;
+        gap: .25rem;
+        flex-wrap: wrap;
+    }
+
+    .dashboard-money__currency {
+        color: var(--db-muted);
+        font-size: .55em;
+        font-weight: 820;
+        letter-spacing: .03em;
+    }
+
+    .dashboard-main-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.45fr) minmax(280px, .55fr);
+        gap: .85rem;
+        align-items: start;
+    }
+
+    .dashboard-stack {
+        display: grid;
+        gap: .85rem;
+    }
+
+    .dashboard-orders-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: .58rem;
+    }
+
+    .dashboard-order-card {
+        min-width: 0;
+        padding: .7rem;
+        border: 1px solid var(--db-border);
+        border-radius: 13px;
+        background: var(--db-bg-soft);
+    }
+
+    .dashboard-order-card__head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: .55rem;
+    }
+
+    .dashboard-order-card__eyebrow {
+        margin: 0;
+        color: var(--db-subtle);
+        font-size: .46rem;
+        font-weight: 780;
+        letter-spacing: .045em;
+        text-transform: uppercase;
+    }
+
+    .dashboard-order-card__title {
+        margin: .08rem 0 0;
+        color: var(--db-strong);
+        font-size: .68rem;
+        font-weight: 880;
+        line-height: 1.3;
+        overflow-wrap: anywhere;
+    }
+
+    .dashboard-order-card__meta {
+        display: flex;
+        align-items: center;
+        gap: .34rem;
+        flex-wrap: wrap;
+        margin-top: .5rem;
+    }
+
+    .dashboard-order-card__meta-item,
+    .dashboard-service {
+        min-height: 28px;
+        display: inline-flex;
+        align-items: center;
+        gap: .27rem;
+        padding: .3rem .4rem;
+        border: 1px solid var(--db-border);
+        border-radius: 999px;
+        background: var(--db-surface);
+        color: var(--db-muted);
+        font-size: .49rem;
+        font-weight: 720;
+        line-height: 1;
+    }
+
+    .dashboard-order-card__meta-item svg,
+    .dashboard-service svg {
+        width: .64rem;
+        height: .64rem;
+        flex: 0 0 .64rem;
+    }
+
+    .dashboard-order-items {
+        display: grid;
+        gap: .34rem;
+        margin: .56rem 0 0;
+        padding: .5rem 0 0;
+        border-top: 1px solid var(--db-border);
+        list-style: none;
+    }
+
+    .dashboard-order-item__line {
+        display: flex;
+        align-items: baseline;
+        gap: .34rem;
+        color: var(--db-text);
+        font-size: .54rem;
+        line-height: 1.4;
+    }
+
+    .dashboard-order-item__qty {
+        flex: 0 0 auto;
+        color: var(--db-primary);
+        font-weight: 860;
+    }
+
+    .dashboard-order-item__name {
+        min-width: 0;
+        font-weight: 760;
+        overflow-wrap: anywhere;
+    }
+
+    .dashboard-order-item__options {
+        display: flex;
+        gap: .25rem;
+        flex-wrap: wrap;
+        margin: .16rem 0 0 .95rem;
+        color: var(--db-muted);
+        font-size: .47rem;
+        line-height: 1.4;
+    }
+
+    .dashboard-order-item__options span {
+        padding: .18rem .27rem;
+        border-radius: 6px;
+        background: var(--db-surface);
+    }
+
+    .dashboard-order-items__more {
+        color: var(--db-subtle);
+        font-size: .47rem;
+        font-weight: 700;
+    }
+
+    .dashboard-kitchen-note {
+        margin-top: .5rem;
+        padding: .5rem;
+        border: 1px solid color-mix(in srgb, var(--db-warning) 22%, var(--db-border));
+        border-radius: 9px;
+        background: var(--db-warning-soft);
+    }
+
+    .dashboard-kitchen-note strong {
+        display: block;
+        color: var(--db-warning);
+        font-size: .5rem;
+    }
+
+    .dashboard-kitchen-note p {
+        margin: .12rem 0 0;
+        color: color-mix(in srgb, var(--db-warning) 78%, var(--db-text));
+        font-size: .51rem;
+        line-height: 1.45;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+    }
+
+    .dashboard-order-card__actions {
+        display: flex;
+        gap: .34rem;
+        flex-wrap: wrap;
+        margin-top: .55rem;
+        padding-top: .52rem;
+        border-top: 1px solid var(--db-border);
+    }
+
+    .dashboard-order-action {
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: .3rem;
+        flex: 1 1 auto;
+        padding: .48rem .54rem;
+        border: 1px solid var(--db-primary);
+        border-radius: 9px;
+        background: var(--db-primary);
+        color: var(--db-primary-contrast);
+        font: inherit;
+        font-size: .53rem;
+        font-weight: 820;
+        cursor: pointer;
+    }
+
+    .dashboard-order-action svg { width: .72rem; height: .72rem; }
+    .dashboard-order-action:disabled { cursor: not-allowed; opacity: .58; }
+
+    .dashboard-chip {
+        min-height: 27px;
+        display: inline-flex;
+        align-items: center;
+        gap: .26rem;
+        padding: .3rem .4rem;
+        border: 1px solid var(--db-border);
+        border-radius: 999px;
+        font-size: .47rem;
+        font-weight: 820;
+        line-height: 1;
+        white-space: nowrap;
+    }
+
+    .dashboard-chip__dot {
+        width: 6px;
+        height: 6px;
+        flex: 0 0 6px;
+        border-radius: 50%;
+        background: currentColor;
+    }
+
+    .dashboard-chip--success {
+        border-color: color-mix(in srgb, var(--db-success) 24%, var(--db-border));
+        background: var(--db-success-soft);
+        color: var(--db-success);
+    }
+
+    .dashboard-chip--danger {
+        border-color: color-mix(in srgb, var(--db-error) 22%, var(--db-border));
+        background: var(--db-error-soft);
+        color: var(--db-error);
+    }
+
+    .dashboard-chip--progress,
+    .dashboard-chip--ready {
+        border-color: color-mix(in srgb, var(--db-info) 22%, var(--db-border));
+        background: var(--db-info-soft);
+        color: var(--db-info);
+    }
+
+    .dashboard-chip--pending {
+        border-color: color-mix(in srgb, var(--db-warning) 22%, var(--db-border));
+        background: var(--db-warning-soft);
+        color: var(--db-warning);
+    }
+
+    .dashboard-service-list {
+        display: grid;
+        gap: .5rem;
+    }
+
+    .dashboard-service-row {
+        display: grid;
+        gap: .25rem;
+    }
+
+    .dashboard-service-row__top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .55rem;
+        font-size: .54rem;
+        line-height: 1.35;
+    }
+
+    .dashboard-service-row__top strong {
+        color: var(--db-text);
+        font-weight: 800;
+    }
+
+    .dashboard-service-row__top span {
+        color: var(--db-muted);
+        font-variant-numeric: tabular-nums;
+    }
+
+    .dashboard-service-bar {
+        height: 7px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: var(--db-surface-muted);
+    }
+
+    .dashboard-service-bar__fill {
+        width: var(--service-width, 0%);
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--db-primary), color-mix(in srgb, var(--db-primary) 72%, var(--accent-color, #d99b35)));
+    }
+
+    .dashboard-summary-list {
+        display: grid;
+        gap: .42rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .dashboard-summary-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .6rem;
+        padding: .52rem .56rem;
+        border: 1px solid var(--db-border);
+        border-radius: 10px;
+        background: var(--db-bg-soft);
+    }
+
+    .dashboard-summary-item__main { min-width: 0; }
+
+    .dashboard-summary-item__main strong {
+        display: block;
+        color: var(--db-text);
+        font-size: .56rem;
+        font-weight: 820;
+        line-height: 1.35;
+        overflow-wrap: anywhere;
+    }
+
+    .dashboard-summary-item__main small {
+        display: block;
+        margin-top: .08rem;
+        color: var(--db-muted);
+        font-size: .48rem;
+        line-height: 1.4;
+    }
+
+    .dashboard-summary-item__value {
+        flex: 0 0 auto;
+        color: var(--db-strong);
+        font-size: .68rem;
+        font-weight: 900;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .dashboard-alert-list {
+        display: grid;
+        gap: .42rem;
+    }
+
+    .dashboard-alert {
+        display: grid;
+        grid-template-columns: auto minmax(0,1fr);
+        gap: .45rem;
+        padding: .55rem;
+        border: 1px solid var(--db-border);
+        border-radius: 10px;
+        background: var(--db-bg-soft);
+    }
+
+    .dashboard-alert__icon {
+        width: 30px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+        border-radius: 9px;
+        background: var(--db-warning-soft);
+        color: var(--db-warning);
+    }
+
+    .dashboard-alert__icon svg { width: .76rem; height: .76rem; }
+
+    .dashboard-alert strong {
+        display: block;
+        color: var(--db-text);
+        font-size: .55rem;
+        font-weight: 820;
+    }
+
+    .dashboard-alert p {
+        margin: .1rem 0 0;
+        color: var(--db-muted);
+        font-size: .5rem;
+        line-height: 1.43;
+    }
+
+    .dashboard-quick-links {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: .46rem;
+    }
+
+    .dashboard-quick-link {
+        min-height: 62px;
+        display: grid;
+        grid-template-columns: auto minmax(0,1fr) auto;
+        gap: .45rem;
+        align-items: center;
+        padding: .55rem;
+        border: 1px solid var(--db-border);
+        border-radius: 10px;
+        background: var(--db-bg-soft);
+        color: var(--db-text);
+        text-decoration: none;
+        transition: transform var(--db-transition), border-color var(--db-transition), background var(--db-transition);
+    }
+
+    .dashboard-quick-link:hover {
+        transform: translateY(-1px);
+        border-color: var(--db-border-strong);
+        background: var(--db-surface-muted);
+    }
+
+    .dashboard-quick-link__icon {
+        width: 32px;
+        height: 32px;
+        display: grid;
+        place-items: center;
+        border-radius: 9px;
+        background: var(--db-primary-soft);
+        color: var(--db-primary);
+    }
+
+    .dashboard-quick-link__icon svg { width: .78rem; height: .78rem; }
+
+    .dashboard-quick-link__copy { min-width: 0; }
+
+    .dashboard-quick-link__copy strong {
+        display: block;
+        font-size: .54rem;
+        font-weight: 820;
+        line-height: 1.35;
+    }
+
+    .dashboard-quick-link__copy small {
+        display: block;
+        margin-top: .08rem;
+        color: var(--db-muted);
+        font-size: .47rem;
+        line-height: 1.38;
+    }
+
+    .dashboard-quick-link__arrow {
+        width: .72rem;
+        height: .72rem;
+        color: var(--db-primary);
+    }
+
+    .dashboard-empty {
+        padding: .8rem;
+        border: 1px dashed var(--db-border-strong);
+        border-radius: 11px;
+        background: var(--db-bg-soft);
+        text-align: center;
+    }
+
+    .dashboard-empty__icon {
+        width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+        margin: 0 auto .38rem;
+        border-radius: 10px;
+        background: var(--db-surface);
+        color: var(--db-muted);
+    }
+
+    .dashboard-empty__icon svg { width: .92rem; height: .92rem; }
+
+    .dashboard-empty strong {
+        display: block;
+        color: var(--db-text);
+        font-size: .57rem;
+        font-weight: 820;
+    }
+
+    .dashboard-empty p {
+        max-width: 52ch;
+        margin: .16rem auto 0;
+        color: var(--db-muted);
+        font-size: .5rem;
+        line-height: 1.45;
+    }
+
+    .dashboard-account-links {
+        display: flex;
+        gap: .38rem;
+        flex-wrap: wrap;
+    }
+
+    .dashboard-account-link {
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+        gap: .32rem;
+        padding: .5rem .58rem;
+        border: 1px solid var(--db-border);
+        border-radius: 9px;
+        background: var(--db-bg);
+        color: var(--db-text);
+        font-size: .53rem;
+        font-weight: 780;
+        text-decoration: none;
+    }
+
+    .dashboard-account-link svg {
+        width: .72rem;
+        height: .72rem;
+        color: var(--db-primary);
+    }
+
+    .dashboard-page a:focus-visible,
+    .dashboard-page button:focus-visible {
+        outline: 3px solid color-mix(in srgb, var(--db-primary) 24%, transparent);
+        outline-offset: 2px;
+    }
+
+    @media (max-width: 1080px) {
+        .dashboard-main-grid { grid-template-columns: 1fr; }
+        .dashboard-stack--side { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    }
+
+    @media (max-width: 760px) {
+        .dashboard-shell { width: min(100% - 1rem, 760px); }
+        .dashboard-header { grid-template-columns: 1fr; }
+        .dashboard-header__actions { justify-content: flex-start; }
+        .dashboard-refresh-status { text-align: start; }
+        .dashboard-stack--side { grid-template-columns: 1fr; }
+        .dashboard-kpi-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+        .dashboard-orders-grid { grid-template-columns: 1fr; }
+        .dashboard-order-action { min-height: 48px; }
+    }
+
+    @media (max-width: 460px) {
+        .dashboard-shell { width: min(100% - .7rem, 760px); }
+        .dashboard-header { border-radius: 18px; }
+        .dashboard-kpi-grid { grid-template-columns: 1fr 1fr; gap: .42rem; }
+        .dashboard-kpi { padding: .58rem; }
+        .dashboard-kpi__value { font-size: clamp(1.05rem, 8vw, 1.4rem); }
+        .dashboard-panel__head { flex-direction: column; }
+        .dashboard-account-links { flex-direction: column; }
+        .dashboard-account-link,
+        .dashboard-btn { width: 100%; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .dashboard-page *,
+        .dashboard-page *::before,
+        .dashboard-page *::after {
+            scroll-behavior: auto !important;
+            transition-duration: .01ms !important;
+            animation-iteration-count: 1 !important;
+        }
+
+        .dashboard-spinner { animation-duration: 1.35s; }
+    }
+    /* =====================================================================
+       MR. ITALIANO — PREMIUM STAFF DASHBOARD EXPERIENCE
+       Visual-only enhancement. Existing Jinja/Flask/security logic untouched.
+       ===================================================================== */
+
+    .dashboard-page {
+        --lux-db-gold:#d5a63e;
+        --lux-db-gold-soft:#efd07d;
+        --lux-db-ivory:#fffaf1;
+        --lux-db-paper:#fffdf8;
+        --lux-db-paper-2:#f5ede2;
+        --lux-db-ink:#19130e;
+        --lux-db-muted:#75695e;
+        --lux-db-line:rgba(191,143,57,.16);
+        --lux-db-shadow:0 28px 70px rgba(0,0,0,.34);
+        --lux-db-paper-shadow:0 22px 52px rgba(24,17,11,.11);
+        --lux-db-ease:cubic-bezier(.22,.61,.36,1);
+        --lux-db-pointer-x:78%;
+        --lux-db-pointer-y:10%;
+        --lux-db-scroll:0%;
+        position:relative;
+        isolation:isolate;
+        overflow-x:clip;
+        color:var(--lux-db-ivory);
+        background:
+            radial-gradient(circle at 8% 0%,rgba(255,247,226,.10),transparent 24rem),
+            radial-gradient(circle at 92% 3%,rgba(215,170,71,.13),transparent 24rem),
+            linear-gradient(180deg,#080705 0%,#0b0907 32%,#100d09 54%,#eee6db 54.12%,#f7f2eb 75%,#fffdf8 100%);
+    }
+
+    .dashboard-page::before{
+        content:"";
+        position:fixed;
+        inset:0;
+        z-index:0;
+        pointer-events:none;
+        background:
+            radial-gradient(circle at var(--lux-db-pointer-x) var(--lux-db-pointer-y),rgba(255,255,255,.11),transparent 11rem),
+            radial-gradient(circle at calc(var(--lux-db-pointer-x) - 8%) calc(var(--lux-db-pointer-y) + 10%),rgba(216,172,78,.14),transparent 18rem);
+        opacity:.92;
+    }
+
+    .dashboard-page::after{
+        content:"";
+        position:absolute;
+        inset:0;
+        z-index:0;
+        pointer-events:none;
+        opacity:.16;
+        background-image:linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.026) 1px,transparent 1px);
+        background-size:42px 42px;
+        mask-image:linear-gradient(180deg,#000 0%,rgba(0,0,0,.62) 44%,transparent 60%);
+    }
+
+    .dashboard-page>*{position:relative;z-index:1}
+    .dashboard-shell{width:min(calc(100% - 1.8rem),1320px)}
+
+    .dashboard-lux-progress{position:fixed;inset:0 0 auto 0;z-index:95;height:3px;pointer-events:none;background:rgba(255,255,255,.035)}
+    .dashboard-lux-progress::after{content:"";display:block;width:var(--lux-db-scroll);height:100%;background:linear-gradient(90deg,#fff2c9,#e1b65a 54%,#aa6f18);box-shadow:0 0 13px rgba(238,195,101,.45),0 0 26px rgba(216,172,78,.20);transition:width 150ms linear}
+
+    .dashboard-header{
+        border-color:rgba(236,200,119,.18);
+        border-radius:28px;
+        background:
+            radial-gradient(circle at var(--lux-db-local-x,82%) var(--lux-db-local-y,10%),rgba(255,239,197,.10),transparent 16rem),
+            radial-gradient(circle at 10% 120%,rgba(255,255,255,.035),transparent 18rem),
+            linear-gradient(145deg,rgba(255,255,255,.045),rgba(255,255,255,.009)),#100d0a;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.045),inset 0 -1px 0 rgba(216,172,78,.035),0 30px 72px rgba(0,0,0,.34);
+        transform-style:preserve-3d;
+        transition:transform 260ms var(--lux-db-ease),border-color 220ms ease,box-shadow 260ms var(--lux-db-ease);
+        overflow:hidden;
+    }
+
+    .dashboard-header::before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(255,255,255,.05),transparent 23%,transparent 76%,rgba(255,255,255,.015))}
+    .dashboard-header::after{top:-116px;right:-82px;width:270px;height:270px;border-color:rgba(240,204,125,.10);box-shadow:0 0 0 30px rgba(216,172,78,.018),0 0 0 62px rgba(255,255,255,.008);transform:rotateX(66deg)}
+    .dashboard-header:hover{border-color:rgba(240,204,125,.28);box-shadow:inset 0 1px 0 rgba(255,255,255,.055),0 36px 82px rgba(0,0,0,.39)}
+
+    .dashboard-eyebrow{color:#efca75;text-shadow:0 0 18px rgba(239,202,117,.16)}
+    .dashboard-eyebrow::before{width:24px;height:1px;background:linear-gradient(90deg,transparent,currentColor)}
+    .dashboard-header h1{color:transparent;background:linear-gradient(180deg,#fffefa 0%,#f9eedb 42%,#e3b85e 100%);-webkit-background-clip:text;background-clip:text;text-shadow:0 12px 32px rgba(0,0,0,.18);font-size:clamp(1.78rem,4.2vw,3rem)}
+
+    .dashboard-role-chip,.dashboard-scope-chip,.dashboard-date-chip{border-color:rgba(239,205,130,.13);background:rgba(255,255,255,.035);color:rgba(255,248,237,.78);box-shadow:inset 0 1px 0 rgba(255,255,255,.045);backdrop-filter:blur(10px)}
+    .dashboard-role-chip{border-color:rgba(232,192,103,.24);background:linear-gradient(145deg,rgba(216,172,78,.15),rgba(216,172,78,.035));color:#f2d17f}
+    .dashboard-refresh-status{color:rgba(255,248,236,.56)}
+    .dashboard-header .dashboard-btn--secondary{border-color:rgba(237,203,126,.17);background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.018));color:#f4eadc;box-shadow:inset 0 1px 0 rgba(255,255,255,.055),0 12px 24px rgba(0,0,0,.20)}
+    .dashboard-header .dashboard-btn--secondary:hover:not(:disabled){transform:translateY(-2px);border-color:rgba(239,204,125,.31);background:rgba(216,172,78,.07);color:#f7dc94;box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 16px 30px rgba(0,0,0,.24)}
+
+    .dashboard-status-banner{border-color:rgba(225,179,81,.18);background:linear-gradient(145deg,rgba(255,246,222,.96),rgba(244,232,207,.93));color:#71501a;box-shadow:inset 0 1px 0 rgba(255,255,255,.76),0 13px 28px rgba(0,0,0,.06)}
+
+    .dashboard-panel{
+        position:relative;
+        isolation:isolate;
+        border-color:rgba(174,127,49,.14);
+        border-radius:22px;
+        background:
+            radial-gradient(circle at var(--lux-db-panel-x,84%) var(--lux-db-panel-y,9%),rgba(255,255,255,.96),transparent 15rem),
+            radial-gradient(circle at 6% 94%,rgba(216,172,78,.07),transparent 18rem),
+            linear-gradient(150deg,rgba(255,255,255,.98),rgba(247,240,231,.96));
+        color:var(--lux-db-ink);
+        box-shadow:var(--lux-db-paper-shadow),inset 0 1px 0 rgba(255,255,255,.88);
+        overflow:hidden;
+        transform-style:preserve-3d;
+        transition:transform 230ms var(--lux-db-ease),border-color 220ms ease,box-shadow 230ms var(--lux-db-ease);
+    }
+    .dashboard-panel::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background:linear-gradient(180deg,rgba(255,255,255,.22),transparent 23%,transparent 77%,rgba(172,116,28,.018))}
+    .dashboard-panel::after{content:"";position:absolute;left:6%;right:6%;top:0;height:1px;pointer-events:none;background:linear-gradient(90deg,transparent,rgba(187,128,33,.22),rgba(255,255,255,.95),rgba(187,128,33,.22),transparent);opacity:.86}
+    .dashboard-panel>*{position:relative;z-index:1}
+    .dashboard-panel:hover{transform:translateY(-2px);border-color:rgba(205,154,62,.25);box-shadow:0 30px 72px rgba(24,17,11,.16),inset 0 1px 0 rgba(255,255,255,.95)}
+
+    .dashboard-panel__head{position:relative;padding:.9rem 1rem;border-bottom-color:rgba(105,74,33,.11);background:linear-gradient(180deg,rgba(255,255,255,.56),rgba(255,255,255,.07))}
+    .dashboard-panel__head::after{content:"";position:absolute;left:1rem;bottom:-1px;width:94px;height:2px;border-radius:999px;background:linear-gradient(90deg,#d7a63e,rgba(215,166,62,.08))}
+    .dashboard-panel__head h2{color:#18120d;font-size:.88rem;letter-spacing:-.018em}
+    .dashboard-panel__head p{color:#7a6d61;font-size:.56rem}
+    .dashboard-panel__body{padding:.9rem 1rem}
+
+    .dashboard-kpi-grid{gap:.66rem}
+    .dashboard-kpi{position:relative;overflow:hidden;padding:.82rem;border-color:rgba(135,94,42,.12);border-radius:16px;background:radial-gradient(circle at var(--lux-db-kpi-x,82%) var(--lux-db-kpi-y,9%),rgba(255,255,255,.92),transparent 9rem),linear-gradient(145deg,rgba(255,255,255,.80),rgba(242,234,223,.78));box-shadow:inset 0 1px 0 rgba(255,255,255,.86),0 12px 26px rgba(49,32,13,.055);transition:transform 210ms var(--lux-db-ease),border-color 210ms ease,box-shadow 210ms var(--lux-db-ease)}
+    .dashboard-kpi::before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(255,255,255,.18),transparent 30%)}
+    .dashboard-kpi>*{position:relative;z-index:1}
+    .dashboard-kpi:hover{transform:translateY(-4px);border-color:rgba(204,151,55,.25);box-shadow:inset 0 1px 0 rgba(255,255,255,.94),0 18px 34px rgba(49,32,13,.08)}
+    .dashboard-kpi__icon{width:34px;height:34px;flex-basis:34px;border:1px solid rgba(151,100,22,.14);border-radius:10px;background:linear-gradient(150deg,#f6df9d,#d49a30);color:#301c06;box-shadow:inset 0 1px 0 rgba(255,255,255,.54),0 4px 0 rgba(112,72,13,.19),0 10px 18px rgba(71,46,13,.08)}
+    .dashboard-kpi__label{color:#74675a}.dashboard-kpi__value{color:#17110c;font-size:clamp(1.3rem,3vw,1.88rem);text-shadow:0 1px 0 rgba(255,255,255,.78)}.dashboard-kpi__hint{color:#8b7f73}.dashboard-money__currency{color:#847565}.dashboard-money__amount{color:#8f5a0d}
+
+    .dashboard-order-card{position:relative;overflow:hidden;border-color:rgba(132,92,41,.12);border-radius:16px;background:radial-gradient(circle at var(--lux-db-order-x,84%) var(--lux-db-order-y,8%),rgba(255,255,255,.82),transparent 10rem),linear-gradient(145deg,rgba(255,255,255,.76),rgba(239,231,220,.76));box-shadow:inset 0 1px 0 rgba(255,255,255,.74),0 12px 24px rgba(45,29,12,.05);transition:transform 220ms var(--lux-db-ease),border-color 220ms ease,box-shadow 220ms var(--lux-db-ease)}
+    .dashboard-order-card::before{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle at var(--lux-db-order-x,84%) var(--lux-db-order-y,8%),rgba(255,255,255,.66),transparent 8rem)}
+    .dashboard-order-card>*{position:relative;z-index:1}.dashboard-order-card:hover{transform:translateY(-4px);border-color:rgba(203,151,55,.24);box-shadow:inset 0 1px 0 rgba(255,255,255,.86),0 18px 34px rgba(45,29,12,.08)}
+    .dashboard-order-card__eyebrow{color:#8a7c6e}.dashboard-order-card__title{color:#1d1610;font-size:.72rem}.dashboard-order-card__meta-item,.dashboard-service{border-color:rgba(121,85,39,.13);background:rgba(255,255,255,.54);color:#6f6255;box-shadow:inset 0 1px 0 rgba(255,255,255,.76)}
+    .dashboard-order-items{border-top-color:rgba(101,71,34,.11)}.dashboard-order-item__line{color:#31261c}.dashboard-order-item__qty{color:#a76b12}.dashboard-order-item__options{color:#786b5f}.dashboard-order-item__options span{border:1px solid rgba(125,88,42,.09);background:rgba(255,255,255,.52)}
+
+    .dashboard-order-action{position:relative;overflow:hidden;border-color:rgba(123,78,13,.38);background:linear-gradient(180deg,#f3cc73,#dca742 58%,#ae7018);color:#231504;box-shadow:inset 0 1px 0 rgba(255,255,255,.54),0 4px 0 rgba(113,70,12,.18),0 11px 21px rgba(86,53,10,.10);transition:transform 180ms var(--lux-db-ease),box-shadow 180ms var(--lux-db-ease),filter 180ms ease}
+    .dashboard-order-action:hover:not(:disabled){transform:translateY(-2px);filter:saturate(1.03);box-shadow:inset 0 1px 0 rgba(255,255,255,.64),0 5px 0 rgba(113,70,12,.18),0 15px 25px rgba(86,53,10,.13)}
+
+    .dashboard-chip{box-shadow:inset 0 1px 0 rgba(255,255,255,.54)}
+    .dashboard-chip--success{border-color:rgba(58,128,80,.20);background:linear-gradient(180deg,#f1fbf4,#e4f3e8);color:#34784b}
+    .dashboard-chip--danger{border-color:rgba(167,66,54,.18);background:linear-gradient(180deg,#fff5f3,#f8e6e3);color:#a3463b}
+    .dashboard-chip--progress,.dashboard-chip--ready{border-color:rgba(73,103,151,.18);background:linear-gradient(180deg,#f4f8ff,#e8eff9);color:#496b9c}
+    .dashboard-chip--pending{border-color:rgba(179,123,24,.20);background:linear-gradient(180deg,#fff8e8,#f5e8c9);color:#986414}
+
+    .dashboard-service-row__top{color:#706358}.dashboard-service-row__top strong{color:#2b221b}.dashboard-service-row__top span{color:#76685c}
+    .dashboard-service-bar{height:8px;border:1px solid rgba(116,82,42,.07);background:#e8ded1;box-shadow:inset 0 1px 2px rgba(72,45,16,.07)}
+    .dashboard-service-bar__fill{background:linear-gradient(90deg,#b77a1b,#e2b454,#f0d07b);box-shadow:0 0 12px rgba(213,164,62,.20)}
+
+    .dashboard-summary-item,.dashboard-alert{position:relative;overflow:hidden;border-color:rgba(124,86,39,.12);background:radial-gradient(circle at 88% 8%,rgba(255,255,255,.76),transparent 9rem),linear-gradient(145deg,rgba(255,255,255,.70),rgba(240,231,219,.73));box-shadow:inset 0 1px 0 rgba(255,255,255,.72);transition:transform 190ms var(--lux-db-ease),border-color 190ms ease,box-shadow 190ms ease}
+    .dashboard-summary-item:hover,.dashboard-alert:hover{transform:translateY(-2px);border-color:rgba(203,150,54,.23);box-shadow:inset 0 1px 0 rgba(255,255,255,.82),0 11px 22px rgba(48,31,13,.055)}
+    .dashboard-summary-item__main strong,.dashboard-alert strong{color:#2a2119}.dashboard-summary-item__main small,.dashboard-alert p{color:#7b6e62}.dashboard-summary-item__value{color:#8f5a0e}
+    .dashboard-alert__icon{border:1px solid rgba(174,117,18,.13);background:linear-gradient(150deg,#fff3d3,#ebcc85);color:#87580f;box-shadow:inset 0 1px 0 rgba(255,255,255,.56),0 8px 17px rgba(76,48,13,.07)}
+
+    .dashboard-quick-link{position:relative;overflow:hidden;border-color:rgba(125,86,38,.12);background:radial-gradient(circle at 86% 10%,rgba(255,255,255,.78),transparent 8rem),linear-gradient(145deg,rgba(255,255,255,.72),rgba(241,233,222,.76));color:#2a2119;box-shadow:inset 0 1px 0 rgba(255,255,255,.72),0 10px 20px rgba(47,30,12,.04);transition:transform 200ms var(--lux-db-ease),border-color 200ms ease,box-shadow 200ms var(--lux-db-ease)}
+    .dashboard-quick-link::after{content:"";position:absolute;top:0;bottom:0;left:-44%;width:24%;pointer-events:none;transform:skewX(-18deg);background:linear-gradient(90deg,transparent,rgba(255,255,255,.50),transparent);opacity:0;transition:left 560ms var(--lux-db-ease)}
+    .dashboard-quick-link:hover{transform:translateY(-3px);border-color:rgba(203,150,53,.27);background:linear-gradient(145deg,#fffdf8,#f3eadc);box-shadow:inset 0 1px 0 rgba(255,255,255,.82),0 14px 26px rgba(47,30,12,.065)}
+    .dashboard-quick-link:hover::after{left:126%;opacity:.72}
+    .dashboard-quick-link__icon{border:1px solid rgba(157,102,20,.14);background:linear-gradient(150deg,#f4dd9a,#d49a30);color:#351f06;box-shadow:inset 0 1px 0 rgba(255,255,255,.52),0 4px 0 rgba(112,73,14,.16),0 8px 16px rgba(70,45,11,.07)}
+    .dashboard-quick-link__copy small{color:#7b6e62}.dashboard-quick-link__arrow{color:#9d6513}
+
+    .dashboard-empty{border-color:rgba(132,91,38,.18);background:radial-gradient(circle at 84% 10%,rgba(255,255,255,.82),transparent 10rem),linear-gradient(145deg,rgba(255,255,255,.78),rgba(242,234,223,.82));box-shadow:inset 0 1px 0 rgba(255,255,255,.74)}
+    .dashboard-empty__icon{border:1px solid rgba(149,100,24,.13);background:linear-gradient(150deg,#fff5dd,#edd19a);color:#74500f;box-shadow:inset 0 1px 0 rgba(255,255,255,.54),0 9px 18px rgba(66,42,12,.06)}
+    .dashboard-empty strong{color:#2a2119}.dashboard-empty p{color:#776a5e}
+
+    .dashboard-account-link{position:relative;overflow:hidden;border-color:rgba(126,87,39,.13);background:linear-gradient(180deg,rgba(255,255,255,.84),rgba(244,237,227,.84));color:#3b3027;box-shadow:inset 0 1px 0 rgba(255,255,255,.80),0 9px 18px rgba(46,30,12,.04);transition:transform 190ms var(--lux-db-ease),border-color 190ms ease,box-shadow 190ms ease}
+    .dashboard-account-link:hover{transform:translateY(-2px);border-color:rgba(201,148,52,.25);box-shadow:inset 0 1px 0 rgba(255,255,255,.88),0 13px 23px rgba(46,30,12,.06)}
+    .dashboard-account-link svg{color:#a56a13}
+
+    .dashboard-btn,.dashboard-order-action,.dashboard-account-link{position:relative;overflow:hidden}
+    .dashboard-lux-shine{position:absolute;inset:0 auto 0 -120%;width:44%;pointer-events:none;transform:skewX(-22deg);background:linear-gradient(90deg,transparent,rgba(255,255,255,.28),transparent);opacity:0}
+    .dashboard-btn:hover .dashboard-lux-shine,.dashboard-order-action:hover .dashboard-lux-shine{animation:dashboard-lux-shine 1.05s ease}
+    @keyframes dashboard-lux-shine{0%{left:-120%;opacity:0}15%{opacity:.30}100%{left:136%;opacity:0}}
+
+    .dashboard-lux-ripple{position:absolute;width:12px;height:12px;border-radius:50%;pointer-events:none;background:rgba(255,255,255,.52);transform:translate(-50%,-50%) scale(0);mix-blend-mode:screen;animation:dashboard-lux-ripple 620ms ease-out forwards}
+    @keyframes dashboard-lux-ripple{0%{opacity:.52;transform:translate(-50%,-50%) scale(0)}100%{opacity:0;transform:translate(-50%,-50%) scale(18)}}
+
+    .dashboard-lux-reveal{opacity:0;transform:translateY(20px) scale(.99);transition:opacity 620ms var(--lux-db-ease),transform 620ms var(--lux-db-ease)}
+    .dashboard-lux-reveal.is-visible{opacity:1;transform:none}
+
+    @media(max-width:1160px){.dashboard-shell{width:min(calc(100% - 1.45rem),1260px)}.dashboard-header{padding:1rem 1.05rem}.dashboard-panel__head,.dashboard-panel__body{padding-left:.9rem;padding-right:.9rem}}
+    @media(max-width:1080px){.dashboard-page{background:radial-gradient(circle at 10% 0%,rgba(255,247,226,.09),transparent 21rem),radial-gradient(circle at 91% 3%,rgba(215,170,71,.11),transparent 19rem),linear-gradient(180deg,#080705 0%,#0c0a07 33%,#eee6db 33.12%,#faf7f1 100%)}.dashboard-panel{border-radius:20px}}
+    @media(max-width:760px){.dashboard-shell{width:min(calc(100% - .95rem),760px)}.dashboard-header{border-radius:22px;padding:.95rem}.dashboard-panel{border-radius:18px}.dashboard-panel:hover,.dashboard-kpi:hover,.dashboard-order-card:hover,.dashboard-summary-item:hover,.dashboard-alert:hover,.dashboard-quick-link:hover,.dashboard-account-link:hover{transform:none}.dashboard-lux-progress{height:2px}}
+    @media(max-width:520px){.dashboard-page{padding-top:.62rem;padding-bottom:4.5rem}.dashboard-shell{width:min(calc(100% - .68rem),740px)}.dashboard-header{padding:.82rem}.dashboard-panel__head,.dashboard-panel__body{padding-left:.75rem;padding-right:.75rem}.dashboard-kpi{padding:.66rem}.dashboard-kpi__icon{width:31px;height:31px;flex-basis:31px}}
+    @media(prefers-reduced-motion:reduce){.dashboard-page::before,.dashboard-header,.dashboard-panel,.dashboard-kpi,.dashboard-order-card,.dashboard-summary-item,.dashboard-alert,.dashboard-quick-link,.dashboard-account-link,.dashboard-lux-reveal,.dashboard-lux-progress::after{transition:none!important;animation:none!important}.dashboard-lux-reveal{opacity:1;transform:none}.dashboard-lux-shine,.dashboard-lux-ripple{display:none!important}}
+
+
+    /* =====================================================================
+       MR. ITALIANO — BALANCED DARK REVISION
+       Mostly charcoal/black, minor ivory touch, controlled gold.
+       Visual override only — backend/Jinja/JS behavior remains unchanged.
+       ===================================================================== */
+
+    .dashboard-page {
+        color:#f4eadf;
+        background:
+            radial-gradient(circle at 8% 0%,rgba(255,247,226,.07),transparent 22rem),
+            radial-gradient(circle at 92% 3%,rgba(215,170,71,.10),transparent 21rem),
+            linear-gradient(180deg,#070604 0%,#090705 42%,#0c0907 72%,#080604 100%);
+    }
+
+    .dashboard-page::before{
+        opacity:.55;
+        background:
+            radial-gradient(circle at var(--lux-db-pointer-x) var(--lux-db-pointer-y),rgba(255,255,255,.07),transparent 10rem),
+            radial-gradient(circle at calc(var(--lux-db-pointer-x) - 8%) calc(var(--lux-db-pointer-y) + 10%),rgba(216,172,78,.10),transparent 17rem);
+    }
+
+    .dashboard-page::after{opacity:.09}
+
+    /* Main sections: back to charcoal */
+    .dashboard-panel{
+        border-color:rgba(237,199,119,.11);
+        color:#f2e9de;
+        background:
+            radial-gradient(circle at var(--lux-db-panel-x,84%) var(--lux-db-panel-y,9%),rgba(255,242,208,.05),transparent 13rem),
+            linear-gradient(145deg,rgba(255,255,255,.024),rgba(255,255,255,.005)),
+            #12100d;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.025),0 22px 52px rgba(0,0,0,.27);
+    }
+
+    .dashboard-panel::before{
+        background:linear-gradient(180deg,rgba(255,255,255,.035),transparent 24%,transparent 78%,rgba(216,172,78,.012));
+    }
+
+    .dashboard-panel::after{
+        background:linear-gradient(90deg,transparent,rgba(216,172,78,.16),rgba(255,250,238,.26),rgba(216,172,78,.16),transparent);
+        opacity:.62;
+    }
+
+    .dashboard-panel:hover{
+        border-color:rgba(226,183,86,.23);
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.035),0 30px 66px rgba(0,0,0,.34);
+    }
+
+    .dashboard-panel__head{
+        border-bottom-color:rgba(238,199,118,.085);
+        background:linear-gradient(180deg,rgba(255,255,255,.027),rgba(255,255,255,.004));
+    }
+
+    .dashboard-panel__head h2{color:#fff8ed}
+    .dashboard-panel__head p{color:#a99d91}
+
+    /* KPI cards: dark glass, gold icon */
+    .dashboard-kpi{
+        border-color:rgba(236,199,119,.10);
+        background:
+            radial-gradient(circle at var(--lux-db-kpi-x,82%) var(--lux-db-kpi-y,9%),rgba(255,243,211,.05),transparent 8rem),
+            linear-gradient(145deg,rgba(255,255,255,.025),rgba(255,255,255,.006)),
+            #16120e;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.024),0 12px 25px rgba(0,0,0,.20);
+    }
+
+    .dashboard-kpi::before{background:linear-gradient(180deg,rgba(255,255,255,.03),transparent 30%)}
+    .dashboard-kpi:hover{border-color:rgba(227,185,91,.22);box-shadow:inset 0 1px 0 rgba(255,255,255,.034),0 18px 34px rgba(0,0,0,.26)}
+    .dashboard-kpi__label{color:#a99e93}
+    .dashboard-kpi__value{color:#fff9ef;text-shadow:0 1px 0 rgba(0,0,0,.28)}
+    .dashboard-kpi__hint{color:#847970}
+    .dashboard-money__currency{color:#b7aa99}
+    .dashboard-money__amount{color:#efc66b}
+    .dashboard-kpi__icon{
+        border-color:rgba(238,197,102,.15);
+        background:linear-gradient(145deg,#efc96d,#bf7c20);
+        color:#251504;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.42),0 4px 0 rgba(83,49,8,.28),0 10px 20px rgba(0,0,0,.22);
+    }
+
+    /* Orders */
+    .dashboard-order-card{
+        border-color:rgba(239,201,123,.095);
+        background:
+            radial-gradient(circle at var(--lux-db-order-x,84%) var(--lux-db-order-y,8%),rgba(255,241,207,.045),transparent 9rem),
+            linear-gradient(145deg,rgba(255,255,255,.025),rgba(255,255,255,.006)),
+            #17130f;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.024),0 12px 24px rgba(0,0,0,.20);
+    }
+
+    .dashboard-order-card::before{background:radial-gradient(circle at var(--lux-db-order-x,84%) var(--lux-db-order-y,8%),rgba(255,255,255,.04),transparent 8rem)}
+    .dashboard-order-card:hover{border-color:rgba(225,181,84,.22);box-shadow:inset 0 1px 0 rgba(255,255,255,.034),0 18px 34px rgba(0,0,0,.27)}
+    .dashboard-order-card__eyebrow{color:#8f857a}
+    .dashboard-order-card__title{color:#fff8ed}
+    .dashboard-order-card__meta-item,.dashboard-service{border-color:rgba(238,199,118,.09);background:rgba(255,255,255,.022);color:#aea296;box-shadow:inset 0 1px 0 rgba(255,255,255,.02)}
+    .dashboard-order-items,.dashboard-order-card__actions{border-color:rgba(237,197,111,.08)}
+    .dashboard-order-item__line{color:#eee5d9}
+    .dashboard-order-item__qty{color:#e7bd61}
+    .dashboard-order-item__options{color:#a3978a}
+    .dashboard-order-item__options span{border:1px solid rgba(240,202,125,.07);background:rgba(255,255,255,.022)}
+
+    /* Scheduled rows / top products / lists */
+    .dashboard-summary-item,.dashboard-alert{
+        border-color:rgba(237,199,120,.09);
+        background:
+            radial-gradient(circle at 88% 8%,rgba(255,243,212,.035),transparent 8rem),
+            linear-gradient(145deg,rgba(255,255,255,.023),rgba(255,255,255,.005)),
+            #17130f;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.021);
+    }
+
+    .dashboard-summary-item:hover,.dashboard-alert:hover{border-color:rgba(225,183,87,.19);box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 11px 22px rgba(0,0,0,.18)}
+    .dashboard-summary-item__main strong,.dashboard-alert strong{color:#f7eee2}
+    .dashboard-summary-item__main small,.dashboard-alert p{color:#9d9185}
+    .dashboard-summary-item__value{color:#e8bd60}
+    .dashboard-alert__icon{border-color:rgba(224,180,82,.14);background:rgba(216,172,78,.085);color:#e0b557;box-shadow:inset 0 1px 0 rgba(255,255,255,.024)}
+
+    /* Service breakdown */
+    .dashboard-service-row__top,.dashboard-service-row__top strong{color:#e9e0d5}
+    .dashboard-service-row__top span{color:#9f9489}
+    .dashboard-service-bar{border-color:rgba(236,198,116,.06);background:#211a14;box-shadow:inset 0 1px 2px rgba(0,0,0,.38)}
+
+    /* Status/info box also dark */
+    .dashboard-status-banner{
+        border-color:rgba(219,172,73,.15);
+        background:linear-gradient(145deg,rgba(216,172,78,.085),rgba(255,255,255,.016)),#15110d;
+        color:#dcc48e;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.024),0 12px 25px rgba(0,0,0,.18);
+    }
+
+    /* Management shortcuts:
+       keep the BIG panel dark, only small shortcut cards are ivory.
+       This is the intentional minor white touch. */
+    [aria-labelledby="dashboard-quick-links-title"].dashboard-panel{
+        background:
+            radial-gradient(circle at var(--lux-db-panel-x,84%) var(--lux-db-panel-y,9%),rgba(255,243,211,.045),transparent 13rem),
+            linear-gradient(145deg,rgba(255,255,255,.023),rgba(255,255,255,.005)),
+            #12100d;
+    }
+
+    [aria-labelledby="dashboard-quick-links-title"] .dashboard-quick-link{
+        border-color:rgba(177,129,45,.15);
+        background:radial-gradient(circle at 87% 8%,rgba(255,255,255,.74),transparent 8rem),linear-gradient(145deg,#fffaf2,#eee3d5);
+        color:#2b2118;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.84),0 9px 18px rgba(0,0,0,.07);
+    }
+
+    [aria-labelledby="dashboard-quick-links-title"] .dashboard-quick-link:hover{
+        border-color:rgba(201,148,52,.28);
+        background:linear-gradient(145deg,#fffdf8,#f3e8d9);
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.91),0 14px 25px rgba(0,0,0,.10);
+    }
+
+    [aria-labelledby="dashboard-quick-links-title"] .dashboard-quick-link__copy small{color:#776b60}
+    [aria-labelledby="dashboard-quick-links-title"] .dashboard-quick-link__arrow{color:#a56a13}
+
+    /* Account links are the second small ivory touch */
+    .dashboard-account-link{
+        border-color:rgba(171,122,38,.15);
+        background:linear-gradient(180deg,#fffaf2,#eee3d5);
+        color:#3a2d22;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.83),0 9px 18px rgba(0,0,0,.07);
+    }
+
+    .dashboard-account-link:hover{border-color:rgba(199,146,50,.26);box-shadow:inset 0 1px 0 rgba(255,255,255,.89),0 13px 23px rgba(0,0,0,.10)}
+
+    /* Empty state */
+    .dashboard-empty{
+        border-color:rgba(239,202,123,.12);
+        background:radial-gradient(circle at 84% 10%,rgba(255,245,216,.035),transparent 9rem),linear-gradient(145deg,rgba(255,255,255,.021),rgba(255,255,255,.004)),#17130f;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.02);
+    }
+    .dashboard-empty__icon{border-color:rgba(224,180,82,.13);background:rgba(216,172,78,.08);color:#dfb457;box-shadow:inset 0 1px 0 rgba(255,255,255,.024)}
+    .dashboard-empty strong{color:#f6eee2}
+    .dashboard-empty p{color:#9c9084}
+
+    @media(max-width:1080px){
+        .dashboard-page{
+            background:
+                radial-gradient(circle at 9% 0%,rgba(255,247,226,.065),transparent 19rem),
+                radial-gradient(circle at 92% 3%,rgba(215,170,71,.085),transparent 17rem),
+                linear-gradient(180deg,#070604,#0a0806);
+        }
+    }
+
+</style>
+{% endblock %}
+
+{% block content %}
+<section
+    class="dashboard-page"
+    id="dashboard-page-root"
+    data-refresh-enabled="{{ 'true' if dashboard_refresh_enabled and safe_refresh_url else 'false' }}"
+    data-refresh-url="{{ safe_refresh_url }}"
+    data-poll-seconds="{{ poll_seconds }}"
+>
+    <span
+        class="visually-hidden"
+        id="dashboard-live-region"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+    ></span>
+
+    <div class="dashboard-shell">
+        <header class="dashboard-header">
+            <div class="dashboard-header__content">
+                <p class="dashboard-eyebrow">Staff Operations</p>
+
+                <h1>
+                    {% if staff_name %}
+                        Welcome back, {{ staff_name }}
+                    {% else %}
+                        Staff Dashboard
+                    {% endif %}
+                </h1>
+
+                <div class="dashboard-header__subline">
+                    <span class="dashboard-role-chip">
+                        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3 5 6v5.4c0 4.3 2.8 7.5 7 9.1 4.2-1.6 7-4.8 7-9.1V6l-7-3Z"></path><path d="m9 12 2 2 4-4"></path></svg>
+                        {{ role_label }}
+                    </span>
+
+                    {% if scope_label %}
+                        <span class="dashboard-scope-chip">
+                            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 21s6-5.3 6-11a6 6 0 1 0-12 0c0 5.7 6 11 6 11Z"></path><circle cx="12" cy="10" r="2"></circle></svg>
+                            {{ scope_label }}
+                        </span>
+                    {% endif %}
+
+                    {% if business_day_label %}
+                        <span class="dashboard-date-chip">
+                            <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"></rect><path d="M8 3v4M16 3v4M4 10h16"></path></svg>
+                            {{ business_day_label }}
+                        </span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="dashboard-header__actions">
+                <div>
+                    <button class="dashboard-btn dashboard-btn--secondary" id="dashboard-refresh-button" type="button">
+                        <span class="dashboard-spinner" id="dashboard-refresh-spinner" aria-hidden="true" hidden></span>
+                        <svg id="dashboard-refresh-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M20 7v5h-5"></path><path d="M19 12a7 7 0 1 0-2 5"></path></svg>
+                        <span id="dashboard-refresh-label">Refresh</span>
+                    </button>
+
+                    <p class="dashboard-refresh-status" id="dashboard-refresh-status">
+                        {% if last_updated_label %}
+                            Last updated {{ last_updated_label }}
+                        {% else %}
+                            Server-rendered dashboard
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
+        </header>
+
+        <div class="dashboard-status-banner" id="dashboard-offline-banner" hidden>
+            <span class="dashboard-status-banner__main">
+                <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 8a12 12 0 0 1 16 0M7 12a8 8 0 0 1 10 0M10 16a4 4 0 0 1 4 0"></path><path d="M3 3l18 18"></path></svg>
+                <span>You're offline. Existing dashboard information remains visible, but refresh and staff actions require a connection.</span>
+            </span>
+        </div>
+
+        {% if not is_staff or not can_view_dashboard %}
+            <section class="dashboard-section dashboard-panel" aria-labelledby="dashboard-no-access-title">
+                <div class="dashboard-panel__body">
+                    <div class="dashboard-empty">
+                        <span class="dashboard-empty__icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg>
+                        </span>
+                        <strong id="dashboard-no-access-title">Dashboard access is unavailable</strong>
+                        <p>This page requires a trusted staff session and dashboard access from the server.</p>
+                    </div>
+                </div>
+            </section>
+        {% else %}
+
+            <section class="dashboard-section" aria-labelledby="dashboard-kpis-title">
+                <div class="dashboard-panel">
+                    <header class="dashboard-panel__head">
+                        <div>
+                            <h2 id="dashboard-kpis-title">
+                                {% if is_chef %}Kitchen Snapshot{% else %}Today's Snapshot{% endif %}
+                            </h2>
+                            <p>Real server-calculated values for the current business day and active workflow.</p>
+                        </div>
+                    </header>
+
+                    <div class="dashboard-panel__body">
+                        <div class="dashboard-kpi-grid">
+                            {% if "today_orders" in metrics_data %}
+                                {{ metric_card("today_orders", "Orders Today", metrics_data.get("today_orders"), "orders") }}
+                            {% endif %}
+                            {% if "pending_orders" in metrics_data %}
+                                {{ metric_card("pending_orders", "Pending Orders", metrics_data.get("pending_orders"), "clock", false, "warning") }}
+                            {% endif %}
+                            {% if "preparing_orders" in metrics_data %}
+                                {{ metric_card("preparing_orders", "Preparing", metrics_data.get("preparing_orders"), "orders") }}
+                            {% endif %}
+                            {% if "today_completed_orders" in metrics_data %}
+                                {{ metric_card("today_completed_orders", "Completed Today", metrics_data.get("today_completed_orders"), "check", false, "success") }}
+                            {% endif %}
+                            {% if not is_chef and "cancelled_orders_today" in metrics_data %}
+                                {{ metric_card("cancelled_orders_today", "Cancelled Today", metrics_data.get("cancelled_orders_today"), "cancel", false, "danger") }}
+                            {% endif %}
+                            {% if "scheduled_today" in metrics_data %}
+                                {{ metric_card("scheduled_today", "Scheduled Today", metrics_data.get("scheduled_today"), "calendar") }}
+                            {% endif %}
+                            {% if not is_chef and can_view_finance and "revenue_today" in metrics_data %}
+                                {{ metric_card("revenue_today", "Revenue Today", metrics_data.get("revenue_today"), "money", true, "finance") }}
+                            {% endif %}
+                            {% if not is_chef and can_view_finance and "average_order_value_today" in metrics_data %}
+                                {{ metric_card("average_order_value_today", "Average Order Value", metrics_data.get("average_order_value_today"), "money", true, "finance") }}
+                            {% endif %}
+                            {% if not is_chef and can_view_customers and "customer_count" in metrics_data %}
+                                {{ metric_card("customer_count", "Active Customers", metrics_data.get("customer_count"), "customers") }}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <div class="dashboard-section dashboard-main-grid">
+                <div class="dashboard-stack">
+                    {% if can_view_orders %}
+                        <section class="dashboard-panel" aria-labelledby="dashboard-active-orders-title">
+                            <header class="dashboard-panel__head">
+                                <div>
+                                    <h2 id="dashboard-active-orders-title">
+                                        {% if is_chef %}Kitchen Queue{% else %}Active Orders{% endif %}
+                                    </h2>
+                                    <p>
+                                        {% if is_chef %}
+                                            Food-preparation details only. Finance and customer account administration are intentionally excluded.
+                                        {% else %}
+                                            Non-terminal orders from the backend-provided recent order window.
+                                        {% endif %}
+                                    </p>
+                                </div>
+                            </header>
+
+                            <div class="dashboard-panel__body">
+                                <div class="dashboard-orders-grid">
+                                    {% set active_ns = namespace(count=0) %}
+                                    {% for order in recent_orders %}
+                                        {% if order is mapping %}
+                                            {% set current_status = order.get("order_status", "")|default("", true) %}
+                                            {% if current_status not in terminal_statuses and active_ns.count < 8 %}
+                                                {% set active_ns.count = active_ns.count + 1 %}
+                                                {{ order_card(order, is_chef) }}
+                                            {% endif %}
+                                        {% endif %}
+                                    {% endfor %}
+
+                                    {% if active_ns.count == 0 %}
+                                        <div class="dashboard-empty">
+                                            <span class="dashboard-empty__icon" aria-hidden="true">
+                                                <svg viewBox="0 0 24 24"><path d="M5 4h14v16H5z"></path><path d="m8 12 2 2 5-5"></path></svg>
+                                            </span>
+                                            <strong>No active orders in the current summary</strong>
+                                            <p>This dashboard does not invent sample order cards.</p>
+                                        </div>
+                                    {% endif %}
+                                </div>
+
+                                {% if can_update_orders %}
+                                    <div class="dashboard-status-banner">
+                                        <span class="dashboard-status-banner__main">
+                                            <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 10v6M12 7h.01"></path></svg>
+                                            <span>
+                                                Status controls appear only when an order contains a backend-approved
+                                                <strong>dashboard_status_actions</strong> list.
+                                                The browser never invents valid transitions.
+                                            </span>
+                                        </span>
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </section>
+                    {% endif %}
+
+                    {% if scheduled_orders %}
+                        <section class="dashboard-panel" aria-labelledby="dashboard-scheduled-orders-title">
+                            <header class="dashboard-panel__head">
+                                <div>
+                                    <h2 id="dashboard-scheduled-orders-title">Upcoming Scheduled Orders</h2>
+                                    <p>Backend-supplied scheduled order details in trusted priority order.</p>
+                                </div>
+                            </header>
+                            <div class="dashboard-panel__body">
+                                <div class="dashboard-orders-grid">
+                                    {% for order in scheduled_orders[:8] %}
+                                        {{ order_card(order, is_chef) }}
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </section>
+                    {% elif "scheduled_today" in metrics_data or "tomorrow_orders" in metrics_data or "advance_orders" in metrics_data %}
+                        <section class="dashboard-panel" aria-labelledby="dashboard-scheduled-summary-title">
+                            <header class="dashboard-panel__head">
+                                <div>
+                                    <h2 id="dashboard-scheduled-summary-title">Scheduled Order Summary</h2>
+                                    <p>The current backend supplies counts; detailed scheduled order cards are not fabricated.</p>
+                                </div>
+                            </header>
+                            <div class="dashboard-panel__body">
+                                <ul class="dashboard-summary-list">
+                                    {% if "scheduled_today" in metrics_data %}
+                                        <li class="dashboard-summary-item">
+                                            <span class="dashboard-summary-item__main">
+                                                <strong>Scheduled Today</strong>
+                                                <small>Inside today's business-day boundary.</small>
+                                            </span>
+                                            <span class="dashboard-summary-item__value">{{ metrics_data.get("scheduled_today") }}</span>
+                                        </li>
+                                    {% endif %}
+                                    {% if "tomorrow_orders" in metrics_data %}
+                                        <li class="dashboard-summary-item">
+                                            <span class="dashboard-summary-item__main">
+                                                <strong>Tomorrow</strong>
+                                                <small>Scheduled for the next business day.</small>
+                                            </span>
+                                            <span class="dashboard-summary-item__value">{{ metrics_data.get("tomorrow_orders") }}</span>
+                                        </li>
+                                    {% endif %}
+                                    {% if "advance_orders" in metrics_data %}
+                                        <li class="dashboard-summary-item">
+                                            <span class="dashboard-summary-item__main">
+                                                <strong>Future Scheduled Orders</strong>
+                                                <small>Scheduled beyond tomorrow.</small>
+                                            </span>
+                                            <span class="dashboard-summary-item__value">{{ metrics_data.get("advance_orders") }}</span>
+                                        </li>
+                                    {% endif %}
+                                </ul>
+                            </div>
+                        </section>
+                    {% endif %}
+
+                    {% if not is_chef and can_view_reports and metrics_data.get("top_selling_products") %}
+                        <section class="dashboard-panel" aria-labelledby="dashboard-top-products-title">
+                            <header class="dashboard-panel__head">
+                                <div>
+                                    <h2 id="dashboard-top-products-title">Top Products</h2>
+                                    <p>Backend-derived quantities from paid, successfully completed orders in the bounded reporting window.</p>
+                                </div>
+                            </header>
+                            <div class="dashboard-panel__body">
+                                <ul class="dashboard-summary-list">
+                                    {% for product in metrics_data.get("top_selling_products", [])[:5] %}
+                                        {% if product is mapping %}
+                                            <li class="dashboard-summary-item">
+                                                <span class="dashboard-summary-item__main">
+                                                    <strong>{{ product.get("name", "Product") }}</strong>
+                                                    <small>Quantity sold</small>
+                                                </span>
+                                                <span class="dashboard-summary-item__value">{{ product.get("quantity", "—") }}</span>
+                                            </li>
+                                        {% endif %}
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        </section>
+                    {% endif %}
+                </div>
+
+                <aside class="dashboard-stack dashboard-stack--side" aria-label="Dashboard summaries">
+                    {% if "delivery_order_count_today" in metrics_data or "pickup_order_count_today" in metrics_data or "dine_in_order_count_today" in metrics_data %}
+                        {% set delivery_count = metrics_data.get("delivery_order_count_today", 0)|int %}
+                        {% set pickup_count = metrics_data.get("pickup_order_count_today", 0)|int %}
+                        {% set dine_count = metrics_data.get("dine_in_order_count_today", 0)|int %}
+                        {% set service_total = delivery_count + pickup_count + dine_count %}
+
+                        <section class="dashboard-panel" aria-labelledby="dashboard-service-title">
+                            <header class="dashboard-panel__head">
+                                <div>
+                                    <h2 id="dashboard-service-title">Service Breakdown</h2>
+                                    <p>Today's backend order counts.</p>
+                                </div>
+                            </header>
+                            <div class="dashboard-panel__body">
+                                <div class="dashboard-service-list">
+                                    <div class="dashboard-service-row">
+                                        <div class="dashboard-service-row__top"><strong>Delivery</strong><span>{{ delivery_count }}</span></div>
+                                        <div class="dashboard-service-bar" aria-label="Delivery orders: {{ delivery_count }}">
+                                            <div class="dashboard-service-bar__fill" style="--service-width: {{ ((delivery_count * 100 / service_total) if service_total else 0)|round(1) }}%;"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="dashboard-service-row">
+                                        <div class="dashboard-service-row__top"><strong>Pickup</strong><span>{{ pickup_count }}</span></div>
+                                        <div class="dashboard-service-bar" aria-label="Pickup orders: {{ pickup_count }}">
+                                            <div class="dashboard-service-bar__fill" style="--service-width: {{ ((pickup_count * 100 / service_total) if service_total else 0)|round(1) }}%;"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="dashboard-service-row">
+                                        <div class="dashboard-service-row__top"><strong>Dine-In</strong><span>{{ dine_count }}</span></div>
+                                        <div class="dashboard-service-bar" aria-label="Dine-In orders: {{ dine_count }}">
+                                            <div class="dashboard-service-bar__fill" style="--service-width: {{ ((dine_count * 100 / service_total) if service_total else 0)|round(1) }}%;"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                    {% endif %}
+
+                    {% if not is_chef and can_view_bookings and ("today_bookings" in metrics_data or "tomorrow_bookings" in metrics_data or "upcoming_bookings" in metrics_data) %}
+                        <section class="dashboard-panel" aria-labelledby="dashboard-bookings-title">
+                            <header class="dashboard-panel__head">
+                                <div>
+                                    <h2 id="dashboard-bookings-title">Bookings</h2>
+                                    <p>Server-calculated booking counts.</p>
+                                </div>
+                            </header>
+                            <div class="dashboard-panel__body">
+                                <ul class="dashboard-summary-list">
+                                    {% if "today_bookings" in metrics_data %}
+                                        <li class="dashboard-summary-item"><span class="dashboard-summary-item__main"><strong>Today</strong></span><span class="dashboard-summary-item__value">{{ metrics_data.get("today_bookings") }}</span></li>
+                                    {% endif %}
+                                    {% if "tomorrow_bookings" in metrics_data %}
+                                        <li class="dashboard-summary-item"><span class="dashboard-summary-item__main"><strong>Tomorrow</strong></span><span class="dashboard-summary-item__value">{{ metrics_data.get("tomorrow_bookings") }}</span></li>
+                                    {% endif %}
+                                    {% if "upcoming_bookings" in metrics_data %}
+                                        <li class="dashboard-summary-item"><span class="dashboard-summary-item__main"><strong>Upcoming Active</strong></span><span class="dashboard-summary-item__value">{{ metrics_data.get("upcoming_bookings") }}</span></li>
+                                    {% endif %}
+                                </ul>
+                            </div>
+                        </section>
+                    {% endif %}
+
+                    {% if not is_chef and can_view_reviews and metrics_data.get("recent_reviews") %}
+                        <section class="dashboard-panel" aria-labelledby="dashboard-reviews-title">
+                            <header class="dashboard-panel__head">
+                                <div>
+                                    <h2 id="dashboard-reviews-title">Recent Reviews</h2>
+                                    <p>Minimum customer information; no email or phone is shown.</p>
+                                </div>
+                            </header>
+                            <div class="dashboard-panel__body">
+                                <ul class="dashboard-summary-list">
+                                    {% for review in metrics_data.get("recent_reviews", [])[:5] %}
+                                        {% if review is mapping %}
+                                            <li class="dashboard-summary-item">
+                                                <span class="dashboard-summary-item__main">
+                                                    <strong>
+                                                        {% if review.get("rating") is not none %}
+                                                            Rating: {{ review.get("rating") }} / 5
+                                                        {% else %}
+                                                            Review
+                                                        {% endif %}
+                                                    </strong>
+                                                    {% if review.get("comment") %}
+                                                        <small>{{ review.get("comment")|truncate(120, true, "…") }}</small>
+                                                    {% endif %}
+                                                </span>
+                                            </li>
+                                        {% endif %}
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        </section>
+                    {% endif %}
+
+                    {% if not is_chef and can_view_payments and payment_summary %}
+                        <section class="dashboard-panel" aria-labelledby="dashboard-payments-title">
+                            <header class="dashboard-panel__head">
+                                <div>
+                                    <h2 id="dashboard-payments-title">Payment Summary</h2>
+                                    <p>Payment state remains separate from fulfilment state.</p>
+                                </div>
+                            </header>
+                            <div class="dashboard-panel__body">
+                                <ul class="dashboard-summary-list">
+                                    {% for item in payment_summary[:7] %}
+                                        {% if item is mapping %}
+                                            <li class="dashboard-summary-item">
+                                                <span class="dashboard-summary-item__main">
+                                                    <strong>{{ item.get("label", "Payment status") }}</strong>
+                                                    {% if item.get("description") %}<small>{{ item.get("description") }}</small>{% endif %}
+                                                </span>
+                                                <span class="dashboard-summary-item__value">{{ item.get("value", "—") }}</span>
+                                            </li>
+                                        {% endif %}
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        </section>
+                    {% endif %}
+
+                    {% if alerts %}
+                        <section class="dashboard-panel" aria-labelledby="dashboard-alerts-title">
+                            <header class="dashboard-panel__head">
+                                <div>
+                                    <h2 id="dashboard-alerts-title">Action Items</h2>
+                                    <p>Only backend-defined operational alerts are shown.</p>
+                                </div>
+                            </header>
+                            <div class="dashboard-panel__body">
+                                <div class="dashboard-alert-list">
+                                    {% for alert in alerts[:5] %}
+                                        {% if alert is mapping %}
+                                            <article class="dashboard-alert">
+                                                <span class="dashboard-alert__icon" aria-hidden="true">
+                                                    <svg viewBox="0 0 24 24"><path d="M12 3 2.8 20h18.4L12 3Z"></path><path d="M12 9v5M12 17h.01"></path></svg>
+                                                </span>
+                                                <div>
+                                                    <strong>{{ alert.get("title", "Attention needed") }}</strong>
+                                                    {% if alert.get("message") %}<p>{{ alert.get("message") }}</p>{% endif %}
+                                                </div>
+                                            </article>
+                                        {% endif %}
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </section>
+                    {% endif %}
+                </aside>
+            </div>
+
+            {% if quick_links %}
+                <section class="dashboard-section dashboard-panel" aria-labelledby="dashboard-quick-links-title">
+                    <header class="dashboard-panel__head">
+                        <div>
+                            <h2 id="dashboard-quick-links-title">Management Shortcuts</h2>
+                            <p>Only backend-supplied, allowed destinations are rendered.</p>
+                        </div>
+                    </header>
+                    <div class="dashboard-panel__body">
+                        <div class="dashboard-quick-links">
+                            {% for link in quick_links[:12] %}
+                                {{ quick_link(link) }}
+                            {% endfor %}
+                            {% if is_owner %}
+                                {{ quick_link({"label": "Website Content", "description": "Edit the public About page content.", "url": url_for("owner_website_content_page")}) }}
+                            {% endif %}
+                        </div>
+                    </div>
+                </section>
+            {% endif %}
+
+            {% if recent_audit and (is_owner or "manage_permissions" in permissions or "manage_staff" in permissions) %}
+                <section class="dashboard-section dashboard-panel" aria-labelledby="dashboard-audit-title">
+                    <header class="dashboard-panel__head">
+                        <div>
+                            <h2 id="dashboard-audit-title">Recent Administrative Activity</h2>
+                            <p>Backend-approved summaries only; raw audit payloads are not rendered.</p>
+                        </div>
+                    </header>
+                    <div class="dashboard-panel__body">
+                        <ul class="dashboard-summary-list">
+                            {% for event in recent_audit[:5] %}
+                                {% if event is mapping %}
+                                    <li class="dashboard-summary-item">
+                                        <span class="dashboard-summary-item__main">
+                                            <strong>{{ event.get("label", event.get("message", "Activity")) }}</strong>
+                                            {% if event.get("time_label") %}<small>{{ event.get("time_label") }}</small>{% endif %}
+                                        </span>
+                                    </li>
+                                {% endif %}
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </section>
+            {% endif %}
+
+            <section class="dashboard-section dashboard-panel" aria-labelledby="dashboard-account-title">
+                <header class="dashboard-panel__head">
+                    <div>
+                        <h2 id="dashboard-account-title">Account &amp; Security</h2>
+                        <p>Existing account pages are reused instead of duplicating security controls.</p>
+                    </div>
+                </header>
+                <div class="dashboard-panel__body">
+                    <div class="dashboard-account-links">
+                        <a class="dashboard-account-link" href="{{ url_for('profile_page') }}">
+                            <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3"></circle><path d="M5 20c.6-4.2 3-6.4 7-6.4s6.4 2.2 7 6.4"></path></svg>
+                            Profile
+                        </a>
+
+                        <a class="dashboard-account-link" href="{{ url_for('change_password_page') }}">
+                            <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg>
+                            Change Password
+                        </a>
+
+                        <a class="dashboard-account-link" href="{{ url_for('contact_page') }}">
+                            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 5h16v12H8l-4 4V5Z"></path><path d="M8 9h8M8 13h5"></path></svg>
+                            Contact Support
+                        </a>
+                    </div>
+                </div>
+            </section>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    "use strict";
+
+    const root = document.getElementById("dashboard-page-root");
+    if (!root) return;
+
+    const elements = {
+        live: document.getElementById("dashboard-live-region"),
+        refreshButton: document.getElementById("dashboard-refresh-button"),
+        refreshSpinner: document.getElementById("dashboard-refresh-spinner"),
+        refreshIcon: document.getElementById("dashboard-refresh-icon"),
+        refreshLabel: document.getElementById("dashboard-refresh-label"),
+        refreshStatus: document.getElementById("dashboard-refresh-status"),
+        offlineBanner: document.getElementById("dashboard-offline-banner")
+    };
+
+    const state = {
+        refreshInFlight: false,
+        refreshSequence: 0,
+        lastAppliedSequence: 0,
+        pollingTimer: null,
+        stoppedForAuth: false,
+        actionLocks: new Set()
+    };
+
+    function announce(message) {
+        if (window.AppUI && typeof window.AppUI.announce === "function") {
+            window.AppUI.announce(message);
+        }
+
+        if (!elements.live) return;
+
+        elements.live.textContent = "";
+        window.setTimeout(function () {
+            elements.live.textContent = String(message || "");
+        }, 30);
+    }
+
+    function toast(message, type) {
+        if (window.AppUI && typeof window.AppUI.showToast === "function") {
+            window.AppUI.showToast(message, type || "info");
+            return;
+        }
+
+        if (typeof window.showToast === "function") {
+            window.showToast(message, type || "info");
+        }
+    }
+
+    async function secureFetch(url, options) {
+        if (window.AppUI && typeof window.AppUI.csrfFetch === "function") {
+            return window.AppUI.csrfFetch(url, options || {});
+        }
+
+        throw new Error("CSRF helper unavailable");
+    }
+
+    async function parseJson(response) {
+        try {
+            return await response.json();
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function refreshEndpoint() {
+        if (root.dataset.refreshEnabled !== "true") return "";
+
+        const raw = String(root.dataset.refreshUrl || "").trim();
+
+        if (!raw || !raw.startsWith("/") || raw.startsWith("//")) {
+            return "";
+        }
+
+        return raw;
+    }
+
+    function pollSeconds() {
+        const value = Number(root.dataset.pollSeconds || "0");
+
+        if (!Number.isFinite(value) || value < 20 || value > 60) {
+            return 0;
+        }
+
+        return Math.floor(value);
+    }
+
+    function setRefreshLoading(loading) {
+        state.refreshInFlight = Boolean(loading);
+
+        if (elements.refreshButton) {
+            elements.refreshButton.disabled = state.refreshInFlight;
+        }
+
+        if (elements.refreshSpinner) {
+            elements.refreshSpinner.hidden = !state.refreshInFlight;
+        }
+
+        if (elements.refreshIcon) {
+            elements.refreshIcon.hidden = state.refreshInFlight;
+        }
+
+        if (elements.refreshLabel) {
+            elements.refreshLabel.textContent = state.refreshInFlight
+                ? "Refreshing..."
+                : "Refresh";
+        }
+    }
+
+    function setRefreshStatus(message) {
+        if (elements.refreshStatus) {
+            elements.refreshStatus.textContent = String(message || "");
+        }
+    }
+
+    function formatMoneyMetric(node, value) {
+        if (!node || !value || typeof value !== "object") return false;
+
+        const currency = typeof value.currency === "string"
+            ? value.currency
+            : "";
+
+        const amount = value.amount !== undefined && value.amount !== null
+            ? String(value.amount)
+            : "—";
+
+        node.replaceChildren();
+
+        const wrap = document.createElement("span");
+        wrap.className = "dashboard-money";
+
+        if (currency) {
+            const currencyNode = document.createElement("span");
+            currencyNode.className = "dashboard-money__currency";
+            currencyNode.textContent = currency;
+            wrap.appendChild(currencyNode);
+        }
+
+        const amountNode = document.createElement("span");
+        amountNode.className = "dashboard-money__amount";
+        amountNode.textContent = amount;
+        wrap.appendChild(amountNode);
+
+        node.appendChild(wrap);
+        return true;
+    }
+
+    function updateKpiCards(data) {
+        if (!data || typeof data !== "object") return;
+
+        document.querySelectorAll("[data-metric-value]").forEach(function (node) {
+            const key = node.dataset.metricValue;
+
+            if (!key || !Object.prototype.hasOwnProperty.call(data, key)) {
+                return;
+            }
+
+            const value = data[key];
+
+            if (
+                value &&
+                typeof value === "object" &&
+                Object.prototype.hasOwnProperty.call(value, "amount")
+            ) {
+                formatMoneyMetric(node, value);
+                return;
+            }
+
+            node.textContent = value === null || value === undefined
+                ? "—"
+                : String(value);
+        });
+    }
+
+    function stopPolling() {
+        if (state.pollingTimer !== null) {
+            window.clearTimeout(state.pollingTimer);
+            state.pollingTimer = null;
+        }
+    }
+
+    function scheduleNextPoll() {
+        stopPolling();
+
+        if (
+            state.stoppedForAuth ||
+            document.hidden ||
+            navigator.onLine === false
+        ) {
+            return;
+        }
+
+        const seconds = pollSeconds();
+
+        if (seconds <= 0 || !refreshEndpoint()) return;
+
+        state.pollingTimer = window.setTimeout(function () {
+            refreshDashboardModules({
+                silent: true,
+                source: "poll"
+            });
+        }, seconds * 1000);
+    }
+
+    function handleAuthFailure() {
+        state.stoppedForAuth = true;
+        stopPolling();
+
+        const message = "Your staff session has expired. Please sign in again.";
+
+        setRefreshStatus(message);
+        toast(message, "warning");
+        announce(message);
+    }
+
+    function handlePermissionFailure() {
+        stopPolling();
+
+        const message = "Your dashboard access changed. Refresh the page to load your current permissions.";
+
+        setRefreshStatus(message);
+        toast(message, "warning");
+        announce(message);
+    }
+
+    async function refreshDashboardModules(options) {
+        const settings = options || {};
+        const endpoint = refreshEndpoint();
+
+        if (!endpoint) {
+            if (settings.source === "manual") {
+                window.location.reload();
+            }
+            return;
+        }
+
+        if (state.refreshInFlight || state.stoppedForAuth) return;
+
+        if (navigator.onLine === false) {
+            if (!settings.silent) {
+                toast("You're offline. Existing dashboard data is still visible.", "warning");
+            }
+
+            scheduleNextPoll();
+            return;
+        }
+
+        const sequence = ++state.refreshSequence;
+        setRefreshLoading(true);
+
+        if (!settings.silent) {
+            setRefreshStatus("Refreshing dashboard...");
+        }
+
+        try {
+            const controller = new AbortController();
+
+            const timeout = window.setTimeout(function () {
+                controller.abort();
+            }, 15000);
+
+            let response;
+
+            try {
+                response = await fetch(endpoint, {
+                    method: "GET",
+                    credentials: "same-origin",
+                    headers: {
+                        Accept: "application/json"
+                    },
+                    cache: "no-store",
+                    signal: controller.signal
+                });
+            } finally {
+                window.clearTimeout(timeout);
+            }
+
+            const payload = await parseJson(response);
+
+            if (response.status === 401) {
+                handleAuthFailure();
+                return;
+            }
+
+            if (response.status === 403) {
+                handlePermissionFailure();
+                return;
+            }
+
+            if (response.status === 429) {
+                setRefreshStatus("Refresh is temporarily rate limited.");
+
+                if (!settings.silent) {
+                    toast("Too many refresh requests. Please wait before trying again.", "warning");
+                }
+
+                return;
+            }
+
+            if (
+                !response.ok ||
+                !payload ||
+                payload.success !== true ||
+                !payload.data ||
+                typeof payload.data !== "object"
+            ) {
+                throw new Error("Dashboard refresh failed");
+            }
+
+            if (sequence < state.lastAppliedSequence) return;
+
+            state.lastAppliedSequence = sequence;
+            updateKpiCards(payload.data);
+
+            const refreshedAt = new Date();
+
+            setRefreshStatus(
+                "Refreshed at " +
+                refreshedAt.toLocaleTimeString([], {
+                    hour: "numeric",
+                    minute: "2-digit"
+                })
+            );
+
+            if (!settings.silent) {
+                toast("Dashboard refreshed.", "success");
+            }
+        } catch (error) {
+            if (error && error.name === "AbortError") {
+                setRefreshStatus("Refresh timed out. Existing dashboard data is unchanged.");
+            } else {
+                setRefreshStatus("Unable to refresh. Existing dashboard data is unchanged.");
+            }
+
+            if (!settings.silent) {
+                toast("Unable to refresh dashboard right now.", "error");
+            }
+        } finally {
+            setRefreshLoading(false);
+            scheduleNextPoll();
+        }
+    }
+
+    function initializeManualRefresh() {
+        if (!elements.refreshButton) return;
+
+        elements.refreshButton.addEventListener("click", function () {
+            refreshDashboardModules({
+                silent: false,
+                source: "manual"
+            });
+        });
+    }
+
+    function setOrderActionLoading(button, loading) {
+        if (!button) return;
+
+        button.disabled = Boolean(loading);
+
+        if (loading) {
+            button.dataset.originalLabel = button.textContent.trim();
+            button.textContent = "Updating...";
+        } else {
+            button.textContent = button.dataset.originalLabel || "Update";
+            delete button.dataset.originalLabel;
+        }
+    }
+
+    function orderLockKey(orderId, target) {
+        return String(orderId || "") + ":" + String(target || "");
+    }
+
+    async function updateOrderStatus(button) {
+        const orderId = String(button.dataset.orderId || "").trim();
+        const target = String(button.dataset.targetStatus || "").trim();
+        const actionUrl = String(button.dataset.actionUrl || "").trim();
+
+        if (
+            !orderId ||
+            !target ||
+            !actionUrl ||
+            !actionUrl.startsWith("/") ||
+            actionUrl.startsWith("//")
+        ) {
+            return;
+        }
+
+        const lockKey = orderLockKey(orderId, target);
+
+        if (state.actionLocks.has(lockKey)) return;
+
+        if (navigator.onLine === false) {
+            toast("You're offline. Order status was not changed.", "warning");
+            return;
+        }
+
+        state.actionLocks.add(lockKey);
+        setOrderActionLoading(button, true);
+
+        try {
+            const response = await secureFetch(actionUrl, {
+                method: "POST",
+                credentials: "same-origin",
+                headers: {
+                    Accept: "application/json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    status: target
+                })
+            });
+
+            const payload = await parseJson(response);
+
+            if (response.status === 401) {
+                handleAuthFailure();
+                return;
+            }
+
+            if (response.status === 403) {
+                handlePermissionFailure();
+                return;
+            }
+
+            if (response.status === 409) {
+                toast(
+                    "This order changed before your update was applied. Refresh the dashboard before trying again.",
+                    "warning"
+                );
+
+                announce("Order status conflict. Refresh the dashboard.");
+                return;
+            }
+
+            if (response.status === 429) {
+                toast("Too many status updates. Please wait before trying again.", "warning");
+                return;
+            }
+
+            if (!response.ok || !payload || payload.success !== true) {
+                toast("Order status could not be updated.", "error");
+                return;
+            }
+
+            toast("Order status updated.", "success");
+            announce("Order status updated.");
+
+            /*
+             * Never assume frontend state after a mutation.
+             * Reload from backend authority.
+             */
+            if (refreshEndpoint()) {
+                refreshDashboardModules({
+                    silent: true,
+                    source: "action"
+                });
+            } else {
+                window.location.reload();
+            }
+        } catch (error) {
+            toast(
+                "Order status could not be updated because of a connection problem.",
+                "error"
+            );
+        } finally {
+            state.actionLocks.delete(lockKey);
+            setOrderActionLoading(button, false);
+        }
+    }
+
+    function initializeOrderActions() {
+        document.addEventListener("click", function (event) {
+            const button = event.target.closest("[data-dashboard-order-action]");
+
+            if (!button) return;
+
+            event.preventDefault();
+            updateOrderStatus(button);
+        });
+    }
+
+    function initializeNetworkState() {
+        function applyNetworkState() {
+            const offline = navigator.onLine === false;
+
+            if (elements.offlineBanner) {
+                elements.offlineBanner.hidden = !offline;
+            }
+
+            if (offline) {
+                stopPolling();
+                setRefreshStatus("Offline — existing data preserved");
+            } else {
+                scheduleNextPoll();
+            }
+        }
+
+        window.addEventListener("offline", applyNetworkState);
+
+        window.addEventListener("online", function () {
+            applyNetworkState();
+            toast("Connection restored.", "info");
+        });
+
+        applyNetworkState();
+    }
+
+    function initializeVisibilityHandling() {
+        document.addEventListener("visibilitychange", function () {
+            if (document.hidden) {
+                stopPolling();
+            } else {
+                scheduleNextPoll();
+            }
+        });
+    }
+
+    function initializeDashboard() {
+        initializeManualRefresh();
+        initializeOrderActions();
+        initializeNetworkState();
+        initializeVisibilityHandling();
+        scheduleNextPoll();
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initializeDashboard, {
+            once: true
+        });
+    } else {
+        initializeDashboard();
+    }
+}());
+/* =====================================================================
+   MR. ITALIANO — PREMIUM DASHBOARD VISUAL CONTROLLER
+   Visual-only JS. Existing business/security logic remains untouched.
+   ===================================================================== */
+(function(){
+    "use strict";
+    const root=document.getElementById("dashboard-page-root");
+    if(!root||root.dataset.luxDashboardReady==="true")return;
+    root.dataset.luxDashboardReady="true";
+    const reduced=window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const fine=window.matchMedia&&window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+    const clamp=(v,min,max)=>Math.min(max,Math.max(min,v));
+
+    function ensureProgress(){
+        if(root.querySelector(".dashboard-lux-progress"))return;
+        const el=document.createElement("div");
+        el.className="dashboard-lux-progress";
+        el.setAttribute("aria-hidden","true");
+        root.prepend(el);
+    }
+
+    function progress(){
+        const doc=document.documentElement;
+        const max=Math.max(1,doc.scrollHeight-window.innerHeight);
+        const ratio=clamp((window.scrollY||0)/max,0,1);
+        root.style.setProperty("--lux-db-scroll",(ratio*100).toFixed(2)+"%");
+    }
+
+    function pointer(e){
+        if(reduced||!fine)return;
+        root.style.setProperty("--lux-db-pointer-x",clamp(e.clientX/Math.max(window.innerWidth,1)*100,0,100).toFixed(2)+"%");
+        root.style.setProperty("--lux-db-pointer-y",clamp(e.clientY/Math.max(window.innerHeight,1)*100,0,100).toFixed(2)+"%");
+    }
+
+    function localLight(el,xName,yName){
+        if(!el||el.dataset.luxLightReady==="true")return;
+        el.dataset.luxLightReady="true";
+        el.addEventListener("pointermove",function(e){
+            if(reduced||!fine)return;
+            const r=el.getBoundingClientRect();
+            const x=clamp((e.clientX-r.left)/Math.max(r.width,1)*100,0,100);
+            const y=clamp((e.clientY-r.top)/Math.max(r.height,1)*100,0,100);
+            el.style.setProperty(xName,x.toFixed(2)+"%");
+            el.style.setProperty(yName,y.toFixed(2)+"%");
+        },{passive:true});
+    }
+
+    function bindLights(){
+        const header=root.querySelector(".dashboard-header");
+        if(header&&!header.dataset.luxHeaderLight){
+            header.dataset.luxHeaderLight="true";
+            header.addEventListener("pointermove",function(e){
+                if(reduced||!fine)return;
+                const r=header.getBoundingClientRect();
+                header.style.setProperty("--lux-db-local-x",clamp((e.clientX-r.left)/Math.max(r.width,1)*100,0,100).toFixed(2)+"%");
+                header.style.setProperty("--lux-db-local-y",clamp((e.clientY-r.top)/Math.max(r.height,1)*100,0,100).toFixed(2)+"%");
+            },{passive:true});
+        }
+        root.querySelectorAll(".dashboard-panel").forEach(el=>localLight(el,"--lux-db-panel-x","--lux-db-panel-y"));
+        root.querySelectorAll(".dashboard-kpi").forEach(el=>localLight(el,"--lux-db-kpi-x","--lux-db-kpi-y"));
+        root.querySelectorAll(".dashboard-order-card").forEach(el=>localLight(el,"--lux-db-order-x","--lux-db-order-y"));
+    }
+
+    function ensureShines(){
+        root.querySelectorAll(".dashboard-btn,.dashboard-order-action").forEach(button=>{
+            if(button.querySelector(".dashboard-lux-shine"))return;
+            const shine=document.createElement("span");
+            shine.className="dashboard-lux-shine";
+            shine.setAttribute("aria-hidden","true");
+            button.appendChild(shine);
+        });
+    }
+
+    function bindRipples(){
+        root.querySelectorAll(".dashboard-btn,.dashboard-order-action,.dashboard-account-link").forEach(el=>{
+            if(el.dataset.luxRippleReady==="true")return;
+            el.dataset.luxRippleReady="true";
+            el.addEventListener("pointerdown",function(e){
+                if(reduced||el.disabled)return;
+                const r=el.getBoundingClientRect();
+                const ripple=document.createElement("span");
+                ripple.className="dashboard-lux-ripple";
+                ripple.style.left=(e.clientX-r.left)+"px";
+                ripple.style.top=(e.clientY-r.top)+"px";
+                el.appendChild(ripple);
+                window.setTimeout(()=>ripple.remove(),660);
+            });
+        });
+    }
+
+    function reveal(){
+        const nodes=Array.from(root.querySelectorAll(".dashboard-header,.dashboard-status-banner,.dashboard-panel,.dashboard-kpi,.dashboard-order-card,.dashboard-summary-item,.dashboard-alert,.dashboard-quick-link"));
+        nodes.forEach((node,index)=>{
+            if(node.dataset.luxRevealReady==="true")return;
+            node.dataset.luxRevealReady="true";
+            node.classList.add("dashboard-lux-reveal");
+            node.style.transitionDelay=Math.min((index%7)*34,180)+"ms";
+        });
+        if(reduced||!("IntersectionObserver" in window)){
+            nodes.forEach(node=>node.classList.add("is-visible"));
+            return;
+        }
+        const io=new IntersectionObserver(entries=>{
+            entries.forEach(entry=>{
+                if(entry.isIntersecting){entry.target.classList.add("is-visible");io.unobserve(entry.target)}
+            });
+        },{threshold:.08,rootMargin:"0px 0px -6% 0px"});
+        nodes.forEach(node=>io.observe(node));
+    }
+
+    function refreshVisuals(){bindLights();ensureShines();bindRipples();reveal();progress()}
+
+    function observe(){
+        if(!("MutationObserver" in window))return;
+        const mo=new MutationObserver(records=>{
+            if(!records.some(r=>r.type==="childList"||(r.type==="attributes"&&r.attributeName==="hidden")))return;
+            window.requestAnimationFrame(refreshVisuals);
+        });
+        mo.observe(root,{childList:true,subtree:true,attributes:true,attributeFilter:["hidden"]});
+    }
+
+    ensureProgress();
+    refreshVisuals();
+    observe();
+    if(!reduced&&fine)root.addEventListener("pointermove",pointer,{passive:true});
+    window.addEventListener("scroll",progress,{passive:true});
+    window.addEventListener("resize",progress);
+}());
+
+</script>
+{% endblock %}

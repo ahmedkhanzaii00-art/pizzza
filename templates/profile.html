@@ -1,0 +1,4117 @@
+{% extends "base.html" %}
+
+{% set profile_data = profile|default({}, true) %}
+{% set account = principal|default({}, true) %}
+{% set profile_name = profile_data.get('full_name', '')|default('', true) %}
+{% set profile_phone = profile_data.get('phone', '')|default('', true) %}
+{% set profile_city = profile_data.get('city', '')|default('', true) %}
+{% set profile_area = profile_data.get('area', '')|default('', true) %}
+{% set profile_address = profile_data.get('address', '')|default('', true) %}
+{% set saved_latitude = profile_data.get('latitude') %}
+{% set saved_longitude = profile_data.get('longitude') %}
+{% set marketing_enabled = profile_data.get('marketing_notifications_enabled', false) %}
+{% set trusted_email = account.get('email', '')|default('', true) %}
+{% set trusted_email_verified = account.get('email_verified', false) %}
+{% set trusted_provider = account.get('provider', '')|default(profile_data.get('auth_provider', ''), true) %}
+{% set avatar_source = profile_name or trusted_email or 'A' %}
+{% set has_saved_coordinates = saved_latitude is not none and saved_longitude is not none %}
+{% set delivery_defaults_complete = profile_name and profile_phone and profile_city and profile_area and profile_address %}
+
+{% if trusted_provider == 'password' %}
+    {% set provider_label = 'Email & Password' %}
+{% elif trusted_provider == 'google.com' %}
+    {% set provider_label = 'Google' %}
+{% elif trusted_provider == 'facebook.com' %}
+    {% set provider_label = 'Facebook' %}
+{% elif trusted_provider == 'custom' %}
+    {% set provider_label = 'Configured Sign-In Provider' %}
+{% else %}
+    {% set provider_label = 'Account Sign-In' %}
+{% endif %}
+
+{% block title %}My Profile | {{ business_name|default('Restaurant', true) }}{% endblock %}
+{% block meta_description %}Manage your account and saved restaurant ordering details.{% endblock %}
+
+{% block head %}
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="same-origin">
+{% endblock %}
+
+{% block styles %}
+<style>
+.profile-page{
+    --pf-primary:var(--primary-color,#b83222);--pf-primary-hover:var(--primary-color-hover,#98281b);--pf-primary-soft:var(--primary-color-soft,#fff0eb);--pf-contrast:var(--primary-contrast,#fff);
+    --pf-bg:var(--background-color,#fffaf4);--pf-bg-soft:var(--background-subtle,#f8f2ea);--pf-surface:var(--surface-color,#fff);--pf-muted-surface:var(--surface-muted,#f5eee5);
+    --pf-text:var(--text-color,#201c19);--pf-strong:var(--text-strong,#151210);--pf-muted:var(--muted-text,#6f6760);--pf-subtle:var(--subtle-text,#8c8279);
+    --pf-border:var(--border-color,#e7ded4);--pf-border-strong:var(--border-strong,#d3c6b9);--pf-success:var(--success-color,#247a4a);--pf-success-soft:var(--success-soft,#eaf7ef);
+    --pf-warning:var(--warning-color,#9a6510);--pf-warning-soft:var(--warning-soft,#fff5dc);--pf-error:var(--error-color,#b42318);--pf-error-soft:var(--error-soft,#fff0ee);--pf-info:var(--info-color,#285ea8);--pf-info-soft:var(--info-soft,#edf4ff);
+    --pf-radius:var(--radius-lg,18px);--pf-shadow:var(--shadow-sm,0 6px 18px rgba(31,24,19,.08));--pf-transition:var(--transition-fast,160ms ease);
+    min-height:70vh;padding:clamp(1rem,3vw,2rem) 0 clamp(4rem,7vw,5.5rem);
+    background:radial-gradient(circle at 5% 8%,color-mix(in srgb,var(--pf-primary) 5%,transparent),transparent 28rem),radial-gradient(circle at 95% 42%,color-mix(in srgb,var(--accent-color,#d99b35) 5%,transparent),transparent 24rem)
+}
+.profile-page,.profile-page *,.profile-page *::before,.profile-page *::after{box-sizing:border-box}.profile-page [hidden]{display:none!important}.profile-page svg{display:block;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.profile-shell{width:min(100% - 2rem,1180px);margin:auto}.profile-header{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;margin-bottom:1.15rem}.profile-kicker{display:inline-flex;align-items:center;gap:.4rem;margin:0 0 .4rem;color:var(--pf-primary);font-size:.66rem;font-weight:850;letter-spacing:.08em;text-transform:uppercase}.profile-kicker::before{content:"";width:22px;height:2px;border-radius:999px;background:currentColor}.profile-title{margin:0;color:var(--pf-strong);font-size:clamp(1.8rem,4.4vw,3.1rem);line-height:1;letter-spacing:-.045em}.profile-subtitle{margin:.55rem 0 0;color:var(--pf-muted);font-size:.8rem;line-height:1.55}.profile-header-actions{display:flex;gap:.5rem;flex-wrap:wrap}
+.profile-summary{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:.9rem;align-items:center;margin-bottom:1.1rem;padding:1rem;border:1px solid var(--pf-border);border-radius:var(--pf-radius);background:var(--pf-surface);box-shadow:var(--pf-shadow)}.profile-avatar{width:62px;height:62px;display:grid;place-items:center;border:1px solid color-mix(in srgb,var(--pf-primary) 18%,var(--pf-border));border-radius:17px;background:linear-gradient(145deg,var(--pf-primary-soft),var(--pf-surface));color:var(--pf-primary);font-size:1.55rem;font-weight:900}.profile-summary-name{margin:0;color:var(--pf-strong);font-size:1.1rem;font-weight:850}.profile-summary-email{margin:.12rem 0 0;color:var(--pf-muted);font-size:.66rem;overflow-wrap:anywhere}.profile-badges{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.45rem}.profile-badge{min-height:27px;display:inline-flex;align-items:center;gap:.3rem;padding:.26rem .5rem;border:1px solid var(--pf-border);border-radius:999px;background:var(--pf-bg-soft);color:var(--pf-muted);font-size:.56rem;font-weight:820}.profile-badge svg{width:.75rem;height:.75rem}.profile-badge.success{background:var(--pf-success-soft);border-color:color-mix(in srgb,var(--pf-success) 28%,var(--pf-border));color:var(--pf-success)}.profile-badge.warning{background:var(--pf-warning-soft);border-color:color-mix(in srgb,var(--pf-warning) 28%,var(--pf-border));color:var(--pf-warning)}.profile-badge.info{background:var(--pf-info-soft);border-color:color-mix(in srgb,var(--pf-info) 24%,var(--pf-border));color:var(--pf-info)}
+.profile-readiness{min-width:210px;padding:.65rem .7rem;border:1px solid var(--pf-border);border-radius:11px;background:var(--pf-bg-soft)}.profile-readiness small{display:block;color:var(--pf-subtle);font-size:.54rem;font-weight:760;text-transform:uppercase;letter-spacing:.05em}.profile-readiness strong{display:flex;align-items:center;gap:.35rem;margin-top:.25rem;color:var(--pf-text);font-size:.63rem}.profile-readiness strong svg{width:.82rem;height:.82rem;color:var(--pf-primary)}.profile-readiness p{margin:.2rem 0 0;color:var(--pf-muted);font-size:.56rem;line-height:1.4}
+.profile-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,.74fr);gap:1rem;align-items:start}.profile-main{min-width:0}.profile-sidebar{display:grid;gap:.8rem;position:sticky;top:calc(var(--header-height,92px) + 1rem)}.profile-card,.profile-side-card{border:1px solid var(--pf-border);border-radius:var(--pf-radius);background:var(--pf-surface);box-shadow:var(--pf-shadow)}.profile-card-header,.profile-side-header{display:flex;align-items:flex-start;justify-content:space-between;gap:.7rem;padding:.82rem .9rem;border-bottom:1px solid var(--pf-border)}.profile-card-title,.profile-side-title{margin:0;color:var(--pf-strong);font-size:.8rem;font-weight:850}.profile-card-desc{margin:.18rem 0 0;color:var(--pf-muted);font-size:.6rem;line-height:1.45}.profile-card-body,.profile-side-body{padding:.86rem .9rem}.profile-card-icon,.profile-side-icon{width:33px;height:33px;flex:0 0 33px;display:grid;place-items:center;border-radius:9px;background:var(--pf-primary-soft);color:var(--pf-primary)}.profile-card-icon svg,.profile-side-icon svg{width:.95rem;height:.95rem}
+.profile-error{display:flex;gap:.5rem;margin-bottom:.72rem;padding:.68rem .72rem;border:1px solid color-mix(in srgb,var(--pf-error) 28%,var(--pf-border));border-radius:10px;background:var(--pf-error-soft);color:var(--pf-error);font-size:.61rem;line-height:1.45}.profile-error svg{width:.92rem;height:.92rem;flex:0 0 .92rem;margin-top:.03rem}.profile-error strong{display:block;font-size:.65rem}
+.profile-form{display:grid;gap:.8rem}.profile-fieldset{margin:0;padding:0;border:0;min-width:0}.profile-fieldset+.profile-fieldset{padding-top:.82rem;border-top:1px solid var(--pf-border)}.profile-legend{width:100%;margin:0 0 .65rem;padding:0;color:var(--pf-text);font-size:.68rem;font-weight:840}.profile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.68rem}.profile-field{display:grid;gap:.32rem;min-width:0}.profile-field.full{grid-column:1/-1}.profile-label-row{display:flex;align-items:baseline;justify-content:space-between;gap:.5rem}.profile-label{color:var(--pf-text);font-size:.65rem;font-weight:810}.profile-note{color:var(--pf-subtle);font-size:.54rem;font-weight:700}.profile-input,.profile-textarea{width:100%;border:1px solid var(--pf-border);border-radius:10px;outline:0;background:var(--pf-bg);color:var(--pf-text);font:inherit;font-size:.72rem;transition:border-color var(--pf-transition),box-shadow var(--pf-transition),background var(--pf-transition)}.profile-input{min-height:45px;padding:.66rem .72rem}.profile-textarea{min-height:96px;padding:.68rem .72rem;line-height:1.5;resize:vertical}.profile-input:hover,.profile-textarea:hover{border-color:var(--pf-border-strong)}.profile-input:focus,.profile-textarea:focus{border-color:var(--pf-primary);background:var(--pf-surface);box-shadow:0 0 0 4px color-mix(in srgb,var(--pf-primary) 11%,transparent)}.profile-input[aria-invalid=true],.profile-textarea[aria-invalid=true]{border-color:var(--pf-error);box-shadow:0 0 0 3px color-mix(in srgb,var(--pf-error) 9%,transparent)}.profile-input[readonly]{background:var(--pf-muted-surface);color:var(--pf-muted)}.profile-input:disabled,.profile-textarea:disabled{opacity:.65;cursor:not-allowed}.profile-help,.profile-field-error{margin:0;font-size:.56rem;line-height:1.4}.profile-help{color:var(--pf-subtle)}.profile-field-error{color:var(--pf-error);font-weight:720}
+.profile-readonly{position:relative}.profile-readonly .profile-input{padding-right:6.4rem}.profile-readonly-tag{position:absolute;top:50%;right:.42rem;transform:translateY(-50%);display:inline-flex;align-items:center;gap:.25rem;padding:.24rem .42rem;border:1px solid var(--pf-border);border-radius:999px;background:var(--pf-surface);color:var(--pf-subtle);font-size:.52rem;font-weight:800}.profile-readonly-tag svg{width:.7rem;height:.7rem}
+.profile-location{display:grid;gap:.5rem;margin-top:.68rem;padding:.68rem;border:1px solid var(--pf-border);border-radius:11px;background:var(--pf-bg-soft)}.profile-location-row{display:flex;align-items:flex-start;justify-content:space-between;gap:.7rem}.profile-location h3{margin:0;color:var(--pf-text);font-size:.63rem;font-weight:830}.profile-location-status{margin:.12rem 0 0;color:var(--pf-muted);font-size:.57rem;line-height:1.42}.profile-location-status.success{color:var(--pf-success)}.profile-location-status.warning{color:var(--pf-warning)}.profile-location-status.error{color:var(--pf-error)}.profile-location-status.info{color:var(--pf-info)}.profile-location-privacy{display:flex;gap:.36rem;margin:0;color:var(--pf-subtle);font-size:.54rem;line-height:1.4}.profile-location-privacy svg{width:.74rem;height:.74rem;flex:0 0 .74rem;margin-top:.02rem}
+.profile-preference{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.75rem;align-items:center;padding:.68rem;border:1px solid var(--pf-border);border-radius:11px;background:var(--pf-bg-soft)}.profile-preference-title{display:block;color:var(--pf-text);font-size:.64rem;font-weight:830}.profile-preference-copy{display:block;margin-top:.12rem;color:var(--pf-muted);font-size:.56rem;line-height:1.42}.profile-switch{position:relative;width:44px;height:25px}.profile-switch input{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}.profile-switch-track{position:absolute;inset:0;border:1px solid var(--pf-border-strong);border-radius:999px;background:var(--pf-muted-surface);cursor:pointer;transition:background var(--pf-transition),border-color var(--pf-transition)}.profile-switch-track::after{content:"";position:absolute;top:3px;left:3px;width:17px;height:17px;border-radius:50%;background:var(--pf-surface);box-shadow:0 1px 4px rgba(0,0,0,.18);transition:transform var(--pf-transition)}.profile-switch input:checked+.profile-switch-track{background:var(--pf-primary);border-color:var(--pf-primary)}.profile-switch input:checked+.profile-switch-track::after{transform:translateX(19px)}.profile-switch input:focus-visible+.profile-switch-track{outline:3px solid color-mix(in srgb,var(--pf-primary) 24%,transparent);outline-offset:2px}
+.profile-save{display:flex;align-items:center;justify-content:space-between;gap:.7rem;padding-top:.78rem;border-top:1px solid var(--pf-border)}.profile-save-status{margin:0;color:var(--pf-muted);font-size:.59rem;line-height:1.4}.profile-save-status.success{color:var(--pf-success);font-weight:740}.profile-save-status.error{color:var(--pf-error);font-weight:740}.profile-save-actions{display:flex;gap:.45rem;flex-wrap:wrap;justify-content:flex-end}
+.profile-button,.profile-link-button{min-height:41px;display:inline-flex;align-items:center;justify-content:center;gap:.4rem;padding:.56rem .72rem;border-radius:9px;font:inherit;font-size:.61rem;font-weight:820;line-height:1;text-decoration:none;transition:transform var(--pf-transition),border-color var(--pf-transition),background var(--pf-transition),opacity var(--pf-transition)}.profile-button{cursor:pointer}.profile-button svg,.profile-link-button svg{width:.82rem;height:.82rem}.profile-button.primary,.profile-link-button.primary{border:1px solid var(--pf-primary);background:var(--pf-primary);color:var(--pf-contrast)}.profile-button.primary:hover:not(:disabled),.profile-link-button.primary:hover{background:var(--pf-primary-hover);border-color:var(--pf-primary-hover);transform:translateY(-1px)}.profile-button.secondary,.profile-link-button.secondary{border:1px solid var(--pf-border);background:var(--pf-bg);color:var(--pf-text)}.profile-button.secondary:hover:not(:disabled),.profile-link-button.secondary:hover{background:var(--pf-muted-surface);border-color:var(--pf-border-strong);transform:translateY(-1px)}.profile-button.ghost,.profile-link-button.ghost{border:1px solid transparent;background:transparent;color:var(--pf-primary)}.profile-button.ghost:hover:not(:disabled),.profile-link-button.ghost:hover{background:var(--pf-primary-soft)}.profile-button.danger{border:1px solid color-mix(in srgb,var(--pf-error) 24%,var(--pf-border));background:var(--pf-error-soft);color:var(--pf-error)}.profile-button:disabled{opacity:.52;cursor:not-allowed;transform:none!important}.profile-spinner{width:.8rem;height:.8rem;border:2px solid color-mix(in srgb,currentColor 30%,transparent);border-top-color:currentColor;border-radius:50%;animation:pf-spin .8s linear infinite}@keyframes pf-spin{to{transform:rotate(360deg)}}
+.profile-info-list{display:grid;gap:.58rem;margin:0}.profile-info-row{display:grid;gap:.12rem}.profile-info-row+.profile-info-row{padding-top:.58rem;border-top:1px solid var(--pf-border)}.profile-info-term{color:var(--pf-subtle);font-size:.53rem;font-weight:740;letter-spacing:.04em;text-transform:uppercase}.profile-info-value{display:flex;align-items:center;gap:.32rem;margin:0;color:var(--pf-text);font-size:.63rem;font-weight:790}.profile-info-value svg{width:.8rem;height:.8rem;flex:0 0 .8rem}.profile-info-value.success{color:var(--pf-success)}.profile-info-value.warning{color:var(--pf-warning)}.profile-security-copy{margin:.55rem 0 0;color:var(--pf-muted);font-size:.57rem;line-height:1.45}.profile-side-actions{display:grid;gap:.44rem;margin-top:.65rem}.profile-side-actions .profile-button,.profile-side-actions .profile-link-button{width:100%}
+.profile-verification{display:grid;gap:.4rem;margin-top:.65rem;padding:.6rem;border:1px solid color-mix(in srgb,var(--pf-warning) 24%,var(--pf-border));border-radius:10px;background:var(--pf-warning-soft)}.profile-verification h3{display:flex;align-items:center;gap:.3rem;margin:0;color:var(--pf-warning);font-size:.62rem;font-weight:830}.profile-verification h3 svg{width:.82rem;height:.82rem}.profile-verification p{margin:0;color:var(--pf-muted);font-size:.56rem;line-height:1.42}.profile-resend-feedback{min-height:17px;color:var(--pf-muted)!important;font-size:.54rem!important}.profile-resend-feedback.success{color:var(--pf-success)!important;font-weight:740}.profile-resend-feedback.warning{color:var(--pf-warning)!important;font-weight:740}.profile-resend-feedback.error{color:var(--pf-error)!important;font-weight:740}
+.profile-quick-links{display:grid;gap:.45rem}.profile-quick-link{display:flex;align-items:center;gap:.55rem;min-height:47px;padding:.56rem .6rem;border:1px solid var(--pf-border);border-radius:10px;background:var(--pf-bg);color:var(--pf-text);text-decoration:none;transition:transform var(--pf-transition),border-color var(--pf-transition),background var(--pf-transition)}.profile-quick-link:hover{transform:translateY(-1px);background:var(--pf-muted-surface);border-color:var(--pf-border-strong)}.profile-quick-icon{width:30px;height:30px;flex:0 0 30px;display:grid;place-items:center;border-radius:8px;background:var(--pf-primary-soft);color:var(--pf-primary)}.profile-quick-icon svg{width:.86rem;height:.86rem}.profile-quick-copy{min-width:0;flex:1}.profile-quick-title{display:block;font-size:.62rem;font-weight:820}.profile-quick-desc{display:block;margin-top:.06rem;color:var(--pf-muted);font-size:.53rem;line-height:1.35}.profile-quick-arrow{width:.8rem;height:.8rem;color:var(--pf-subtle)}
+.profile-mobile-save{position:fixed;z-index:35;left:.6rem;right:.6rem;bottom:calc(.6rem + env(safe-area-inset-bottom,0px));display:none;gap:.45rem;padding:.5rem;border:1px solid var(--pf-border);border-radius:13px;background:color-mix(in srgb,var(--pf-surface) 94%,transparent);box-shadow:0 12px 34px rgba(0,0,0,.16);backdrop-filter:blur(14px)}.profile-mobile-save .profile-button{flex:1}
+.profile-page button:focus-visible,.profile-page a:focus-visible,.profile-page input:focus-visible,.profile-page textarea:focus-visible{outline:3px solid color-mix(in srgb,var(--pf-primary) 24%,transparent);outline-offset:2px}.profile-input:-webkit-autofill,.profile-input:-webkit-autofill:hover,.profile-input:-webkit-autofill:focus,.profile-textarea:-webkit-autofill,.profile-textarea:-webkit-autofill:hover,.profile-textarea:-webkit-autofill:focus{-webkit-text-fill-color:var(--pf-text);caret-color:var(--pf-text);box-shadow:0 0 0 1000px var(--pf-bg) inset;transition:background-color 9999s ease-out 0s}
+@media(max-width:940px){.profile-layout{grid-template-columns:minmax(0,1.3fr) minmax(270px,.72fr)}.profile-readiness{min-width:185px}}
+@media(max-width:780px){.profile-shell{width:min(100% - 1.2rem,700px)}.profile-header{align-items:flex-start;flex-direction:column}.profile-summary{grid-template-columns:auto minmax(0,1fr)}.profile-readiness{grid-column:1/-1;min-width:0}.profile-layout{grid-template-columns:1fr}.profile-sidebar{position:static;grid-row:1}.profile-main{grid-row:2}}
+@media(max-width:590px){.profile-page{padding-top:.8rem;padding-bottom:calc(5.6rem + env(safe-area-inset-bottom,0px))}.profile-shell{width:min(100% - .9rem,700px)}.profile-title{font-size:clamp(1.7rem,9vw,2.35rem)}.profile-grid{grid-template-columns:1fr}.profile-field.full{grid-column:auto}.profile-save{align-items:stretch;flex-direction:column}.profile-save-actions{justify-content:stretch}.profile-save-actions .profile-button{flex:1}.profile-location-row{flex-direction:column}.profile-location-row .profile-button{width:100%}.profile-mobile-save.visible{display:flex}}
+@media(max-width:420px){.profile-summary{grid-template-columns:1fr;text-align:center}.profile-avatar{margin:auto}.profile-badges{justify-content:center}.profile-readonly .profile-input{padding-right:.72rem}.profile-readonly-tag{position:static;transform:none;margin-top:.3rem;width:max-content}.profile-mobile-save{left:.42rem;right:.42rem;bottom:calc(.42rem + env(safe-area-inset-bottom,0px))}}
+@media(prefers-reduced-motion:reduce){.profile-page *,.profile-page *::before,.profile-page *::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-iteration-count:1!important}.profile-spinner{animation-duration:1.4s}}
+
+    /* =====================================================================
+       MR. ITALIANO — PREMIUM PROFILE EXPERIENCE
+       =====================================================================
+       Visual direction:
+       - matte black / charcoal dominant
+       - controlled antique-gold accents
+       - warm ivory / off-white typography
+       - tiny silver-grey highlights
+       - restrained red reserved for danger/session actions
+       - premium motion without flashy neon effects
+
+       Existing Jinja data, profile update API, location API, email
+       verification API, CSRF/session logic, validation, dirty-state
+       handling and geolocation behavior remain authoritative.
+       ===================================================================== */
+
+    .profile-page {
+        --lux-black-00: #020202;
+        --lux-black-01: #050504;
+        --lux-black-02: #080806;
+        --lux-black-03: #0d0c09;
+        --lux-black-04: #12100d;
+        --lux-black-05: #18140f;
+        --lux-black-06: #201a14;
+        --lux-black-07: #281f17;
+
+        --lux-gold-050: #fff9e7;
+        --lux-gold-100: #fbeab9;
+        --lux-gold-200: #f3d582;
+        --lux-gold-300: #e8bd57;
+        --lux-gold-400: #d19b31;
+        --lux-gold-500: #ad741b;
+        --lux-gold-600: #814f0e;
+
+        --lux-ivory: #fffaf1;
+        --lux-cream: #f3e8d8;
+        --lux-cream-muted: #d8c6ac;
+
+        --lux-silver-050: #f3f1ed;
+        --lux-silver-100: #d8d4cd;
+        --lux-silver-200: #aaa69f;
+        --lux-silver-300: #7e7972;
+
+        --lux-text: #ddd6ca;
+        --lux-text-strong: #fffaf1;
+        --lux-muted: #aaa196;
+        --lux-subtle: #7d766d;
+
+        --lux-success: #8ab99a;
+        --lux-success-soft: rgba(138, 185, 154, .095);
+
+        --lux-warning: #dfb35d;
+        --lux-warning-soft: rgba(223, 179, 93, .095);
+
+        --lux-error: #e57669;
+        --lux-error-soft: rgba(229, 118, 105, .095);
+
+        --lux-info: #8ba8c8;
+        --lux-info-soft: rgba(139, 168, 200, .095);
+
+        --lux-border: rgba(228, 184, 81, .13);
+        --lux-border-strong: rgba(241, 210, 127, .26);
+        --lux-border-silver: rgba(216, 212, 205, .09);
+
+        --lux-gold-gradient:
+            linear-gradient(
+                135deg,
+                #ffe8a7 0%,
+                #f2cd70 31%,
+                #dca840 63%,
+                #a56a18 100%
+            );
+
+        --lux-card-gradient:
+            linear-gradient(
+                145deg,
+                rgba(255, 255, 255, .038),
+                rgba(255, 255, 255, .007)
+            );
+
+        --lux-silver-line:
+            linear-gradient(
+                90deg,
+                transparent 0%,
+                rgba(243, 241, 237, .12) 18%,
+                rgba(228, 184, 81, .29) 50%,
+                rgba(243, 241, 237, .12) 82%,
+                transparent 100%
+            );
+
+        --lux-shadow-sm:
+            0 13px 30px rgba(0, 0, 0, .22);
+
+        --lux-shadow-md:
+            0 23px 52px rgba(0, 0, 0, .30);
+
+        --lux-shadow-lg:
+            0 38px 90px rgba(0, 0, 0, .42);
+
+        --lux-ease:
+            cubic-bezier(.2, .72, .2, 1);
+
+        --lux-ease-out:
+            cubic-bezier(.16, 1, .3, 1);
+
+        --lux-pointer-x: 52%;
+        --lux-pointer-y: 10%;
+
+        /* Existing profile tokens remapped into this visual system. */
+        --pf-primary: var(--lux-gold-400);
+        --pf-primary-hover: var(--lux-gold-300);
+        --pf-primary-soft: rgba(228, 184, 81, .075);
+        --pf-contrast: #1b1107;
+
+        --pf-bg: #0b0a08;
+        --pf-bg-soft: #0f0d0a;
+        --pf-surface: #11100d;
+        --pf-muted-surface: #17130f;
+
+        --pf-text: var(--lux-text);
+        --pf-strong: var(--lux-ivory);
+        --pf-muted: var(--lux-muted);
+        --pf-subtle: var(--lux-subtle);
+
+        --pf-border: var(--lux-border);
+        --pf-border-strong: var(--lux-border-strong);
+
+        --pf-success: var(--lux-success);
+        --pf-success-soft: var(--lux-success-soft);
+
+        --pf-warning: var(--lux-warning);
+        --pf-warning-soft: var(--lux-warning-soft);
+
+        --pf-error: var(--lux-error);
+        --pf-error-soft: var(--lux-error-soft);
+
+        --pf-info: var(--lux-info);
+        --pf-info-soft: var(--lux-info-soft);
+
+        --pf-radius: 18px;
+        --pf-shadow: var(--lux-shadow-sm);
+        --pf-transition: 180ms var(--lux-ease);
+
+        position: relative;
+        isolation: isolate;
+        overflow: clip;
+
+        background:
+            radial-gradient(
+                circle at
+                var(--lux-pointer-x)
+                var(--lux-pointer-y),
+                rgba(228, 184, 81, .050),
+                transparent 30rem
+            ),
+            radial-gradient(
+                circle at 96% 8%,
+                rgba(228, 184, 81, .075),
+                transparent 29rem
+            ),
+            radial-gradient(
+                circle at -4% 48%,
+                rgba(126, 91, 47, .055),
+                transparent 34rem
+            ),
+            linear-gradient(
+                180deg,
+                #090807 0%,
+                #050504 46%,
+                #090705 100%
+            );
+
+        color: var(--lux-text);
+    }
+
+    .profile-page::before {
+        content: "";
+        position: absolute;
+        z-index: -3;
+        inset: 0;
+        pointer-events: none;
+
+        background:
+            linear-gradient(
+                90deg,
+                rgba(255,255,255,.012) 1px,
+                transparent 1px
+            ),
+            linear-gradient(
+                rgba(255,255,255,.009) 1px,
+                transparent 1px
+            );
+
+        background-size: 46px 46px;
+        mask-image:
+            linear-gradient(
+                180deg,
+                rgba(0,0,0,.26),
+                transparent 76%
+            );
+    }
+
+    /* =====================================================================
+       BACKGROUND SCENE
+       ===================================================================== */
+
+    .profile-lux-scene {
+        position: absolute;
+        z-index: -2;
+        inset: 0;
+        overflow: hidden;
+        pointer-events: none;
+    }
+
+    .profile-lux-orbit {
+        position: absolute;
+        border-radius: 50%;
+        border: 1px solid rgba(241, 210, 127, .07);
+        box-shadow:
+            0 0 0 42px rgba(228, 184, 81, .011),
+            0 0 0 84px rgba(228, 184, 81, .005);
+    }
+
+    .profile-lux-orbit--one {
+        top: 2.4rem;
+        right: -12rem;
+        width: 34rem;
+        height: 34rem;
+
+        transform:
+            rotateX(67deg)
+            rotateZ(-7deg);
+
+        animation:
+            profile-lux-orbit-one
+            16s
+            ease-in-out
+            infinite
+            alternate;
+    }
+
+    .profile-lux-orbit--two {
+        top: 58rem;
+        left: -12rem;
+        width: 27rem;
+        height: 27rem;
+
+        border-color:
+            rgba(216, 212, 205, .045);
+
+        transform:
+            rotateX(61deg)
+            rotateZ(5deg);
+
+        animation:
+            profile-lux-orbit-two
+            19s
+            ease-in-out
+            infinite
+            alternate;
+    }
+
+    .profile-lux-glow {
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(42px);
+        opacity: .60;
+    }
+
+    .profile-lux-glow--gold {
+        top: 4rem;
+        right: 8%;
+        width: 13rem;
+        height: 13rem;
+
+        background:
+            rgba(228, 184, 81, .075);
+
+        animation:
+            profile-lux-glow
+            7s
+            ease-in-out
+            infinite;
+    }
+
+    .profile-lux-glow--silver {
+        top: 35rem;
+        left: 2%;
+        width: 10rem;
+        height: 10rem;
+
+        background:
+            rgba(216, 212, 205, .032);
+
+        animation:
+            profile-lux-glow
+            9s
+            ease-in-out
+            infinite
+            reverse;
+    }
+
+    @keyframes profile-lux-orbit-one {
+        from {
+            transform:
+                translate3d(0, 0, 0)
+                rotateX(67deg)
+                rotateZ(-7deg);
+        }
+
+        to {
+            transform:
+                translate3d(-34px, 22px, 0)
+                rotateX(71deg)
+                rotateZ(7deg);
+        }
+    }
+
+    @keyframes profile-lux-orbit-two {
+        from {
+            transform:
+                translate3d(0, 0, 0)
+                rotateX(61deg)
+                rotateZ(5deg);
+        }
+
+        to {
+            transform:
+                translate3d(28px, -18px, 0)
+                rotateX(58deg)
+                rotateZ(-8deg);
+        }
+    }
+
+    @keyframes profile-lux-glow {
+        0%,
+        100% {
+            transform: scale(.96);
+            opacity: .42;
+        }
+
+        50% {
+            transform: scale(1.08);
+            opacity: .72;
+        }
+    }
+
+    /* =====================================================================
+       HEADER
+       ===================================================================== */
+
+    .profile-header {
+        position: relative;
+        align-items: flex-end;
+        gap: 1.35rem;
+
+        margin-bottom: 1rem;
+        padding-bottom: 1rem;
+
+        border-bottom:
+            1px solid
+            rgba(216, 212, 205, .065);
+    }
+
+    .profile-header::after {
+        content: "";
+        position: absolute;
+        right: 55%;
+        bottom: -1px;
+        left: 0;
+        height: 1px;
+
+        background:
+            linear-gradient(
+                90deg,
+                var(--lux-gold-300),
+                rgba(216, 212, 205, .15),
+                transparent
+            );
+
+        opacity: .78;
+    }
+
+    .profile-kicker {
+        min-height: 28px;
+        padding:
+            .28rem
+            .56rem;
+
+        border:
+            1px solid
+            rgba(228, 184, 81, .14);
+
+        border-radius: 999px;
+
+        background:
+            rgba(255, 255, 255, .018);
+
+        color:
+            var(--lux-gold-200);
+
+        font-size: .58rem;
+        letter-spacing: .12em;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.025),
+            0 9px 18px
+            rgba(0,0,0,.12);
+    }
+
+    .profile-kicker::before {
+        width: 17px;
+        height: 1px;
+
+        background:
+            linear-gradient(
+                90deg,
+                var(--lux-gold-100),
+                var(--lux-gold-400)
+            );
+    }
+
+    .profile-title {
+        color:
+            var(--lux-ivory);
+
+        font-size:
+            clamp(
+                3rem,
+                5.8vw,
+                5.1rem
+            );
+
+        font-weight: 950;
+        line-height: .90;
+        letter-spacing: -.070em;
+
+        text-shadow:
+            0 22px 52px
+            rgba(0,0,0,.30);
+    }
+
+    .profile-subtitle {
+        max-width: 64ch;
+
+        margin-top: .84rem;
+
+        color:
+            var(--lux-muted);
+
+        font-size: .78rem;
+        line-height: 1.65;
+    }
+
+    .profile-header-actions {
+        align-items: center;
+        justify-content: flex-end;
+    }
+
+    /* =====================================================================
+       SUMMARY HERO
+       ===================================================================== */
+
+    .profile-summary {
+        --lux-summary-x: 82%;
+        --lux-summary-y: 10%;
+        --lux-summary-rx: 0deg;
+        --lux-summary-ry: 0deg;
+
+        position: relative;
+        overflow: hidden;
+        isolation: isolate;
+
+        padding:
+            clamp(
+                .95rem,
+                2.5vw,
+                1.25rem
+            );
+
+        border:
+            1px solid
+            rgba(228, 184, 81, .15);
+
+        border-radius: 19px;
+
+        background:
+            radial-gradient(
+                circle at
+                var(--lux-summary-x)
+                var(--lux-summary-y),
+                rgba(255, 231, 164, .075),
+                transparent 17rem
+            ),
+            linear-gradient(
+                145deg,
+                rgba(255,255,255,.041),
+                rgba(255,255,255,.008)
+            ),
+            #11100d;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.035),
+            0 24px 54px
+            rgba(0,0,0,.27);
+
+        transform:
+            perspective(1200px)
+            rotateX(var(--lux-summary-rx))
+            rotateY(var(--lux-summary-ry));
+
+        transform-style: preserve-3d;
+
+        transition:
+            transform 260ms var(--lux-ease),
+            border-color 200ms ease,
+            box-shadow 260ms ease;
+    }
+
+    .profile-summary:hover {
+        border-color:
+            rgba(255, 230, 168, .24);
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.044),
+            0 30px 64px
+            rgba(0,0,0,.31);
+    }
+
+    .profile-summary::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        right: 17%;
+        left: 17%;
+        height: 1px;
+
+        background:
+            var(--lux-silver-line);
+
+        opacity: .46;
+    }
+
+    .profile-summary-rail {
+        position: absolute;
+        top: 12%;
+        bottom: 12%;
+        left: 0;
+
+        width: 3px;
+
+        border-radius:
+            0
+            999px
+            999px
+            0;
+
+        background:
+            linear-gradient(
+                var(--lux-gold-100),
+                var(--lux-gold-400),
+                transparent
+            );
+
+        box-shadow:
+            0 0 16px
+            rgba(228,184,81,.18);
+    }
+
+    .profile-avatar-wrap {
+        position: relative;
+
+        width: 72px;
+        height: 72px;
+
+        display: grid;
+        place-items: center;
+    }
+
+    .profile-avatar-ring {
+        position: absolute;
+        inset: -2px;
+
+        border:
+            1px solid
+            rgba(241, 210, 127, .23);
+
+        border-radius: 20px;
+
+        box-shadow:
+            0 0 0 4px
+            rgba(228,184,81,.026),
+            0 12px 25px
+            rgba(0,0,0,.22);
+
+        transform: rotate(5deg);
+
+        animation:
+            profile-avatar-ring
+            7s
+            ease-in-out
+            infinite;
+    }
+
+    @keyframes profile-avatar-ring {
+        0%,
+        100% {
+            transform:
+                rotate(5deg)
+                scale(1);
+        }
+
+        50% {
+            transform:
+                rotate(-3deg)
+                scale(1.025);
+        }
+    }
+
+    .profile-avatar {
+        position: relative;
+        z-index: 2;
+
+        width: 62px;
+        height: 62px;
+
+        border:
+            1px solid
+            rgba(255, 233, 181, .32);
+
+        border-radius: 17px;
+
+        background:
+            var(--lux-gold-gradient);
+
+        color: #1b1107;
+
+        font-size: 1.55rem;
+        font-weight: 950;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.36),
+            0 4px 0
+            #75460c,
+            0 15px 28px
+            rgba(0,0,0,.26);
+
+        text-shadow:
+            0 1px 0
+            rgba(255,255,255,.22);
+    }
+
+    .profile-summary-name {
+        color:
+            var(--lux-ivory);
+
+        font-size: 1.2rem;
+        font-weight: 900;
+        letter-spacing: -.032em;
+    }
+
+    .profile-summary-email {
+        color:
+            var(--lux-muted);
+
+        font-size: .67rem;
+    }
+
+    .profile-badge {
+        border-color:
+            rgba(216, 212, 205, .10);
+
+        background:
+            rgba(255,255,255,.020);
+
+        color:
+            var(--lux-muted);
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.016);
+    }
+
+    .profile-badge.success {
+        border-color:
+            rgba(138, 185, 154, .24);
+
+        background:
+            rgba(138, 185, 154, .065);
+
+        color:
+            #a0cbae;
+    }
+
+    .profile-badge.warning {
+        border-color:
+            rgba(223, 179, 93, .25);
+
+        background:
+            rgba(223, 179, 93, .065);
+
+        color:
+            #e6c071;
+    }
+
+    .profile-badge.info {
+        border-color:
+            rgba(139, 168, 200, .23);
+
+        background:
+            rgba(139, 168, 200, .060);
+
+        color:
+            #a9bfd8;
+    }
+
+    .profile-readiness {
+        position: relative;
+        overflow: hidden;
+
+        border-color:
+            rgba(228, 184, 81, .12);
+
+        background:
+            linear-gradient(
+                145deg,
+                rgba(255,255,255,.023),
+                rgba(255,255,255,.008)
+            ),
+            #0c0b09;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.018);
+    }
+
+    .profile-readiness::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        right: 20%;
+        left: 20%;
+        height: 1px;
+
+        background:
+            var(--lux-silver-line);
+
+        opacity: .35;
+    }
+
+    .profile-readiness small {
+        color:
+            var(--lux-subtle);
+    }
+
+    .profile-readiness strong {
+        color:
+            var(--lux-text);
+    }
+
+    .profile-readiness strong svg {
+        color:
+            var(--lux-gold-200);
+    }
+
+    .profile-readiness p {
+        color:
+            var(--lux-muted);
+    }
+
+    /* =====================================================================
+       LAYOUT
+       ===================================================================== */
+
+    .profile-layout {
+        gap:
+            clamp(
+                1rem,
+                2.6vw,
+                1.45rem
+            );
+
+        margin-top: 1.05rem;
+    }
+
+    .profile-lux-section-intro {
+        display: flex;
+        align-items: center;
+        gap: .6rem;
+
+        margin:
+            0
+            0
+            .5rem;
+
+        color:
+            var(--lux-gold-200);
+
+        font-size: .48rem;
+        font-weight: 850;
+        letter-spacing: .11em;
+    }
+
+    .profile-lux-section-intro i {
+        flex: 1;
+        height: 1px;
+
+        background:
+            linear-gradient(
+                90deg,
+                rgba(228,184,81,.34),
+                rgba(216,212,205,.07),
+                transparent
+            );
+    }
+
+    .profile-sidebar {
+        gap: .9rem;
+    }
+
+    /* =====================================================================
+       CARDS
+       ===================================================================== */
+
+    .profile-card,
+    .profile-side-card {
+        --lux-card-x: 84%;
+        --lux-card-y: 8%;
+        --lux-card-rx: 0deg;
+        --lux-card-ry: 0deg;
+        --lux-card-lift: 0px;
+
+        position: relative;
+        overflow: hidden;
+        isolation: isolate;
+
+        border:
+            1px solid
+            rgba(228,184,81,.12);
+
+        border-radius: 17px;
+
+        background:
+            radial-gradient(
+                circle at
+                var(--lux-card-x)
+                var(--lux-card-y),
+                rgba(255,231,164,.047),
+                transparent 15rem
+            ),
+            var(--lux-card-gradient),
+            #11100d;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.030),
+            0 18px 40px
+            rgba(0,0,0,.21);
+
+        transform:
+            perspective(1100px)
+            rotateX(var(--lux-card-rx))
+            rotateY(var(--lux-card-ry))
+            translateY(var(--lux-card-lift));
+
+        transform-style: preserve-3d;
+
+        transition:
+            transform 245ms var(--lux-ease),
+            border-color 200ms ease,
+            box-shadow 245ms ease;
+    }
+
+    .profile-card::after,
+    .profile-side-card::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        right: 16%;
+        left: 16%;
+        height: 1px;
+
+        background:
+            var(--lux-silver-line);
+
+        opacity: .31;
+        pointer-events: none;
+    }
+
+    .profile-card:hover,
+    .profile-side-card:hover {
+        --lux-card-lift: -3px;
+
+        border-color:
+            rgba(255,230,168,.22);
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.042),
+            0 25px 54px
+            rgba(0,0,0,.27);
+    }
+
+    .profile-card-header,
+    .profile-side-header {
+        border-bottom-color:
+            rgba(216,212,205,.065);
+
+        background:
+            linear-gradient(
+                180deg,
+                rgba(255,255,255,.018),
+                rgba(255,255,255,.006)
+            );
+    }
+
+    .profile-card-title,
+    .profile-side-title {
+        color:
+            var(--lux-ivory);
+
+        font-size: .86rem;
+        font-weight: 900;
+        letter-spacing: -.022em;
+    }
+
+    .profile-card-desc {
+        color:
+            var(--lux-muted);
+
+        font-size: .61rem;
+    }
+
+    .profile-card-icon,
+    .profile-side-icon {
+        border:
+            1px solid
+            rgba(241,210,127,.17);
+
+        background:
+            linear-gradient(
+                145deg,
+                rgba(228,184,81,.10),
+                rgba(228,184,81,.025)
+            );
+
+        color:
+            var(--lux-gold-200);
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.028),
+            0 9px 18px
+            rgba(0,0,0,.15);
+    }
+
+    /* =====================================================================
+       FORM STRUCTURE
+       ===================================================================== */
+
+    .profile-form {
+        gap: 1rem;
+    }
+
+    .profile-fieldset + .profile-fieldset {
+        border-top-color:
+            rgba(216,212,205,.065);
+    }
+
+    .profile-legend {
+        color:
+            var(--lux-gold-100);
+
+        font-size: .70rem;
+        font-weight: 900;
+        letter-spacing: -.010em;
+    }
+
+    .profile-label {
+        color:
+            var(--lux-text);
+
+        font-size: .65rem;
+        font-weight: 820;
+    }
+
+    .profile-note {
+        color:
+            var(--lux-subtle);
+    }
+
+    .profile-help {
+        color:
+            var(--lux-subtle);
+    }
+
+    .profile-field-error {
+        color:
+            #ef958a;
+    }
+
+    /* =====================================================================
+       INPUTS
+       ===================================================================== */
+
+    .profile-input,
+    .profile-textarea {
+        border:
+            1px solid
+            rgba(228,184,81,.105);
+
+        background:
+            linear-gradient(
+                180deg,
+                rgba(255,255,255,.017),
+                rgba(255,255,255,.005)
+            ),
+            #0b0a08;
+
+        color:
+            var(--lux-text);
+
+        caret-color:
+            var(--lux-gold-200);
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.015);
+
+        transition:
+            border-color 180ms ease,
+            box-shadow 180ms ease,
+            background 180ms ease,
+            transform 180ms var(--lux-ease);
+    }
+
+    .profile-input:hover,
+    .profile-textarea:hover {
+        border-color:
+            rgba(241,210,127,.20);
+
+        background:
+            #0d0c09;
+    }
+
+    .profile-input:focus,
+    .profile-textarea:focus {
+        border-color:
+            rgba(241,210,127,.42);
+
+        background:
+            #0f0d0a;
+
+        box-shadow:
+            0 0 0 4px
+            rgba(228,184,81,.055),
+            inset 0 1px 0
+            rgba(255,255,255,.020);
+    }
+
+    .profile-input[readonly] {
+        border-color:
+            rgba(216,212,205,.075);
+
+        background:
+            #10100d;
+
+        color:
+            #918a81;
+    }
+
+    .profile-input[aria-invalid=true],
+    .profile-textarea[aria-invalid=true] {
+        border-color:
+            rgba(229,118,105,.52);
+
+        box-shadow:
+            0 0 0 4px
+            rgba(229,118,105,.055);
+    }
+
+    .profile-readonly-tag {
+        border-color:
+            rgba(216,212,205,.09);
+
+        background:
+            #15130f;
+
+        color:
+            var(--lux-subtle);
+    }
+
+    .profile-input:-webkit-autofill,
+    .profile-input:-webkit-autofill:hover,
+    .profile-input:-webkit-autofill:focus,
+    .profile-textarea:-webkit-autofill,
+    .profile-textarea:-webkit-autofill:hover,
+    .profile-textarea:-webkit-autofill:focus {
+        -webkit-text-fill-color:
+            var(--lux-text);
+
+        caret-color:
+            var(--lux-gold-200);
+
+        box-shadow:
+            0 0 0 1000px
+            #0b0a08
+            inset;
+    }
+
+    /* =====================================================================
+       LOCATION PANEL
+       ===================================================================== */
+
+    .profile-location {
+        position: relative;
+        overflow: hidden;
+
+        border-color:
+            rgba(228,184,81,.11);
+
+        background:
+            radial-gradient(
+                circle at 88% 10%,
+                rgba(228,184,81,.055),
+                transparent 12rem
+            ),
+            linear-gradient(
+                145deg,
+                rgba(255,255,255,.018),
+                rgba(255,255,255,.005)
+            ),
+            #0d0c09;
+    }
+
+    .profile-location::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        right: 20%;
+        left: 20%;
+        height: 1px;
+
+        background:
+            var(--lux-silver-line);
+
+        opacity: .30;
+    }
+
+    .profile-location h3 {
+        color:
+            var(--lux-ivory);
+
+        font-size: .66rem;
+    }
+
+    .profile-location-status {
+        color:
+            var(--lux-muted);
+    }
+
+    .profile-location-status.success {
+        color:
+            #9bc8aa;
+    }
+
+    .profile-location-status.warning {
+        color:
+            #e5bd6d;
+    }
+
+    .profile-location-status.error {
+        color:
+            #ef958a;
+    }
+
+    .profile-location-status.info {
+        color:
+            #a6bfd9;
+    }
+
+    .profile-location-privacy {
+        color:
+            var(--lux-subtle);
+    }
+
+    .profile-location-privacy svg {
+        color:
+            var(--lux-gold-300);
+    }
+
+    /* =====================================================================
+       MARKETING SWITCH
+       ===================================================================== */
+
+    .profile-preference {
+        border-color:
+            rgba(228,184,81,.10);
+
+        background:
+            linear-gradient(
+                145deg,
+                rgba(255,255,255,.018),
+                rgba(255,255,255,.005)
+            ),
+            #0d0c09;
+    }
+
+    .profile-preference-title {
+        color:
+            var(--lux-text);
+    }
+
+    .profile-preference-copy {
+        color:
+            var(--lux-muted);
+    }
+
+    .profile-switch-track {
+        border-color:
+            rgba(216,212,205,.16);
+
+        background:
+            #201a14;
+    }
+
+    .profile-switch-track::after {
+        background:
+            #f8efe0;
+
+        box-shadow:
+            0 2px 6px
+            rgba(0,0,0,.28);
+    }
+
+    .profile-switch input:checked + .profile-switch-track {
+        border-color:
+            rgba(255,233,181,.36);
+
+        background:
+            linear-gradient(
+                135deg,
+                var(--lux-gold-500),
+                var(--lux-gold-300)
+            );
+
+        box-shadow:
+            0 0 0 3px
+            rgba(228,184,81,.035);
+    }
+
+    /* =====================================================================
+       ERROR / VERIFICATION
+       ===================================================================== */
+
+    .profile-error {
+        border-color:
+            rgba(229,118,105,.26);
+
+        background:
+            rgba(229,118,105,.065);
+
+        color:
+            #ef958a;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.016);
+    }
+
+    .profile-verification {
+        border-color:
+            rgba(223,179,93,.24);
+
+        background:
+            rgba(223,179,93,.060);
+    }
+
+    .profile-verification h3 {
+        color:
+            #e5bd6d;
+    }
+
+    .profile-verification p {
+        color:
+            var(--lux-muted);
+    }
+
+    /* =====================================================================
+       SAVE STRIP
+       ===================================================================== */
+
+    .profile-save {
+        border-top-color:
+            rgba(216,212,205,.065);
+    }
+
+    .profile-save-status {
+        color:
+            var(--lux-muted);
+    }
+
+    .profile-save-status.success {
+        color:
+            #9bc8aa;
+    }
+
+    .profile-save-status.error {
+        color:
+            #ef958a;
+    }
+
+    /* =====================================================================
+       BUTTONS
+       ===================================================================== */
+
+    .profile-button,
+    .profile-link-button {
+        position: relative;
+        overflow: hidden;
+        isolation: isolate;
+
+        border-radius: 9px;
+
+        transition:
+            transform 180ms var(--lux-ease),
+            border-color 180ms ease,
+            background 180ms ease,
+            color 180ms ease,
+            box-shadow 180ms ease,
+            opacity 180ms ease;
+    }
+
+    .profile-button.primary,
+    .profile-link-button.primary {
+        border-color:
+            rgba(255,233,181,.52);
+
+        background:
+            var(--lux-gold-gradient);
+
+        color:
+            #1b1107;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.34),
+            0 4px 0
+            #75460c,
+            0 13px 23px
+            rgba(0,0,0,.22);
+    }
+
+    .profile-button.primary::before,
+    .profile-link-button.primary::before {
+        content: "";
+        position: absolute;
+        z-index: -1;
+        top: -90%;
+        bottom: -90%;
+        left: -35%;
+        width: 27%;
+
+        background:
+            linear-gradient(
+                90deg,
+                transparent,
+                rgba(255,255,255,.48),
+                transparent
+            );
+
+        transform:
+            rotate(16deg)
+            translateX(-170%);
+
+        transition:
+            transform
+            650ms
+            var(--lux-ease-out);
+    }
+
+    .profile-button.primary:hover:not(:disabled)::before,
+    .profile-link-button.primary:hover::before {
+        transform:
+            rotate(16deg)
+            translateX(600%);
+    }
+
+    .profile-button.primary:hover:not(:disabled),
+    .profile-link-button.primary:hover {
+        transform:
+            translateY(-3px)
+            scale(1.008);
+
+        border-color:
+            rgba(255,240,203,.72);
+
+        background:
+            var(--lux-gold-gradient);
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.42),
+            0 7px 0
+            #75460c,
+            0 22px 37px
+            rgba(0,0,0,.29);
+    }
+
+    .profile-button.secondary,
+    .profile-link-button.secondary {
+        border-color:
+            rgba(228,184,81,.12);
+
+        background:
+            rgba(255,255,255,.014);
+
+        color:
+            var(--lux-muted);
+    }
+
+    .profile-button.secondary:hover:not(:disabled),
+    .profile-link-button.secondary:hover {
+        transform:
+            translateY(-2px);
+
+        border-color:
+            rgba(255,230,168,.24);
+
+        background:
+            rgba(228,184,81,.050);
+
+        color:
+            var(--lux-gold-100);
+    }
+
+    .profile-button.ghost,
+    .profile-link-button.ghost {
+        border-color:
+            transparent;
+
+        background:
+            transparent;
+
+        color:
+            var(--lux-gold-200);
+    }
+
+    .profile-button.ghost:hover:not(:disabled),
+    .profile-link-button.ghost:hover {
+        background:
+            rgba(228,184,81,.045);
+
+        color:
+            var(--lux-gold-100);
+    }
+
+    .profile-button.danger {
+        border-color:
+            rgba(229,118,105,.24);
+
+        background:
+            rgba(229,118,105,.055);
+
+        color:
+            #ef958a;
+    }
+
+    .profile-button.danger:hover:not(:disabled) {
+        transform:
+            translateY(-2px);
+
+        border-color:
+            rgba(229,118,105,.38);
+
+        background:
+            rgba(229,118,105,.085);
+    }
+
+    /* =====================================================================
+       SIDEBAR INFO
+       ===================================================================== */
+
+    .profile-info-row + .profile-info-row {
+        border-top-color:
+            rgba(216,212,205,.065);
+    }
+
+    .profile-info-term {
+        color:
+            var(--lux-subtle);
+    }
+
+    .profile-info-value {
+        color:
+            var(--lux-text);
+    }
+
+    .profile-info-value.success {
+        color:
+            #9bc8aa;
+    }
+
+    .profile-info-value.warning {
+        color:
+            #e5bd6d;
+    }
+
+    .profile-security-copy {
+        color:
+            var(--lux-muted);
+    }
+
+    /* =====================================================================
+       QUICK LINKS
+       ===================================================================== */
+
+    .profile-quick-link {
+        border-color:
+            rgba(228,184,81,.10);
+
+        background:
+            linear-gradient(
+                145deg,
+                rgba(255,255,255,.016),
+                rgba(255,255,255,.005)
+            ),
+            #0d0c09;
+
+        color:
+            var(--lux-text);
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.014);
+
+        transition:
+            transform 190ms var(--lux-ease),
+            border-color 180ms ease,
+            background 180ms ease,
+            box-shadow 190ms ease;
+    }
+
+    .profile-quick-link:hover {
+        transform:
+            translateY(-3px);
+
+        border-color:
+            rgba(255,230,168,.22);
+
+        background:
+            rgba(228,184,81,.045);
+
+        box-shadow:
+            0 13px 25px
+            rgba(0,0,0,.16);
+    }
+
+    .profile-quick-icon {
+        border:
+            1px solid
+            rgba(241,210,127,.14);
+
+        background:
+            rgba(228,184,81,.065);
+
+        color:
+            var(--lux-gold-200);
+    }
+
+    .profile-quick-title {
+        color:
+            var(--lux-text);
+    }
+
+    .profile-quick-desc {
+        color:
+            var(--lux-muted);
+    }
+
+    .profile-quick-arrow {
+        color:
+            var(--lux-subtle);
+
+        transition:
+            transform 180ms var(--lux-ease),
+            color 180ms ease;
+    }
+
+    .profile-quick-link:hover
+    .profile-quick-arrow {
+        transform:
+            translateX(3px);
+
+        color:
+            var(--lux-gold-200);
+    }
+
+    /* =====================================================================
+       MOBILE SAVE
+       ===================================================================== */
+
+    .profile-mobile-save {
+        border-color:
+            rgba(228,184,81,.18);
+
+        background:
+            rgba(11,10,8,.90);
+
+        box-shadow:
+            0 20px 44px
+            rgba(0,0,0,.34);
+
+        backdrop-filter:
+            blur(18px)
+            saturate(1.08);
+    }
+
+    /* =====================================================================
+       SPINNER
+       ===================================================================== */
+
+    .profile-spinner {
+        border-color:
+            rgba(27,17,7,.20);
+
+        border-top-color:
+            #1b1107;
+    }
+
+    /* =====================================================================
+       FOCUS
+       ===================================================================== */
+
+    .profile-page button:focus-visible,
+    .profile-page a:focus-visible,
+    .profile-page input:focus-visible,
+    .profile-page textarea:focus-visible {
+        outline:
+            3px solid
+            rgba(241,210,127,.54);
+
+        outline-offset: 3px;
+    }
+
+    /* =====================================================================
+       REVEAL + RIPPLE
+       ===================================================================== */
+
+    .profile-lux-reveal {
+        opacity: 0;
+        filter: blur(4px);
+
+        transform:
+            translateY(22px)
+            scale(.990);
+
+        transition:
+            opacity 700ms var(--lux-ease-out),
+            transform 700ms var(--lux-ease-out),
+            filter 700ms var(--lux-ease-out);
+    }
+
+    .profile-lux-reveal.is-lux-visible {
+        opacity: 1;
+        filter: blur(0);
+
+        transform:
+            translateY(0)
+            scale(1);
+    }
+
+    .profile-lux-ripple {
+        position: absolute;
+        z-index: 20;
+
+        width: 14px;
+        height: 14px;
+
+        border-radius: 50%;
+
+        background:
+            rgba(255,255,255,.45);
+
+        pointer-events: none;
+
+        transform:
+            translate(-50%,-50%)
+            scale(0);
+
+        animation:
+            profile-lux-ripple
+            590ms
+            ease-out
+            forwards;
+    }
+
+    @keyframes profile-lux-ripple {
+        to {
+            opacity: 0;
+
+            transform:
+                translate(-50%,-50%)
+                scale(24);
+        }
+    }
+
+    /* =====================================================================
+       DYNAMIC STATES
+       ===================================================================== */
+
+    .profile-page[data-lux-network="offline"]
+    .profile-summary {
+        border-color:
+            rgba(223,179,93,.23);
+    }
+
+    .profile-page[data-lux-dirty="true"]
+    .profile-save {
+        position: relative;
+    }
+
+    .profile-page[data-lux-dirty="true"]
+    .profile-save::before {
+        content: "";
+        position: absolute;
+        top: -1px;
+        left: 0;
+
+        width: 82px;
+        height: 1px;
+
+        background:
+            linear-gradient(
+                90deg,
+                var(--lux-gold-300),
+                transparent
+            );
+
+        box-shadow:
+            0 0 12px
+            rgba(228,184,81,.14);
+    }
+
+    /* =====================================================================
+       RESPONSIVE — 1100
+       ===================================================================== */
+
+    @media (max-width: 1100px) {
+        .profile-title {
+            font-size:
+                clamp(
+                    2.8rem,
+                    6vw,
+                    4.6rem
+                );
+        }
+
+        .profile-summary {
+            grid-template-columns:
+                auto
+                minmax(0, 1fr)
+                minmax(190px, .38fr);
+        }
+    }
+
+    /* =====================================================================
+       RESPONSIVE — 940
+       ===================================================================== */
+
+    @media (max-width: 940px) {
+        .profile-layout {
+            grid-template-columns:
+                minmax(0, 1.3fr)
+                minmax(270px, .72fr);
+        }
+
+        .profile-readiness {
+            min-width: 185px;
+        }
+    }
+
+    /* =====================================================================
+       RESPONSIVE — 780
+       ===================================================================== */
+
+    @media (max-width: 780px) {
+        .profile-header {
+            align-items: flex-start;
+        }
+
+        .profile-summary {
+            grid-template-columns:
+                auto
+                minmax(0, 1fr);
+        }
+
+        .profile-readiness {
+            grid-column:
+                1 / -1;
+        }
+
+        .profile-card,
+        .profile-side-card,
+        .profile-summary {
+            transform:
+                none
+                !important;
+        }
+    }
+
+    /* =====================================================================
+       RESPONSIVE — 590
+       ===================================================================== */
+
+    @media (max-width: 590px) {
+        .profile-title {
+            font-size:
+                clamp(
+                    2.6rem,
+                    13vw,
+                    3.7rem
+                );
+        }
+
+        .profile-header-actions {
+            width: 100%;
+        }
+
+        .profile-header-actions
+        .profile-link-button {
+            flex: 1;
+        }
+
+        .profile-avatar-wrap {
+            width: 66px;
+            height: 66px;
+        }
+
+        .profile-avatar {
+            width: 58px;
+            height: 58px;
+        }
+    }
+
+    /* =====================================================================
+       RESPONSIVE — 420
+       ===================================================================== */
+
+    @media (max-width: 420px) {
+        .profile-summary {
+            grid-template-columns: 1fr;
+            text-align: center;
+        }
+
+        .profile-avatar-wrap {
+            margin: auto;
+        }
+
+        .profile-summary-rail {
+            top: 0;
+            right: 14%;
+            bottom: auto;
+            left: 14%;
+
+            width: auto;
+            height: 2px;
+
+            border-radius:
+                0
+                0
+                999px
+                999px;
+
+            background:
+                linear-gradient(
+                    90deg,
+                    transparent,
+                    var(--lux-gold-300),
+                    transparent
+                );
+        }
+
+        .profile-badges {
+            justify-content: center;
+        }
+    }
+
+    /* =====================================================================
+       TOUCH
+       ===================================================================== */
+
+    @media (hover: none),
+           (pointer: coarse) {
+        .profile-summary,
+        .profile-summary:hover,
+        .profile-card,
+        .profile-card:hover,
+        .profile-side-card,
+        .profile-side-card:hover,
+        .profile-quick-link:hover,
+        .profile-button:hover,
+        .profile-link-button:hover {
+            transform:
+                none
+                !important;
+        }
+    }
+
+    /* =====================================================================
+       REDUCED MOTION
+       ===================================================================== */
+
+    @media (prefers-reduced-motion: reduce) {
+        .profile-lux-orbit,
+        .profile-lux-glow,
+        .profile-avatar-ring,
+        .profile-lux-ripple {
+            animation:
+                none
+                !important;
+        }
+
+        .profile-lux-reveal,
+        .profile-lux-reveal.is-lux-visible {
+            opacity:
+                1
+                !important;
+
+            filter:
+                none
+                !important;
+
+            transform:
+                none
+                !important;
+
+            transition:
+                none
+                !important;
+        }
+
+        .profile-summary,
+        .profile-card,
+        .profile-side-card {
+            transform:
+                none
+                !important;
+        }
+    }
+
+    /* =====================================================================
+       LIGHT THEME COMPATIBILITY
+       ===================================================================== */
+
+    html[data-theme="light"]
+    .profile-page {
+        --pf-bg: #f7ecdc;
+        --pf-bg-soft: #f3e6d4;
+        --pf-surface: #fffaf1;
+        --pf-muted-surface: #efe0ca;
+
+        --pf-text: #584a3e;
+        --pf-strong: #241a11;
+        --pf-muted: #786b5f;
+        --pf-subtle: #968879;
+
+        color:
+            #584a3e;
+
+        background:
+            radial-gradient(
+                circle at
+                var(--lux-pointer-x)
+                var(--lux-pointer-y),
+                rgba(207,152,46,.075),
+                transparent 30rem
+            ),
+            linear-gradient(
+                180deg,
+                #fffaf1 0%,
+                #f5eadb 52%,
+                #fff8ee 100%
+            );
+    }
+
+    html[data-theme="light"]
+    .profile-title,
+    html[data-theme="light"]
+    .profile-summary-name,
+    html[data-theme="light"]
+    .profile-card-title,
+    html[data-theme="light"]
+    .profile-side-title,
+    html[data-theme="light"]
+    .profile-location h3 {
+        color:
+            #241a11;
+    }
+
+    html[data-theme="light"]
+    .profile-summary,
+    html[data-theme="light"]
+    .profile-card,
+    html[data-theme="light"]
+    .profile-side-card {
+        border-color:
+            rgba(139,96,31,.15);
+
+        background:
+            linear-gradient(
+                145deg,
+                #fffdf8,
+                #f7ecda
+            );
+
+        box-shadow:
+            0 18px 41px
+            rgba(76,44,19,.09);
+    }
+
+    html[data-theme="light"]
+    .profile-input,
+    html[data-theme="light"]
+    .profile-textarea,
+    html[data-theme="light"]
+    .profile-location,
+    html[data-theme="light"]
+    .profile-preference,
+    html[data-theme="light"]
+    .profile-quick-link {
+        border-color:
+            rgba(139,96,31,.13);
+
+        background:
+            rgba(255,255,255,.64);
+
+        color:
+            #584a3e;
+    }
+
+    /* =====================================================================
+       END PREMIUM PROFILE VISUAL SYSTEM
+       ===================================================================== */
+
+    @media (max-width: 1280px) {
+        .profile-card,
+        .profile-side-card {
+            border-radius:
+                18px;
+        }
+
+        .profile-layout {
+            gap:
+                1.35rem;
+        }
+
+        .profile-card-body,
+        .profile-side-body {
+            --profile-responsive-pad:
+                1rem;
+        }
+
+        .profile-input,
+        .profile-textarea,
+        .profile-location,
+        .profile-preference,
+        .profile-quick-link {
+            border-radius:
+                18px;
+        }
+    }
+
+    @media (max-width: 1180px) {
+        .profile-card,
+        .profile-side-card {
+            border-radius:
+                18px;
+        }
+
+        .profile-layout {
+            gap:
+                1.30rem;
+        }
+
+        .profile-card-body,
+        .profile-side-body {
+            --profile-responsive-pad:
+                .98rem;
+        }
+
+        .profile-input,
+        .profile-textarea,
+        .profile-location,
+        .profile-preference,
+        .profile-quick-link {
+            border-radius:
+                18px;
+        }
+    }
+
+    @media (max-width: 1080px) {
+        .profile-card,
+        .profile-side-card {
+            border-radius:
+                17px;
+        }
+
+        .profile-layout {
+            gap:
+                1.25rem;
+        }
+
+        .profile-card-body,
+        .profile-side-body {
+            --profile-responsive-pad:
+                .96rem;
+        }
+
+        .profile-input,
+        .profile-textarea,
+        .profile-location,
+        .profile-preference,
+        .profile-quick-link {
+            border-radius:
+                17px;
+        }
+    }
+
+    @media (max-width: 980px) {
+        .profile-card,
+        .profile-side-card {
+            border-radius:
+                17px;
+        }
+
+        .profile-layout {
+            gap:
+                1.20rem;
+        }
+
+        .profile-card-body,
+        .profile-side-body {
+            --profile-responsive-pad:
+                .94rem;
+        }
+
+        .profile-input,
+        .profile-textarea,
+        .profile-location,
+        .profile-preference,
+        .profile-quick-link {
+            border-radius:
+                17px;
+        }
+    }
+
+    @media (max-width: 900px) {
+        .profile-card,
+        .profile-side-card {
+            border-radius:
+                16px;
+        }
+
+        .profile-layout {
+            gap:
+                1.10rem;
+        }
+
+        .profile-card-body,
+        .profile-side-body {
+            --profile-responsive-pad:
+                .92rem;
+        }
+
+        .profile-input,
+        .profile-textarea,
+        .profile-location,
+        .profile-preference,
+        .profile-quick-link {
+            border-radius:
+                16px;
+        }
+    }
+
+    @media (max-width: 820px) {
+        .profile-card,
+        .profile-side-card {
+            border-radius:
+                16px;
+        }
+
+        .profile-layout {
+            gap:
+                1.00rem;
+        }
+
+        .profile-card-body,
+        .profile-side-body {
+            --profile-responsive-pad:
+                .90rem;
+        }
+
+        .profile-input,
+        .profile-textarea,
+        .profile-location,
+        .profile-preference,
+        .profile-quick-link {
+            border-radius:
+                16px;
+        }
+    }
+
+    @media (max-width: 740px) {
+        .profile-card,
+        .profile-side-card {
+            border-radius:
+                16px;
+        }
+
+        .profile-layout {
+            gap:
+                .95rem;
+        }
+
+        .profile-card-body,
+        .profile-side-body {
+            --profile-responsive-pad:
+                .88rem;
+        }
+
+        .profile-input,
+        .profile-textarea,
+        .profile-location,
+        .profile-preference,
+        .profile-quick-link {
+            border-radius:
+                16px;
+        }
+    }
+
+    @media (max-width: 660px) {
+        .profile-card,
+        .profile-side-card {
+            border-radius:
+                15px;
+        }
+
+        .profile-layout {
+            gap:
+                .90rem;
+        }
+
+        .profile-card-body,
+        .profile-side-body {
+            --profile-responsive-pad:
+                .86rem;
+        }
+
+        .profile-input,
+        .profile-textarea,
+        .profile-location,
+        .profile-preference,
+        .profile-quick-link {
+            border-radius:
+                15px;
+        }
+    }
+
+    @media (max-width: 580px) {
+        .profile-card,
+        .profile-side-card {
+            border-radius:
+                15px;
+        }
+
+        .profile-layout {
+            gap:
+                .85rem;
+        }
+
+        .profile-card-body,
+        .profile-side-body {
+            --profile-responsive-pad:
+                .84rem;
+        }
+
+        .profile-input,
+        .profile-textarea,
+        .profile-location,
+        .profile-preference,
+        .profile-quick-link {
+            border-radius:
+                15px;
+        }
+    }
+
+    @media (max-width: 500px) {
+        .profile-card,
+        .profile-side-card {
+            border-radius:
+                14px;
+        }
+
+        .profile-layout {
+            gap:
+                .80rem;
+        }
+
+        .profile-card-body,
+        .profile-side-body {
+            --profile-responsive-pad:
+                .82rem;
+        }
+
+        .profile-input,
+        .profile-textarea,
+        .profile-location,
+        .profile-preference,
+        .profile-quick-link {
+            border-radius:
+                14px;
+        }
+    }
+
+    @media (max-width: 440px) {
+        .profile-card,
+        .profile-side-card {
+            border-radius:
+                14px;
+        }
+
+        .profile-layout {
+            gap:
+                .75rem;
+        }
+
+        .profile-card-body,
+        .profile-side-body {
+            --profile-responsive-pad:
+                .80rem;
+        }
+
+        .profile-input,
+        .profile-textarea,
+        .profile-location,
+        .profile-preference,
+        .profile-quick-link {
+            border-radius:
+                14px;
+        }
+    }
+
+
+    /* =====================================================================
+       MR. ITALIANO — SIGNATURE IVORY / WHITE TOUCH
+       ---------------------------------------------------------------------
+       Final visual polish for the reference direction:
+       charcoal restaurant atmosphere + controlled gold + premium ivory.
+       This layer is intentionally CSS-only so every existing Jinja variable,
+       route, form field, ID, API hook, validation rule and JavaScript behavior
+       below remains unchanged.
+       ===================================================================== */
+
+    .profile-page {
+        --mi-ivory-panel: #f4eee5;
+        --mi-ivory-panel-2: #fffaf2;
+        --mi-ivory-surface: #fffdf8;
+        --mi-ivory-soft: #eee5d8;
+        --mi-ivory-text: #1c1712;
+        --mi-ivory-muted: #776b5f;
+        --mi-ivory-subtle: #9a8d80;
+        --mi-ivory-border: rgba(111, 78, 34, .16);
+        --mi-ivory-border-strong: rgba(173, 116, 27, .30);
+        --mi-ivory-shadow: 0 34px 90px rgba(0, 0, 0, .34);
+        --mi-gold-soft-glow: rgba(228, 184, 81, .12);
+        padding-top: clamp(1rem, 2.2vw, 1.65rem);
+        padding-bottom: clamp(3.3rem, 6vw, 5rem);
+    }
+
+    .profile-shell {
+        width: min(calc(100% - 2rem), 1160px);
+    }
+
+    /* A thin premium light seam under the intro echoes the reference page. */
+    .profile-header {
+        margin-bottom: 1.15rem;
+    }
+
+    .profile-header::before {
+        content: "";
+        position: absolute;
+        right: 0;
+        bottom: -1px;
+        width: min(30vw, 330px);
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(255, 250, 241, .18), rgba(241, 210, 127, .34));
+        opacity: .75;
+        pointer-events: none;
+    }
+
+    .profile-title {
+        max-width: 760px;
+        font-size: clamp(2.55rem, 5.25vw, 4.65rem);
+        text-wrap: balance;
+    }
+
+    .profile-subtitle {
+        color: #b7ada1;
+        font-size: .78rem;
+    }
+
+    /* Make the top summary more cinematic without increasing its footprint. */
+    .profile-summary {
+        min-height: 116px;
+        border-color: rgba(228, 184, 81, .18);
+        background:
+            radial-gradient(circle at var(--lux-summary-x) var(--lux-summary-y), rgba(255, 239, 198, .09), transparent 18rem),
+            radial-gradient(circle at 12% 130%, rgba(255, 255, 255, .028), transparent 16rem),
+            linear-gradient(145deg, rgba(255,255,255,.046), rgba(255,255,255,.008)),
+            #100e0b;
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.045),
+            inset 0 -1px 0 rgba(228,184,81,.035),
+            0 28px 66px rgba(0,0,0,.31);
+    }
+
+    .profile-summary::before {
+        content: "";
+        position: absolute;
+        z-index: -1;
+        width: 220px;
+        height: 220px;
+        right: -80px;
+        top: -135px;
+        border: 1px solid rgba(255, 250, 241, .06);
+        border-radius: 50%;
+        box-shadow:
+            0 0 0 28px rgba(228,184,81,.015),
+            0 0 0 56px rgba(255,255,255,.006);
+        transform: rotateX(67deg);
+        pointer-events: none;
+    }
+
+    .profile-readiness {
+        border-color: rgba(255, 238, 191, .13);
+        background:
+            linear-gradient(145deg, rgba(255,255,255,.032), rgba(255,255,255,.008)),
+            #0c0b09;
+    }
+
+    /* =====================================================================
+       THE IVORY PROFILE CARD — deliberate white touch from the reference
+       ===================================================================== */
+
+    .profile-main .profile-lux-section-intro {
+        color: #e8c66f;
+    }
+
+    .profile-main .profile-lux-section-intro i {
+        background: linear-gradient(90deg, rgba(232,198,111,.48), rgba(255,255,255,.13), transparent);
+    }
+
+    .profile-main .profile-card {
+        --pf-bg: var(--mi-ivory-panel);
+        --pf-bg-soft: var(--mi-ivory-soft);
+        --pf-surface: var(--mi-ivory-surface);
+        --pf-muted-surface: #ece3d7;
+        --pf-text: var(--mi-ivory-text);
+        --pf-strong: #110e0b;
+        --pf-muted: var(--mi-ivory-muted);
+        --pf-subtle: var(--mi-ivory-subtle);
+        --pf-border: var(--mi-ivory-border);
+        --pf-border-strong: var(--mi-ivory-border-strong);
+
+        border-color: rgba(226, 189, 108, .44);
+        background:
+            radial-gradient(circle at var(--lux-card-x) var(--lux-card-y), rgba(255,255,255,.92), transparent 15rem),
+            radial-gradient(circle at 6% 90%, rgba(219, 173, 78, .10), transparent 19rem),
+            linear-gradient(135deg, rgba(255,255,255,.58), rgba(255,255,255,.08)),
+            var(--mi-ivory-panel);
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.95),
+            0 7px 0 rgba(120, 79, 17, .16),
+            var(--mi-ivory-shadow);
+    }
+
+    .profile-main .profile-card::before {
+        content: "";
+        position: absolute;
+        z-index: -1;
+        inset: 0;
+        pointer-events: none;
+        opacity: .42;
+        background-image:
+            linear-gradient(rgba(116, 80, 34, .035) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(116, 80, 34, .028) 1px, transparent 1px);
+        background-size: 32px 32px;
+        mask-image: linear-gradient(180deg, rgba(0,0,0,.48), transparent 68%);
+    }
+
+    .profile-main .profile-card::after {
+        right: 8%;
+        left: 8%;
+        background: linear-gradient(90deg, transparent, rgba(161,108,25,.24), rgba(255,255,255,.94), rgba(161,108,25,.24), transparent);
+        opacity: .82;
+    }
+
+    .profile-main .profile-card:hover {
+        border-color: rgba(214, 166, 69, .58);
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,1),
+            0 9px 0 rgba(120, 79, 17, .18),
+            0 42px 100px rgba(0,0,0,.40);
+    }
+
+    .profile-main .profile-card-header {
+        position: relative;
+        border-bottom-color: rgba(95, 67, 31, .13);
+        background:
+            linear-gradient(180deg, rgba(255,255,255,.52), rgba(255,255,255,.08));
+    }
+
+    .profile-main .profile-card-header::after {
+        content: "";
+        position: absolute;
+        left: .9rem;
+        bottom: -1px;
+        width: 86px;
+        height: 2px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #d5a33c, rgba(213,163,60,.08));
+    }
+
+    .profile-main .profile-card-title {
+        color: #15110d;
+        font-size: .88rem;
+        letter-spacing: -.018em;
+    }
+
+    .profile-main .profile-card-desc {
+        color: #796d60;
+    }
+
+    .profile-main .profile-card-icon {
+        border-color: rgba(151, 99, 23, .18);
+        background: linear-gradient(145deg, #f4d98e, #d59c32);
+        color: #2b1a07;
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.50),
+            0 4px 0 rgba(112,73,14,.22),
+            0 10px 20px rgba(91,61,18,.13);
+        transform: translateZ(20px);
+    }
+
+    .profile-main .profile-card-body {
+        color: var(--mi-ivory-text);
+    }
+
+    .profile-main .profile-fieldset + .profile-fieldset,
+    .profile-main .profile-save {
+        border-color: rgba(87, 60, 27, .12);
+    }
+
+    .profile-main .profile-legend {
+        color: #342518;
+        font-size: .71rem;
+    }
+
+    .profile-main .profile-label {
+        color: #292019;
+    }
+
+    .profile-main .profile-note,
+    .profile-main .profile-help,
+    .profile-main .profile-location-privacy {
+        color: #8e8174;
+    }
+
+    .profile-main .profile-field-error {
+        color: #a13d31;
+    }
+
+    .profile-main .profile-input,
+    .profile-main .profile-textarea {
+        border-color: rgba(116, 80, 34, .16);
+        background:
+            linear-gradient(180deg, rgba(255,255,255,.82), rgba(255,255,255,.48)),
+            #f8f3eb;
+        color: #211a14;
+        caret-color: #9d6815;
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.95),
+            0 7px 16px rgba(70,46,16,.035);
+    }
+
+    .profile-main .profile-input:hover,
+    .profile-main .profile-textarea:hover {
+        border-color: rgba(169, 112, 24, .29);
+        background: #fffaf2;
+    }
+
+    .profile-main .profile-input:focus,
+    .profile-main .profile-textarea:focus {
+        border-color: rgba(174, 116, 24, .58);
+        background: #fffdf8;
+        box-shadow:
+            0 0 0 4px rgba(216, 164, 59, .13),
+            inset 0 1px 0 rgba(255,255,255,1),
+            0 10px 20px rgba(96,64,17,.06);
+        transform: translateY(-1px);
+    }
+
+    .profile-main .profile-input[readonly] {
+        border-color: rgba(95, 77, 55, .11);
+        background: #e9e1d6;
+        color: #74695e;
+    }
+
+    .profile-main .profile-readonly-tag {
+        border-color: rgba(91, 66, 33, .14);
+        background: rgba(255,255,255,.62);
+        color: #8a7d70;
+        box-shadow: 0 4px 12px rgba(69,45,16,.04);
+    }
+
+    .profile-main .profile-input:-webkit-autofill,
+    .profile-main .profile-input:-webkit-autofill:hover,
+    .profile-main .profile-input:-webkit-autofill:focus,
+    .profile-main .profile-textarea:-webkit-autofill,
+    .profile-main .profile-textarea:-webkit-autofill:hover,
+    .profile-main .profile-textarea:-webkit-autofill:focus {
+        -webkit-text-fill-color: #211a14;
+        caret-color: #9d6815;
+        box-shadow: 0 0 0 1000px #fffaf2 inset;
+    }
+
+    .profile-main .profile-location,
+    .profile-main .profile-preference {
+        border-color: rgba(127, 87, 35, .14);
+        background:
+            radial-gradient(circle at 90% 5%, rgba(217, 163, 53, .10), transparent 11rem),
+            linear-gradient(145deg, rgba(255,255,255,.66), rgba(255,255,255,.20)),
+            #eee5d9;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.65);
+    }
+
+    .profile-main .profile-location::before {
+        background: linear-gradient(90deg, transparent, rgba(170,113,25,.18), rgba(255,255,255,.9), rgba(170,113,25,.18), transparent);
+        opacity: .72;
+    }
+
+    .profile-main .profile-location h3,
+    .profile-main .profile-preference-title {
+        color: #2d2116;
+    }
+
+    .profile-main .profile-location-status,
+    .profile-main .profile-preference-copy {
+        color: #776b5f;
+    }
+
+    .profile-main .profile-location-status.success { color: #3f7d55; }
+    .profile-main .profile-location-status.warning { color: #8d611b; }
+    .profile-main .profile-location-status.error { color: #a9473b; }
+    .profile-main .profile-location-status.info { color: #476984; }
+
+    .profile-main .profile-location-privacy svg {
+        color: #ad741b;
+    }
+
+    .profile-main .profile-preference {
+        transition: transform 180ms var(--lux-ease), border-color 180ms ease, box-shadow 180ms ease;
+    }
+
+    .profile-main .profile-preference:hover {
+        transform: translateY(-2px);
+        border-color: rgba(171, 113, 24, .24);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.74), 0 12px 24px rgba(81,54,18,.06);
+    }
+
+    .profile-main .profile-switch-track {
+        border-color: rgba(84, 64, 42, .20);
+        background: #d7cdc1;
+    }
+
+    .profile-main .profile-switch-track::after {
+        background: #fffaf1;
+    }
+
+    .profile-main .profile-switch input:checked + .profile-switch-track {
+        border-color: rgba(154, 100, 16, .38);
+        background: linear-gradient(135deg, #ad741b, #e4b851);
+    }
+
+    .profile-main .profile-save-status {
+        color: #786c60;
+    }
+
+    .profile-main .profile-save-status.success { color: #3f7d55; }
+    .profile-main .profile-save-status.error { color: #a9473b; }
+
+    .profile-main .profile-button.secondary,
+    .profile-main .profile-link-button.secondary {
+        border-color: rgba(112, 79, 36, .18);
+        background: rgba(255,255,255,.52);
+        color: #57483a;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.75);
+    }
+
+    .profile-main .profile-button.secondary:hover:not(:disabled),
+    .profile-main .profile-link-button.secondary:hover {
+        border-color: rgba(168, 111, 24, .30);
+        background: #fffaf2;
+        color: #6e470e;
+    }
+
+    .profile-main .profile-button.primary,
+    .profile-main .profile-link-button.primary {
+        border-color: rgba(120, 77, 12, .28);
+        color: #201305;
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.45),
+            0 4px 0 #835314,
+            0 15px 28px rgba(90,58,13,.16);
+    }
+
+    .profile-main .profile-spinner {
+        border-color: rgba(32,19,5,.22);
+        border-top-color: #201305;
+    }
+
+    .profile-main .profile-error {
+        border-color: rgba(161,61,49,.18);
+        background: rgba(180,70,56,.08);
+        color: #963d32;
+    }
+
+    /* =====================================================================
+       DARK GLASS SIDEBAR — keep the restaurant atmosphere around ivory card
+       ===================================================================== */
+
+    .profile-sidebar {
+        gap: .9rem;
+    }
+
+    .profile-side-card {
+        border-color: rgba(228,184,81,.14);
+        background:
+            radial-gradient(circle at var(--lux-card-x) var(--lux-card-y), rgba(255,235,184,.055), transparent 13rem),
+            linear-gradient(145deg, rgba(255,255,255,.032), rgba(255,255,255,.006)),
+            #100e0b;
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.028),
+            0 20px 46px rgba(0,0,0,.23);
+    }
+
+    .profile-side-card:hover {
+        border-color: rgba(255,230,168,.24);
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.038),
+            0 28px 58px rgba(0,0,0,.30);
+    }
+
+    .profile-side-header {
+        background: linear-gradient(180deg, rgba(255,255,255,.022), rgba(255,255,255,.005));
+    }
+
+    .profile-side-title {
+        color: #fffaf1;
+    }
+
+    .profile-side-icon {
+        border-color: rgba(241,210,127,.18);
+        background: linear-gradient(145deg, rgba(228,184,81,.12), rgba(228,184,81,.028));
+        color: #efd281;
+    }
+
+    .profile-quick-link {
+        position: relative;
+        overflow: hidden;
+    }
+
+    .profile-quick-link::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: -45%;
+        width: 24%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
+        transform: skewX(-16deg);
+        transition: left 550ms var(--lux-ease-out);
+        pointer-events: none;
+    }
+
+    .profile-quick-link:hover::after {
+        left: 125%;
+    }
+
+    /* More tactile header shortcuts, matching the gold button language. */
+    .profile-header-actions .profile-link-button.secondary {
+        border-color: rgba(255, 236, 184, .16);
+        background: rgba(255,255,255,.024);
+        color: #f0e7dc;
+    }
+
+    .profile-header-actions .profile-link-button.secondary:hover {
+        border-color: rgba(255,230,168,.29);
+        background: rgba(228,184,81,.07);
+        color: #f8df9a;
+    }
+
+    /* =====================================================================
+       RESPONSIVE / UX
+       ===================================================================== */
+
+    @media (max-width: 980px) {
+        .profile-layout {
+            grid-template-columns: minmax(0, 1.35fr) minmax(270px, .74fr);
+        }
+
+        .profile-readiness {
+            min-width: 190px;
+        }
+    }
+
+    @media (max-width: 780px) {
+        .profile-shell {
+            width: min(calc(100% - 1.2rem), 720px);
+        }
+
+        .profile-layout {
+            grid-template-columns: 1fr;
+        }
+
+        /* The editable profile stays first on smaller screens. */
+        .profile-main {
+            grid-row: 1;
+        }
+
+        .profile-sidebar {
+            grid-row: 2;
+            position: static;
+        }
+
+        .profile-title {
+            font-size: clamp(2.25rem, 10vw, 3.7rem);
+        }
+
+        .profile-main .profile-card {
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,.95),
+                0 5px 0 rgba(120,79,17,.14),
+                0 26px 64px rgba(0,0,0,.31);
+        }
+    }
+
+    @media (max-width: 590px) {
+        .profile-page {
+            padding-top: .7rem;
+            padding-bottom: calc(5.7rem + env(safe-area-inset-bottom, 0px));
+        }
+
+        .profile-shell {
+            width: min(calc(100% - .8rem), 700px);
+        }
+
+        .profile-header {
+            padding-inline: .1rem;
+        }
+
+        .profile-header-actions {
+            width: 100%;
+        }
+
+        .profile-header-actions .profile-link-button {
+            flex: 1;
+        }
+
+        .profile-summary {
+            padding: .85rem;
+        }
+
+        .profile-main .profile-card,
+        .profile-side-card {
+            border-radius: 15px;
+        }
+
+        .profile-main .profile-card-header,
+        .profile-main .profile-card-body,
+        .profile-side-header,
+        .profile-side-body {
+            padding-left: .78rem;
+            padding-right: .78rem;
+        }
+
+        .profile-main .profile-card::before {
+            background-size: 28px 28px;
+        }
+    }
+
+    @media (max-width: 420px) {
+        .profile-title {
+            font-size: clamp(2rem, 12vw, 2.8rem);
+        }
+
+        .profile-summary {
+            text-align: center;
+        }
+
+        .profile-avatar-wrap {
+            margin-inline: auto;
+        }
+
+        .profile-main .profile-card-header {
+            align-items: center;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .profile-main .profile-card,
+        .profile-main .profile-card:hover,
+        .profile-side-card,
+        .profile-side-card:hover,
+        .profile-main .profile-preference,
+        .profile-main .profile-preference:hover,
+        .profile-quick-link,
+        .profile-quick-link:hover {
+            transform: none !important;
+        }
+
+        .profile-quick-link::after {
+            display: none !important;
+        }
+    }
+
+
+</style>
+{% endblock %}
+
+{% block content %}
+<main class="profile-page" id="profile-root"
+      data-profile-update-url="{{ url_for('profile_api_update') }}"
+      data-locations-url="{{ url_for('locations_api') }}"
+      data-verification-url="{{ url_for('send_email_verification_api') }}">
+    <span class="visually-hidden" id="profile-live" role="status" aria-live="polite" aria-atomic="true"></span>
+
+    <div class="profile-lux-scene" aria-hidden="true">
+        <span class="profile-lux-orbit profile-lux-orbit--one"></span>
+        <span class="profile-lux-orbit profile-lux-orbit--two"></span>
+        <span class="profile-lux-glow profile-lux-glow--gold"></span>
+        <span class="profile-lux-glow profile-lux-glow--silver"></span>
+    </div>
+
+    <div class="profile-shell">
+        <header class="profile-header">
+            <div>
+                <p class="profile-kicker">Account</p>
+                <h1 class="profile-title">My Profile</h1>
+                <p class="profile-subtitle">Manage your account and default order information.</p>
+            </div>
+            <nav class="profile-header-actions" aria-label="Profile shortcuts">
+                <a class="profile-link-button secondary" href="{{ url_for('orders_page') }}">
+                    <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 3h12v18H6z"></path><path d="M9 7h6M9 11h6M9 15h4"></path></svg>
+                    My Orders
+                </a>
+                <a class="profile-link-button ghost" href="{{ url_for('support_page') }}">
+                    <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M9.7 9a2.5 2.5 0 0 1 4.8.8c0 1.8-2.5 2.2-2.5 3.7"></path><path d="M12 17h.01"></path></svg>
+                    Need Help?
+                </a>
+            </nav>
+        </header>
+
+        <section class="profile-summary" aria-label="Account summary">
+            <span class="profile-summary-rail" aria-hidden="true"></span>
+
+            <div class="profile-avatar-wrap">
+                <span class="profile-avatar-ring" aria-hidden="true"></span>
+                <div class="profile-avatar" id="profile-avatar" aria-hidden="true">{{ avatar_source[0]|upper }}</div>
+            </div>
+            <div>
+                <h2 class="profile-summary-name" id="profile-summary-name">{{ profile_name or 'Your account' }}</h2>
+                <p class="profile-summary-email">{{ trusted_email or 'Account email unavailable' }}</p>
+                <div class="profile-badges">
+                    {% if trusted_email_verified %}
+                    <span class="profile-badge success"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.3 2.3 4.8-5"></path></svg>Email Verified</span>
+                    {% else %}
+                    <span class="profile-badge warning"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5M12 16.5h.01"></path></svg>Email Not Verified</span>
+                    {% endif %}
+                    <span class="profile-badge info"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 10V8a6 6 0 0 1 12 0v2"></path><rect x="4" y="10" width="16" height="10" rx="2"></rect></svg>{{ provider_label }}</span>
+                </div>
+            </div>
+            <div class="profile-readiness">
+                <small>Saved delivery details</small>
+                <strong id="profile-readiness-value">
+                    {% if delivery_defaults_complete %}
+                    <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.3 2.3 4.8-5"></path></svg>Ready for faster checkout
+                    {% else %}
+                    <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5M12 16.5h.01"></path></svg>Some defaults are missing
+                    {% endif %}
+                </strong>
+                <p id="profile-readiness-help">{% if delivery_defaults_complete %}Checkout still validates the actual fulfilment details for each order.{% else %}Add your contact and delivery defaults to make future delivery checkout faster.{% endif %}</p>
+            </div>
+        </section>
+
+        <div class="profile-layout">
+            <section class="profile-main" aria-labelledby="profile-details-title">
+                <div class="profile-lux-section-intro" aria-hidden="true">
+                    <span>PERSONAL ACCOUNT</span>
+                    <i></i>
+                </div>
+
+                <article class="profile-card">
+                    <header class="profile-card-header">
+                        <div>
+                            <h2 class="profile-card-title" id="profile-details-title">Profile Details</h2>
+                            <p class="profile-card-desc">Saved defaults only. Checkout can still use different fulfilment details.</p>
+                        </div>
+                        <span class="profile-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"></circle><path d="M5 20c.7-4 3-6 7-6s6.3 2 7 6"></path></svg></span>
+                    </header>
+                    <div class="profile-card-body">
+                        <div class="profile-error" id="profile-error-summary" role="alert" tabindex="-1" hidden>
+                            <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.5v6M12 17h.01"></path></svg>
+                            <div><strong id="profile-error-title">We couldn't update your profile</strong><span id="profile-error-message">Please review your details and try again.</span></div>
+                        </div>
+
+                        <form class="profile-form" id="profile-form" action="{{ url_for('profile_api_update') }}" method="post" novalidate>
+                            <fieldset class="profile-fieldset">
+                                <legend class="profile-legend">Personal & Contact Information</legend>
+                                <div class="profile-grid">
+                                    <div class="profile-field">
+                                        <div class="profile-label-row"><label class="profile-label" for="profile-full-name">Full Name</label><span class="profile-note">Required</span></div>
+                                        <input class="profile-input" id="profile-full-name" name="full_name" type="text" autocomplete="name" maxlength="120" value="{{ profile_name }}" required aria-describedby="profile-full-name-help profile-full-name-error">
+                                        <p class="profile-help" id="profile-full-name-help">Used for restaurant orders and your account display.</p>
+                                        <p class="profile-field-error" id="profile-full-name-error" hidden>Enter your full name.</p>
+                                    </div>
+                                    <div class="profile-field">
+                                        <div class="profile-label-row"><label class="profile-label" for="profile-phone">Phone Number</label><span class="profile-note">Contact detail</span></div>
+                                        <input class="profile-input" id="profile-phone" name="phone" type="tel" autocomplete="tel" maxlength="21" value="{{ profile_phone }}" aria-describedby="profile-phone-help profile-phone-error">
+                                        <p class="profile-help" id="profile-phone-help">Contact information for orders when needed.</p>
+                                        <p class="profile-field-error" id="profile-phone-error" hidden>Enter a valid phone number.</p>
+                                    </div>
+                                    <div class="profile-field full">
+                                        <div class="profile-label-row"><label class="profile-label" for="profile-email">Account Email</label><span class="profile-note">Authentication identity</span></div>
+                                        <div class="profile-readonly">
+                                            <input class="profile-input" id="profile-email" type="email" autocomplete="email" value="{{ trusted_email }}" readonly aria-readonly="true" aria-describedby="profile-email-help">
+                                            <span class="profile-readonly-tag" aria-label="Email is read only on this page"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"></rect><path d="M8 10V8a4 4 0 0 1 8 0v2"></path></svg>Read only</span>
+                                        </div>
+                                        <p class="profile-help" id="profile-email-help">Controlled by your verified Firebase account. This profile form cannot change your authentication email.</p>
+                                    </div>
+                                </div>
+                            </fieldset>
+
+                            <fieldset class="profile-fieldset">
+                                <legend class="profile-legend">Default Delivery Information</legend>
+                                <div class="profile-grid">
+                                    <div class="profile-field">
+                                        <div class="profile-label-row"><label class="profile-label" for="profile-city">City</label><span class="profile-note">Saved default</span></div>
+                                        <input class="profile-input" id="profile-city" name="city" type="text" autocomplete="address-level2" maxlength="100" list="profile-city-options" value="{{ profile_city }}" aria-describedby="profile-city-help profile-city-error">
+                                        <datalist id="profile-city-options"></datalist>
+                                        <p class="profile-help" id="profile-city-help">Active delivery-location suggestions load from the backend when available.</p>
+                                        <p class="profile-field-error" id="profile-city-error" hidden>Review the city value.</p>
+                                    </div>
+                                    <div class="profile-field">
+                                        <div class="profile-label-row"><label class="profile-label" for="profile-area">Area</label><span class="profile-note">Saved default</span></div>
+                                        <input class="profile-input" id="profile-area" name="area" type="text" autocomplete="address-level3" maxlength="120" list="profile-area-options" value="{{ profile_area }}" aria-describedby="profile-area-help profile-area-error">
+                                        <datalist id="profile-area-options"></datalist>
+                                        <p class="profile-help" id="profile-area-help">Area suggestions update from configured delivery locations.</p>
+                                        <p class="profile-field-error" id="profile-area-error" hidden>Review the area value.</p>
+                                    </div>
+                                    <div class="profile-field full">
+                                        <div class="profile-label-row"><label class="profile-label" for="profile-address">Default Delivery Address</label><span class="profile-note">Saved convenience value</span></div>
+                                        <textarea class="profile-textarea" id="profile-address" name="address" autocomplete="street-address" maxlength="400" aria-describedby="profile-address-help profile-address-error">{{ profile_address }}</textarea>
+                                        <p class="profile-help" id="profile-address-help">This is only a default. Checkout may use another address and remains authoritative for the actual order.</p>
+                                        <p class="profile-field-error" id="profile-address-error" hidden>Review the delivery address.</p>
+                                    </div>
+                                </div>
+
+                                <input id="profile-latitude" name="latitude" type="hidden" value="{% if saved_latitude is not none %}{{ saved_latitude }}{% endif %}">
+                                <input id="profile-longitude" name="longitude" type="hidden" value="{% if saved_longitude is not none %}{{ saved_longitude }}{% endif %}">
+
+                                <section class="profile-location" aria-labelledby="profile-location-title">
+                                    <div class="profile-location-row">
+                                        <div>
+                                            <h3 id="profile-location-title">Saved Location</h3>
+                                            <p class="profile-location-status{% if has_saved_coordinates %} success{% endif %}" id="profile-location-status" role="status" aria-live="polite">{% if has_saved_coordinates %}Saved location coordinates are available for this delivery default.{% else %}No saved browser location is attached to this profile yet.{% endif %}</p>
+                                        </div>
+                                        <button class="profile-button secondary" id="profile-location-button" type="button">
+                                            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 21s6-5.3 6-11a6 6 0 1 0-12 0c0 5.7 6 11 6 11Z"></path><circle cx="12" cy="10" r="2"></circle></svg>
+                                            <span id="profile-location-button-label">{% if has_saved_coordinates %}Update Saved Location{% else %}Use My Current Location{% endif %}</span>
+                                        </button>
+                                    </div>
+                                    <p class="profile-location-privacy"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.5c0 4.6 3.1 8 7.5 9.5 4.4-1.5 7.5-4.9 7.5-9.5V6L12 3Z"></path></svg><span>Location permission is requested only after you press the button. Coordinates are saved only with Save Changes. No map or reverse-geocoding provider is invented here.</span></p>
+                                </section>
+                            </fieldset>
+
+                            <fieldset class="profile-fieldset">
+                                <legend class="profile-legend">Marketing Preferences</legend>
+                                <label class="profile-preference" for="profile-marketing">
+                                    <span><span class="profile-preference-title">Receive offers and promotions</span><span class="profile-preference-copy">Optional marketing only. Order, payment, tracking and security communications are transactional and separate.</span></span>
+                                    <span class="profile-switch"><input id="profile-marketing" name="marketing_notifications_enabled" type="checkbox" {% if marketing_enabled %}checked{% endif %}><span class="profile-switch-track" aria-hidden="true"></span></span>
+                                </label>
+                            </fieldset>
+
+                            <div class="profile-save">
+                                <p class="profile-save-status" id="profile-save-status" role="status" aria-live="polite">No unsaved changes.</p>
+                                <div class="profile-save-actions">
+                                    <button class="profile-button secondary" id="profile-discard-button" type="button" disabled>Discard Changes</button>
+                                    <button class="profile-button primary" id="profile-save-button" type="submit" disabled><span class="profile-spinner" id="profile-save-spinner" aria-hidden="true" hidden></span><span id="profile-save-label">Save Changes</span></button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </article>
+            </section>
+
+            <aside class="profile-sidebar" aria-label="Account summary and security">
+                <section class="profile-side-card" aria-labelledby="profile-security-title">
+                    <header class="profile-side-header"><span class="profile-side-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.5c0 4.6 3.1 8 7.5 9.5 4.4-1.5 7.5-4.9 7.5-9.5V6L12 3Z"></path><path d="m9 12 2 2 4-4"></path></svg></span><h2 class="profile-side-title" id="profile-security-title">Account Security</h2></header>
+                    <div class="profile-side-body">
+                        <dl class="profile-info-list">
+                            <div class="profile-info-row"><dt class="profile-info-term">Sign-in method</dt><dd class="profile-info-value"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 10V8a6 6 0 0 1 12 0v2"></path><rect x="4" y="10" width="16" height="10" rx="2"></rect></svg><span>{{ provider_label }}</span></dd></div>
+                            <div class="profile-info-row"><dt class="profile-info-term">Email verification</dt>{% if trusted_email_verified %}<dd class="profile-info-value success"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.3 2.3 4.8-5"></path></svg><span>Verified</span></dd>{% else %}<dd class="profile-info-value warning"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5M12 16.5h.01"></path></svg><span>Not Verified</span></dd>{% endif %}</div>
+                        </dl>
+
+                        {% if not trusted_email_verified %}
+                        <section class="profile-verification" aria-labelledby="profile-verification-title">
+                            <h3 id="profile-verification-title"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 6h16v12H4z"></path><path d="m5 7 7 6 7-6"></path></svg>Verify your email</h3>
+                            <p>Use the official verification email to confirm your Firebase account email. Saving your profile does not verify it.</p>
+                            <button class="profile-button secondary" id="profile-resend-verification" type="button"><span class="profile-spinner" id="profile-resend-spinner" aria-hidden="true" hidden></span><span id="profile-resend-label">Resend Verification Email</span></button>
+                            <p class="profile-resend-feedback" id="profile-resend-feedback" role="status" aria-live="polite"></p>
+                        </section>
+                        {% endif %}
+
+                        {% if trusted_provider == 'password' %}
+                        <p class="profile-security-copy">Password changes use the dedicated recent-authentication security flow.</p>
+                        <div class="profile-side-actions"><a class="profile-link-button primary" href="{{ url_for('change_password_page') }}"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="2"></rect><path d="M8 10V8a4 4 0 0 1 8 0v2"></path><path d="M12 14v2.5"></path></svg>Change Password</a></div>
+                        {% elif trusted_provider == 'google.com' %}
+                        <p class="profile-security-copy">You currently sign in with Google. This page never asks for your Google password and does not invent a local password.</p>
+                        {% elif trusted_provider == 'facebook.com' %}
+                        <p class="profile-security-copy">You currently sign in with Facebook. This page never asks for your Facebook password and does not invent a local password.</p>
+                        {% else %}
+                        <p class="profile-security-copy">Password management is shown only when the trusted sign-in method supports the existing password-change flow.</p>
+                        {% endif %}
+                    </div>
+                </section>
+
+                <section class="profile-side-card" aria-labelledby="profile-links-title">
+                    <header class="profile-side-header"><span class="profile-side-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 7h10v10H7z"></path><path d="M4 4h5M15 4h5M4 20h5M15 20h5"></path></svg></span><h2 class="profile-side-title" id="profile-links-title">Quick Links</h2></header>
+                    <div class="profile-side-body"><nav class="profile-quick-links" aria-label="Account quick links">
+                        <a class="profile-quick-link" href="{{ url_for('orders_page') }}"><span class="profile-quick-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h12v18H6z"></path><path d="M9 7h6M9 11h6M9 15h4"></path></svg></span><span class="profile-quick-copy"><span class="profile-quick-title">My Orders</span><span class="profile-quick-desc">View order history and open tracking.</span></span><svg class="profile-quick-arrow" aria-hidden="true" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"></path></svg></a>
+                        <a class="profile-quick-link" href="{{ url_for('support_page') }}"><span class="profile-quick-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M9.7 9a2.5 2.5 0 0 1 4.8.8c0 1.8-2.5 2.2-2.5 3.7"></path><path d="M12 17h.01"></path></svg></span><span class="profile-quick-copy"><span class="profile-quick-title">Need Help?</span><span class="profile-quick-desc">Open customer support.</span></span><svg class="profile-quick-arrow" aria-hidden="true" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"></path></svg></a>
+                    </nav></div>
+                </section>
+
+                <section class="profile-side-card" aria-labelledby="profile-session-title">
+                    <header class="profile-side-header"><span class="profile-side-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M10 17l5-5-5-5M15 12H3"></path><path d="M14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5"></path></svg></span><h2 class="profile-side-title" id="profile-session-title">Session</h2></header>
+                    <div class="profile-side-body"><p class="profile-security-copy">Sign out through the trusted Flask session logout flow.</p><form class="profile-side-actions" action="{{ url_for('logout') }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="profile-button danger" type="submit"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5M15 12H3"></path><path d="M14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5"></path></svg>Sign Out</button></form></div>
+                </section>
+            </aside>
+        </div>
+    </div>
+
+    <div class="profile-mobile-save" id="profile-mobile-save" aria-label="Unsaved profile changes">
+        <button class="profile-button secondary" id="profile-mobile-discard" type="button">Discard</button>
+        <button class="profile-button primary" id="profile-mobile-submit" type="button">Save Changes</button>
+    </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+'use strict';
+const root=document.getElementById('profile-root'); if(!root)return;
+const $=id=>document.getElementById(id);
+const el={
+ live:$('profile-live'),form:$('profile-form'),error:$('profile-error-summary'),errorTitle:$('profile-error-title'),errorMessage:$('profile-error-message'),
+ fullName:$('profile-full-name'),phone:$('profile-phone'),city:$('profile-city'),area:$('profile-area'),address:$('profile-address'),lat:$('profile-latitude'),lon:$('profile-longitude'),marketing:$('profile-marketing'),
+ cityOptions:$('profile-city-options'),areaOptions:$('profile-area-options'),locationBtn:$('profile-location-button'),locationBtnLabel:$('profile-location-button-label'),locationStatus:$('profile-location-status'),
+ saveBtn:$('profile-save-button'),saveLabel:$('profile-save-label'),saveSpinner:$('profile-save-spinner'),discardBtn:$('profile-discard-button'),saveStatus:$('profile-save-status'),summaryName:$('profile-summary-name'),avatar:$('profile-avatar'),readinessValue:$('profile-readiness-value'),readinessHelp:$('profile-readiness-help'),
+ resendBtn:$('profile-resend-verification'),resendSpinner:$('profile-resend-spinner'),resendLabel:$('profile-resend-label'),resendFeedback:$('profile-resend-feedback'),
+ mobileSave:$('profile-mobile-save'),mobileDiscard:$('profile-mobile-discard'),mobileSubmit:$('profile-mobile-submit')
+};
+const fields={
+ full_name:{input:el.fullName,error:$('profile-full-name-error')},phone:{input:el.phone,error:$('profile-phone-error')},city:{input:el.city,error:$('profile-city-error')},area:{input:el.area,error:$('profile-area-error')},address:{input:el.address,error:$('profile-address-error')}
+};
+const state={saving:false,dirty:false,baseline:null,locationBusy:false,cities:new Map(),allAreas:new Set(),resendBusy:false,resendLeft:0,resendTimer:null};
+function announce(msg){if(window.AppUI&&typeof window.AppUI.announce==='function')window.AppUI.announce(msg);if(el.live){el.live.textContent='';setTimeout(()=>{el.live.textContent=String(msg||'')},30)}}
+function toast(msg,type='info'){if(window.AppUI&&typeof window.AppUI.showToast==='function'){window.AppUI.showToast(msg,type);return}if(typeof window.showToast==='function')window.showToast(msg,type)}
+async function secureFetch(url,options={}){if(window.AppUI&&typeof window.AppUI.csrfFetch==='function')return window.AppUI.csrfFetch(url,options);const cfg={...options},headers=new Headers(cfg.headers||{}),method=String(cfg.method||'GET').toUpperCase(),meta=document.querySelector('meta[name="csrf-token"]'),token=meta?meta.getAttribute('content')||'':'';if(!['GET','HEAD','OPTIONS','TRACE'].includes(method)&&token)headers.set('X-CSRFToken',token);cfg.headers=headers;if(!cfg.credentials)cfg.credentials='same-origin';return fetch(url,cfg)}
+async function safeJson(response){try{return await response.json()}catch{return null}}
+const trim=e=>e?String(e.value||'').trim():'';
+function values(){return {full_name:trim(el.fullName),phone:trim(el.phone),city:trim(el.city),area:trim(el.area),address:trim(el.address),latitude:trim(el.lat),longitude:trim(el.lon),marketing_notifications_enabled:Boolean(el.marketing&&el.marketing.checked)}}
+const snapshot=v=>JSON.stringify(v);
+function clearSummary(){if(el.error)el.error.hidden=true}
+function showSummary(message,title='We couldn\'t update your profile',focus=true){if(el.errorTitle)el.errorTitle.textContent=title;if(el.errorMessage)el.errorMessage.textContent=String(message||'Please try again.');if(el.error){el.error.hidden=false;if(focus)requestAnimationFrame(()=>el.error.focus())}announce(message)}
+function clearField(name){const f=fields[name];if(!f)return;if(f.input)f.input.removeAttribute('aria-invalid');if(f.error)f.error.hidden=true}
+function clearFields(){Object.keys(fields).forEach(clearField)}
+function fieldError(name,message){const f=fields[name];if(!f)return null;if(f.input)f.input.setAttribute('aria-invalid','true');if(f.error){f.error.textContent=message;f.error.hidden=false}return f.input}
+function phoneValid(v){return !v||/^\+?[0-9][0-9\-\s()]{6,20}$/.test(v)}
+function showLocation(message,type=''){if(!el.locationStatus)return;el.locationStatus.classList.remove('success','warning','error','info');if(type)el.locationStatus.classList.add(type);el.locationStatus.textContent=message;announce(message)}
+function validate(){clearSummary();clearFields();const v=values(),bad=[];if(v.full_name.length<2||v.full_name.length>120)bad.push(fieldError('full_name','Enter a full name between 2 and 120 characters.'));if(!phoneValid(v.phone))bad.push(fieldError('phone','Enter a valid phone number using digits and normal phone punctuation.'));if(v.city.length>100)bad.push(fieldError('city','City must be 100 characters or fewer.'));if(v.area.length>120)bad.push(fieldError('area','Area must be 120 characters or fewer.'));if(v.address.length>400)bad.push(fieldError('address','Address must be 400 characters or fewer.'));
+ const lat=v.latitude===''?null:Number(v.latitude),lon=v.longitude===''?null:Number(v.longitude);if(lat!==null&&(!Number.isFinite(lat)||lat<-90||lat>90)){showLocation('Saved location latitude is invalid. Update your saved location.','error');showSummary('Please review the saved location and highlighted fields.','Check your profile details',false);bad[0]&&bad[0].focus();return null}if(lon!==null&&(!Number.isFinite(lon)||lon<-180||lon>180)){showLocation('Saved location longitude is invalid. Update your saved location.','error');showSummary('Please review the saved location and highlighted fields.','Check your profile details',false);bad[0]&&bad[0].focus();return null}if(bad.filter(Boolean).length){showSummary('Please review the highlighted fields.','Check your profile details',false);bad.find(Boolean)?.focus();return null}return v}
+function readinessIcon(complete){const s=document.createElementNS('http://www.w3.org/2000/svg','svg');s.setAttribute('viewBox','0 0 24 24');s.setAttribute('aria-hidden','true');s.innerHTML=complete?'<circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.3 2.3 4.8-5"></path>':'<circle cx="12" cy="12" r="9"></circle><path d="M12 8v5M12 16.5h.01"></path>';return s}
+function updateReadiness(){const v=values(),missing=[];if(!v.full_name)missing.push('name');if(!v.phone)missing.push('phone');if(!v.city)missing.push('city');if(!v.area)missing.push('area');if(!v.address)missing.push('address');const complete=!missing.length;if(el.readinessValue){el.readinessValue.replaceChildren(readinessIcon(complete),document.createTextNode(complete?'Ready for faster checkout':'Some defaults are missing'))}if(el.readinessHelp)el.readinessHelp.textContent=complete?'Checkout still validates the actual fulfilment details for each order.':'Missing saved defaults: '+missing.join(', ')+'. Checkout remains the final authority.'}
+function saveFeedback(message,type=''){if(!el.saveStatus)return;el.saveStatus.classList.remove('success','error');if(type)el.saveStatus.classList.add(type);el.saveStatus.textContent=message}
+function updateDirty(){const now=values();state.dirty=Boolean(state.baseline)&&snapshot(now)!==snapshot(state.baseline);if(el.saveBtn)el.saveBtn.disabled=state.saving||!state.dirty;if(el.discardBtn)el.discardBtn.disabled=state.saving||!state.dirty;if(el.mobileSave)el.mobileSave.classList.toggle('visible',state.dirty&&!state.saving);if(!state.saving)saveFeedback(state.dirty?'You have unsaved changes.':'No unsaved changes.');updateReadiness()}
+function setBaseline(v=values()){state.baseline={...v};updateDirty()}
+function setSaving(on){state.saving=Boolean(on);if(el.form)el.form.setAttribute('aria-busy',on?'true':'false');[el.fullName,el.phone,el.city,el.area,el.address,el.marketing,el.locationBtn].filter(Boolean).forEach(c=>c.disabled=on);if(el.saveBtn)el.saveBtn.disabled=on||!state.dirty;if(el.discardBtn)el.discardBtn.disabled=on||!state.dirty;if(el.saveSpinner)el.saveSpinner.hidden=!on;if(el.saveLabel)el.saveLabel.textContent=on?'Saving...':'Save Changes';if(el.mobileSubmit)el.mobileSubmit.disabled=on;if(el.mobileDiscard)el.mobileDiscard.disabled=on;if(el.mobileSave)el.mobileSave.classList.toggle('visible',state.dirty&&!on);if(on)saveFeedback('Saving your profile...')}
+function payload(v){return {full_name:v.full_name,phone:v.phone,city:v.city,area:v.area,address:v.address,latitude:v.latitude===''?null:Number(v.latitude),longitude:v.longitude===''?null:Number(v.longitude),marketing_notifications_enabled:v.marketing_notifications_enabled}}
+function apiError(payload){const e=payload&&payload.error&&typeof payload.error==='object'?payload.error:{};return {code:String(e.code||''),message:String(e.message||''),details:e.details&&typeof e.details==='object'?e.details:{}}}
+function mapFailure(response,payload){const e=apiError(payload);if(response.status===429)return{title:'Please wait before retrying',message:'Too many profile update attempts. Please wait a little before trying again.',field:''};if(response.status===401||e.code==='AUTH_REQUIRED')return{title:'Sign in again',message:'Your authenticated session is no longer available. Please sign in again before changing your profile.',field:''};if(e.code==='VALIDATION_ERROR')return{title:'Check your profile details',message:e.message||'Please review the highlighted field.',field:String(e.details.field||'')};if(e.code==='NO_CHANGES')return{title:'Nothing to save',message:'No permitted profile changes were supplied.',field:''};if(e.code==='CSRF_FAILED'||(response.status===400&&!payload))return{title:'Security session expired',message:'Your security token may have expired. Refresh the page and try again.',field:''};if(response.status>=500)return{title:'Service temporarily unavailable',message:'We couldn\'t update your profile right now. Please try again later.',field:''};return{title:'We couldn\'t update your profile',message:'Please try again. Your current form values have been kept.',field:''}}
+function trustedProfile(p){p=p&&typeof p==='object'?p:{};const s=k=>p[k]==null?'':String(p[k]);return{full_name:s('full_name'),phone:s('phone'),city:s('city'),area:s('area'),address:s('address'),latitude:p.latitude==null?'':String(p.latitude),longitude:p.longitude==null?'':String(p.longitude),marketing_notifications_enabled:Boolean(p.marketing_notifications_enabled)}}
+function applyServerProfile(p){const v=trustedProfile(p);el.fullName&&(el.fullName.value=v.full_name);el.phone&&(el.phone.value=v.phone);el.city&&(el.city.value=v.city);el.area&&(el.area.value=v.area);el.address&&(el.address.value=v.address);el.lat&&(el.lat.value=v.latitude);el.lon&&(el.lon.value=v.longitude);el.marketing&&(el.marketing.checked=v.marketing_notifications_enabled);if(el.summaryName)el.summaryName.textContent=v.full_name||'Your account';if(el.avatar)el.avatar.textContent=(v.full_name||'A').charAt(0).toUpperCase();showLocation(v.latitude&&v.longitude?'Saved location coordinates are available for this delivery default.':'No saved browser location is attached to this profile yet.',v.latitude&&v.longitude?'success':'');renderAreaOptions();setBaseline(v)}
+async function saveProfile(event){event?.preventDefault();if(state.saving||!state.dirty)return;clearSummary();if(navigator.onLine===false){showSummary('We couldn\'t save your changes. Check your connection and try again.','You\'re offline');saveFeedback('Changes are still unsaved.','error');return}const v=validate();if(!v)return;const endpoint=String(root.dataset.profileUpdateUrl||'');if(!endpoint){showSummary('Profile updates are not available right now.','Profile update unavailable');return}setSaving(true);try{const response=await secureFetch(endpoint,{method:'PATCH',credentials:'same-origin',headers:{Accept:'application/json','Content-Type':'application/json'},body:JSON.stringify(payload(v))}),body=await safeJson(response);if(!response.ok||!body||body.success!==true){const m=mapFailure(response,body);if(m.field&&fields[m.field]){const input=fieldError(m.field,m.message);showSummary(m.message,m.title,false);input?.focus()}else{if(/latitude|longitude/i.test(m.message))showLocation(m.message,'error');showSummary(m.message,m.title)}saveFeedback('Changes are still unsaved.','error');return}if(!body.data||typeof body.data!=='object'){showSummary('The server did not return the updated profile. Refresh before editing again.','Profile response incomplete');return}applyServerProfile(body.data);clearSummary();clearFields();saveFeedback('Profile updated successfully.','success');announce('Profile updated successfully.');toast('Profile updated successfully.','success')}catch{showSummary('We couldn\'t save your changes. Check your connection and try again.','Connection problem');saveFeedback('Changes are still unsaved.','error')}finally{setSaving(false);updateDirty()}}
+function restore(){if(state.saving||!state.baseline)return;const v=state.baseline;el.fullName&&(el.fullName.value=v.full_name);el.phone&&(el.phone.value=v.phone);el.city&&(el.city.value=v.city);el.area&&(el.area.value=v.area);el.address&&(el.address.value=v.address);el.lat&&(el.lat.value=v.latitude);el.lon&&(el.lon.value=v.longitude);el.marketing&&(el.marketing.checked=v.marketing_notifications_enabled);clearSummary();clearFields();showLocation(v.latitude&&v.longitude?'Saved location coordinates are available for this delivery default.':'No saved browser location is attached to this profile yet.',v.latitude&&v.longitude?'success':'');renderAreaOptions();updateDirty();announce('Unsaved profile changes were discarded.')}
+function normalize(v){return String(v||'').trim().toLowerCase()}
+function option(list,value){if(!list||!value)return;const o=document.createElement('option');o.value=value;list.appendChild(o)}
+function renderCityOptions(){if(!el.cityOptions)return;el.cityOptions.replaceChildren();[...state.cities.keys()].sort((a,b)=>a.localeCompare(b)).forEach(v=>option(el.cityOptions,v))}
+function renderAreaOptions(){if(!el.areaOptions)return;el.areaOptions.replaceChildren();const wanted=normalize(el.city?.value),source=[...state.cities].find(([city])=>normalize(city)===wanted)?.[1]||state.allAreas;[...source].filter(Boolean).sort((a,b)=>a.localeCompare(b)).forEach(v=>option(el.areaOptions,v))}
+function buildLocations(locations){state.cities.clear();state.allAreas.clear();locations.forEach(loc=>{if(!loc||typeof loc!=='object')return;const city=String(loc.city||'').trim();if(!city)return;if(!state.cities.has(city))state.cities.set(city,new Set());const set=state.cities.get(city),own=String(loc.area||'').trim();if(own){set.add(own);state.allAreas.add(own)}if(Array.isArray(loc.delivery_areas))loc.delivery_areas.forEach(a=>{const x=String(a||'').trim();if(x){set.add(x);state.allAreas.add(x)}})});renderCityOptions();renderAreaOptions()}
+async function loadLocations(){const base=String(root.dataset.locationsUrl||'');if(!base)return;try{const u=new URL(base,location.origin);u.searchParams.set('service_mode','delivery');const r=await secureFetch(u.pathname+u.search,{method:'GET',headers:{Accept:'application/json'}}),b=await safeJson(r);if(r.ok&&b&&b.success===true&&b.data&&Array.isArray(b.data.locations))buildLocations(b.data.locations)}catch{/* manual entry remains available */}}
+function setLocationBusy(on){state.locationBusy=Boolean(on);if(el.locationBtn)el.locationBtn.disabled=on;if(el.locationBtnLabel)el.locationBtnLabel.textContent=on?'Detecting Location...':(trim(el.lat)&&trim(el.lon)?'Update Saved Location':'Use My Current Location')}
+function requestLocation(){if(state.locationBusy)return;if(!navigator.geolocation){el.locationBtn&&(el.locationBtn.disabled=true);el.locationBtnLabel&&(el.locationBtnLabel.textContent='Location Not Supported');showLocation('Location detection is not supported by this browser. You can continue using your address manually.','warning');return}setLocationBusy(true);showLocation('Waiting for browser location permission...','info');navigator.geolocation.getCurrentPosition(pos=>{setLocationBusy(false);const lat=Number(pos?.coords?.latitude),lon=Number(pos?.coords?.longitude);if(!Number.isFinite(lat)||!Number.isFinite(lon)||lat<-90||lat>90||lon<-180||lon>180){showLocation('We couldn\'t use the detected location. You can continue with your address manually.','error');return}el.lat&&(el.lat.value=lat.toFixed(7));el.lon&&(el.lon.value=lon.toFixed(7));showLocation('Location detected. Press Save Changes to update your saved delivery location.','success');updateDirty()},err=>{setLocationBusy(false);if(err?.code===1)showLocation('Location access was not granted. You can continue using your address manually.','warning');else if(err?.code===3)showLocation('Location detection timed out. You can try again or continue using your address manually.','warning');else showLocation('We couldn\'t detect your location right now. You can continue using your address manually.','warning')},{enableHighAccuracy:false,timeout:10000,maximumAge:60000})}
+function setResendFeedback(message,type=''){if(!el.resendFeedback)return;el.resendFeedback.classList.remove('success','warning','error');if(type)el.resendFeedback.classList.add(type);el.resendFeedback.textContent=message}
+function stopResend(){if(state.resendTimer)clearInterval(state.resendTimer);state.resendTimer=null;state.resendLeft=0}
+function renderResend(){if(!el.resendBtn||!el.resendLabel)return;if(state.resendLeft>0){el.resendBtn.disabled=true;el.resendLabel.textContent='Try Again in '+state.resendLeft+'s'}else{el.resendBtn.disabled=state.resendBusy;el.resendLabel.textContent=state.resendBusy?'Sending...':'Resend Verification Email'}}
+function startResend(seconds=60){stopResend();state.resendLeft=seconds;renderResend();state.resendTimer=setInterval(()=>{state.resendLeft-=1;if(state.resendLeft<=0){stopResend();renderResend()}else renderResend()},1000)}
+function setResendBusy(on){state.resendBusy=Boolean(on);if(el.resendSpinner)el.resendSpinner.hidden=!on;renderResend()}
+async function resendVerification(){if(!el.resendBtn||state.resendBusy||state.resendLeft>0)return;if(navigator.onLine===false){setResendFeedback('You\'re offline. Reconnect before requesting another verification email.','warning');return}const endpoint=String(root.dataset.verificationUrl||'');if(!endpoint){setResendFeedback('Verification email requests are unavailable right now.','error');return}setResendFeedback('');setResendBusy(true);try{const r=await secureFetch(endpoint,{method:'POST',credentials:'same-origin',headers:{Accept:'application/json','Content-Type':'application/json'},body:'{}'}),b=await safeJson(r);if(r.status===429){setResendFeedback('Too many verification requests. Please wait before trying again.','warning');startResend();return}if(!r.ok||!b||b.success!==true){setResendFeedback('We couldn\'t process the verification request right now.','error');return}const d=b.data&&typeof b.data==='object'?b.data:{};if(d.delivered===true){setResendFeedback('Verification email sent. Check your inbox and spam folder.','success');toast('Verification email sent.','success')}else if(d.message==='Email is already verified.'){setResendFeedback('Your email is already verified. Sign in again if this page still shows the old status.','success')}else{setResendFeedback('The server could not deliver a verification email right now. Please try again later or contact support.','warning')}startResend()}catch{setResendFeedback('We couldn\'t process the verification request. Check your connection and try again.','error')}finally{setResendBusy(false)}}
+function initForm(){if(!el.form)return;el.form.addEventListener('submit',saveProfile);el.discardBtn?.addEventListener('click',restore);el.mobileDiscard?.addEventListener('click',restore);el.mobileSubmit?.addEventListener('click',()=>{if(state.dirty&&!state.saving)el.form.requestSubmit()});[el.fullName,el.phone,el.city,el.area,el.address,el.marketing].filter(Boolean).forEach(input=>input.addEventListener(input.type==='checkbox'?'change':'input',e=>{clearSummary();if(fields[e.target.name])clearField(e.target.name);updateDirty()}));el.phone?.addEventListener('blur',()=>{const v=trim(el.phone);if(v&&!phoneValid(v))fieldError('phone','Enter a valid phone number using digits and normal phone punctuation.')});el.fullName?.addEventListener('blur',()=>{const v=trim(el.fullName);if(v&&v.length<2)fieldError('full_name','Enter a full name between 2 and 120 characters.')});setBaseline()}
+function initCityArea(){el.city?.addEventListener('input',renderAreaOptions);loadLocations()}
+function initLocation(){if(!el.locationBtn)return;if(!navigator.geolocation){el.locationBtn.disabled=true;el.locationBtnLabel&&(el.locationBtnLabel.textContent='Location Not Supported')}el.locationBtn.addEventListener('click',requestLocation);[el.city,el.area,el.address].filter(Boolean).forEach(f=>f.addEventListener('input',()=>{if(trim(el.lat)&&trim(el.lon))showLocation('Saved location coordinates still exist. If you changed this address, update the saved location when appropriate.','info')}))}
+function initVerification(){el.resendBtn?.addEventListener('click',resendVerification)}
+function initNetwork(){window.addEventListener('offline',()=>{if(state.dirty&&!state.saving)saveFeedback('You\'re offline. Changes remain unsaved.','error');announce('You are offline.')});window.addEventListener('online',()=>{if(state.dirty)saveFeedback('You\'re back online. Your changes are ready to save.');toast('You\'re back online.','info')})}
+function init(){initForm();initCityArea();initLocation();initVerification();initNetwork();updateReadiness();window.addEventListener('beforeunload',e=>{if(state.dirty&&!state.saving){e.preventDefault();e.returnValue=''}});window.addEventListener('pagehide',stopResend,{once:true})}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
+})();
+
+
+(function () {
+    "use strict";
+
+    /*
+     * Premium profile presentation layer only.
+     * It does not alter profile payloads, API endpoints, validation rules,
+     * geolocation permission behavior, verification semantics or CSRF.
+     */
+
+    const root =
+        document.getElementById(
+            "profile-root"
+        );
+
+    if (!root) {
+        return;
+    }
+
+    const reducedMedia =
+        window.matchMedia
+            ? window.matchMedia(
+                "(prefers-reduced-motion: reduce)"
+            )
+            : null;
+
+    const fineMedia =
+        window.matchMedia
+            ? window.matchMedia(
+                "(hover: hover) and (pointer: fine)"
+            )
+            : null;
+
+    const isReduced =
+        function () {
+            return Boolean(
+                reducedMedia &&
+                reducedMedia.matches
+            );
+        };
+
+    const isFine =
+        function () {
+            return Boolean(
+                fineMedia &&
+                fineMedia.matches
+            );
+        };
+
+    function clamp(
+        value,
+        minimum,
+        maximum
+    ) {
+        return Math.min(
+            maximum,
+            Math.max(
+                minimum,
+                value
+            )
+        );
+    }
+
+    function point(
+        event,
+        rect
+    ) {
+        return {
+            x:
+                clamp(
+                    (
+                        (
+                            event.clientX -
+                            rect.left
+                        ) /
+                        Math.max(
+                            rect.width,
+                            1
+                        )
+                    ) *
+                    100,
+                    0,
+                    100
+                ),
+
+            y:
+                clamp(
+                    (
+                        (
+                            event.clientY -
+                            rect.top
+                        ) /
+                        Math.max(
+                            rect.height,
+                            1
+                        )
+                    ) *
+                    100,
+                    0,
+                    100
+                )
+        };
+    }
+
+    /* -------------------------------------------------------------
+       Ambient pointer light
+       ------------------------------------------------------------- */
+
+    function initializePointerLight() {
+        if (
+            !isFine() ||
+            isReduced()
+        ) {
+            return;
+        }
+
+        let frame =
+            0;
+
+        let latestX =
+            window.innerWidth /
+            2;
+
+        let latestY =
+            window.innerHeight /
+            7;
+
+        function paint() {
+            frame =
+                0;
+
+            const x =
+                clamp(
+                    (
+                        latestX /
+                        Math.max(
+                            window.innerWidth,
+                            1
+                        )
+                    ) *
+                    100,
+                    0,
+                    100
+                );
+
+            const y =
+                clamp(
+                    (
+                        latestY /
+                        Math.max(
+                            window.innerHeight,
+                            1
+                        )
+                    ) *
+                    100,
+                    0,
+                    100
+                );
+
+            root.style.setProperty(
+                "--lux-pointer-x",
+                x.toFixed(2) +
+                "%"
+            );
+
+            root.style.setProperty(
+                "--lux-pointer-y",
+                y.toFixed(2) +
+                "%"
+            );
+        }
+
+        root.addEventListener(
+            "pointermove",
+            function (event) {
+                latestX =
+                    event.clientX;
+
+                latestY =
+                    event.clientY;
+
+                if (!frame) {
+                    frame =
+                        window.requestAnimationFrame(
+                            paint
+                        );
+                }
+            },
+            {
+                passive:
+                    true
+            }
+        );
+    }
+
+    /* -------------------------------------------------------------
+       Summary tilt
+       ------------------------------------------------------------- */
+
+    function initializeSummaryTilt() {
+        const summary =
+            document.querySelector(
+                ".profile-summary"
+            );
+
+        if (
+            !summary ||
+            !isFine() ||
+            isReduced()
+        ) {
+            return;
+        }
+
+        summary.addEventListener(
+            "pointermove",
+            function (event) {
+                const p =
+                    point(
+                        event,
+                        summary.getBoundingClientRect()
+                    );
+
+                const nx =
+                    (
+                        p.x -
+                        50
+                    ) /
+                    50;
+
+                const ny =
+                    (
+                        p.y -
+                        50
+                    ) /
+                    50;
+
+                summary.style.setProperty(
+                    "--lux-summary-rx",
+                    (
+                        ny *
+                        -1.10
+                    ).toFixed(2) +
+                    "deg"
+                );
+
+                summary.style.setProperty(
+                    "--lux-summary-ry",
+                    (
+                        nx *
+                        1.25
+                    ).toFixed(2) +
+                    "deg"
+                );
+
+                summary.style.setProperty(
+                    "--lux-summary-x",
+                    p.x.toFixed(2) +
+                    "%"
+                );
+
+                summary.style.setProperty(
+                    "--lux-summary-y",
+                    p.y.toFixed(2) +
+                    "%"
+                );
+            },
+            {
+                passive:
+                    true
+            }
+        );
+
+        summary.addEventListener(
+            "pointerleave",
+            function () {
+                summary.style.setProperty(
+                    "--lux-summary-rx",
+                    "0deg"
+                );
+
+                summary.style.setProperty(
+                    "--lux-summary-ry",
+                    "0deg"
+                );
+
+                summary.style.setProperty(
+                    "--lux-summary-x",
+                    "82%"
+                );
+
+                summary.style.setProperty(
+                    "--lux-summary-y",
+                    "10%"
+                );
+            }
+        );
+    }
+
+    /* -------------------------------------------------------------
+       Card tilt
+       ------------------------------------------------------------- */
+
+    function wireCard(
+        card
+    ) {
+        if (
+            !card ||
+            card.dataset.luxuryCardReady ===
+            "true"
+        ) {
+            return;
+        }
+
+        card.dataset.luxuryCardReady =
+            "true";
+
+        card.addEventListener(
+            "pointermove",
+            function (event) {
+                if (
+                    !isFine() ||
+                    isReduced()
+                ) {
+                    return;
+                }
+
+                const p =
+                    point(
+                        event,
+                        card.getBoundingClientRect()
+                    );
+
+                const nx =
+                    (
+                        p.x -
+                        50
+                    ) /
+                    50;
+
+                const ny =
+                    (
+                        p.y -
+                        50
+                    ) /
+                    50;
+
+                card.style.setProperty(
+                    "--lux-card-rx",
+                    (
+                        ny *
+                        -0.75
+                    ).toFixed(2) +
+                    "deg"
+                );
+
+                card.style.setProperty(
+                    "--lux-card-ry",
+                    (
+                        nx *
+                        0.92
+                    ).toFixed(2) +
+                    "deg"
+                );
+
+                card.style.setProperty(
+                    "--lux-card-x",
+                    p.x.toFixed(2) +
+                    "%"
+                );
+
+                card.style.setProperty(
+                    "--lux-card-y",
+                    p.y.toFixed(2) +
+                    "%"
+                );
+            },
+            {
+                passive:
+                    true
+            }
+        );
+
+        card.addEventListener(
+            "pointerleave",
+            function () {
+                card.style.setProperty(
+                    "--lux-card-rx",
+                    "0deg"
+                );
+
+                card.style.setProperty(
+                    "--lux-card-ry",
+                    "0deg"
+                );
+
+                card.style.setProperty(
+                    "--lux-card-x",
+                    "84%"
+                );
+
+                card.style.setProperty(
+                    "--lux-card-y",
+                    "8%"
+                );
+            }
+        );
+    }
+
+    function initializeCards() {
+        document
+            .querySelectorAll(
+                ".profile-card, .profile-side-card"
+            )
+            .forEach(
+                wireCard
+            );
+    }
+
+    /* -------------------------------------------------------------
+       Button ripple
+       ------------------------------------------------------------- */
+
+    function addRipple(
+        button,
+        event
+    ) {
+        if (
+            !button ||
+            button.disabled ||
+            isReduced()
+        ) {
+            return;
+        }
+
+        const computed =
+            window.getComputedStyle(
+                button
+            );
+
+        if (
+            computed.position ===
+            "static"
+        ) {
+            button.style.position =
+                "relative";
+        }
+
+        button.style.overflow =
+            "hidden";
+
+        const rect =
+            button.getBoundingClientRect();
+
+        const ripple =
+            document.createElement(
+                "span"
+            );
+
+        ripple.className =
+            "profile-lux-ripple";
+
+        ripple.style.left =
+            (
+                event.clientX -
+                rect.left
+            ) +
+            "px";
+
+        ripple.style.top =
+            (
+                event.clientY -
+                rect.top
+            ) +
+            "px";
+
+        button.appendChild(
+            ripple
+        );
+
+        window.setTimeout(
+            function () {
+                ripple.remove();
+            },
+            650
+        );
+    }
+
+    function initializeRipples() {
+        const selector =
+            [
+                ".profile-button",
+                ".profile-link-button",
+                ".profile-quick-link"
+            ].join(
+                ","
+            );
+
+        document
+            .querySelectorAll(
+                selector
+            )
+            .forEach(
+                function (button) {
+                    if (
+                        button.dataset.luxuryRippleReady ===
+                        "true"
+                    ) {
+                        return;
+                    }
+
+                    button.dataset.luxuryRippleReady =
+                        "true";
+
+                    button.addEventListener(
+                        "pointerdown",
+                        function (event) {
+                            addRipple(
+                                button,
+                                event
+                            );
+                        }
+                    );
+                }
+            );
+    }
+
+    /* -------------------------------------------------------------
+       Reveal
+       ------------------------------------------------------------- */
+
+    function initializeReveals() {
+        const targets =
+            Array.from(
+                document.querySelectorAll(
+                    [
+                        ".profile-header",
+                        ".profile-summary",
+                        ".profile-card",
+                        ".profile-side-card"
+                    ].join(
+                        ","
+                    )
+                )
+            );
+
+        targets.forEach(
+            function (
+                target,
+                index
+            ) {
+                target.classList.add(
+                    "profile-lux-reveal"
+                );
+
+                target.style.transitionDelay =
+                    Math.min(
+                        (
+                            index %
+                            6
+                        ) *
+                        42,
+                        190
+                    ) +
+                    "ms";
+            }
+        );
+
+        if (
+            isReduced() ||
+            !(
+                "IntersectionObserver" in
+                window
+            )
+        ) {
+            targets.forEach(
+                function (target) {
+                    target.classList.add(
+                        "is-lux-visible"
+                    );
+                }
+            );
+
+            return;
+        }
+
+        const observer =
+            new IntersectionObserver(
+                function (
+                    entries,
+                    instance
+                ) {
+                    entries.forEach(
+                        function (entry) {
+                            if (
+                                !entry.isIntersecting
+                            ) {
+                                return;
+                            }
+
+                            entry.target.classList.add(
+                                "is-lux-visible"
+                            );
+
+                            instance.unobserve(
+                                entry.target
+                            );
+                        }
+                    );
+                },
+                {
+                    threshold:
+                        .07,
+
+                    rootMargin:
+                        "0px 0px -5% 0px"
+                }
+            );
+
+        targets.forEach(
+            function (target) {
+                observer.observe(
+                    target
+                );
+            }
+        );
+    }
+
+    /* -------------------------------------------------------------
+       Network / dirty visual sync
+       ------------------------------------------------------------- */
+
+    function syncNetwork() {
+        root.dataset.luxNetwork =
+            navigator.onLine === false
+                ? "offline"
+                : "online";
+    }
+
+    function syncDirty() {
+        const saveButton =
+            document.getElementById(
+                "profile-save-button"
+            );
+
+        if (!saveButton) {
+            return;
+        }
+
+        root.dataset.luxDirty =
+            saveButton.disabled
+                ? "false"
+                : "true";
+    }
+
+    function initializeStateObservers() {
+        syncNetwork();
+        syncDirty();
+
+        window.addEventListener(
+            "online",
+            syncNetwork
+        );
+
+        window.addEventListener(
+            "offline",
+            syncNetwork
+        );
+
+        const saveButton =
+            document.getElementById(
+                "profile-save-button"
+            );
+
+        if (
+            saveButton &&
+            "MutationObserver" in window
+        ) {
+            const observer =
+                new MutationObserver(
+                    syncDirty
+                );
+
+            observer.observe(
+                saveButton,
+                {
+                    attributes:
+                        true,
+
+                    attributeFilter:
+                        [
+                            "disabled"
+                        ]
+                }
+            );
+        }
+
+        const form =
+            document.getElementById(
+                "profile-form"
+            );
+
+        if (form) {
+            form.addEventListener(
+                "input",
+                function () {
+                    window.requestAnimationFrame(
+                        syncDirty
+                    );
+                }
+            );
+
+            form.addEventListener(
+                "change",
+                function () {
+                    window.requestAnimationFrame(
+                        syncDirty
+                    );
+                }
+            );
+        }
+    }
+
+    /* -------------------------------------------------------------
+       Theme sync
+       ------------------------------------------------------------- */
+
+    function initializeThemeSync() {
+        const html =
+            document.documentElement;
+
+        root.dataset.luxuryTheme =
+            html.dataset.theme ||
+            "dark";
+
+        if (
+            !(
+                "MutationObserver" in
+                window
+            )
+        ) {
+            return;
+        }
+
+        const observer =
+            new MutationObserver(
+                function () {
+                    root.dataset.luxuryTheme =
+                        html.dataset.theme ||
+                        "dark";
+                }
+            );
+
+        observer.observe(
+            html,
+            {
+                attributes:
+                    true,
+
+                attributeFilter:
+                    [
+                        "data-theme"
+                    ]
+            }
+        );
+    }
+
+    function initializePremiumProfileLayer() {
+        root.dataset.luxuryReady =
+            "true";
+
+        initializePointerLight();
+        initializeSummaryTilt();
+        initializeCards();
+        initializeRipples();
+        initializeReveals();
+        initializeStateObservers();
+        initializeThemeSync();
+    }
+
+    if (
+        document.readyState ===
+        "loading"
+    ) {
+        document.addEventListener(
+            "DOMContentLoaded",
+            initializePremiumProfileLayer,
+            {
+                once:
+                    true
+            }
+        );
+    } else {
+        initializePremiumProfileLayer();
+    }
+}());
+
+</script>
+{% endblock %}

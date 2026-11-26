@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}My Bookings | {{ business_name|default("Restaurant", true) }}{% endblock %}
+{% block meta_description %}Create, review and cancel your restaurant table bookings.{% endblock %}
+
+{% block styles %}
+<style>
+.booking-page{--bk-primary:var(--primary-color,#b83222);--bk-bg:var(--background-color,#fffaf4);--bk-surface:var(--surface-color,#fff);--bk-text:var(--text-color,#201c19);--bk-muted:var(--muted-text,#6f6760);--bk-border:var(--border-color,#e7ded4);--bk-success:var(--success-color,#247a4a);--bk-warning:var(--warning-color,#9a6510);--bk-error:var(--error-color,#b42318);padding:1.25rem 0 5rem;color:var(--bk-text)}
+.booking-shell{width:min(100% - 2rem,1180px);margin:auto}.booking-head{display:flex;align-items:end;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1rem}.booking-head h1{margin:0;font-size:clamp(2rem,5vw,3.3rem);letter-spacing:-.04em}.booking-head p{margin:.35rem 0 0;color:var(--bk-muted);max-width:62ch}.booking-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,.68fr);gap:1rem;align-items:start}.booking-card{border:1px solid var(--bk-border);border-radius:16px;background:var(--bk-surface);overflow:hidden;box-shadow:var(--shadow-sm,0 8px 24px rgba(0,0,0,.06))}.booking-card__head{padding:.85rem 1rem;border-bottom:1px solid var(--bk-border)}.booking-card__head h2{margin:0;font-size:1rem}.booking-card__head p{margin:.18rem 0 0;color:var(--bk-muted);font-size:.82rem}.booking-card__body{padding:1rem}.booking-list{display:grid;gap:.7rem}.booking-item{border:1px solid var(--bk-border);border-radius:13px;padding:.8rem;background:color-mix(in srgb,var(--bk-surface) 94%,var(--bk-bg));display:grid;gap:.45rem}.booking-item__top{display:flex;justify-content:space-between;gap:.75rem;align-items:start}.booking-item h3{margin:0;font-size:.95rem}.booking-meta{display:flex;gap:.55rem;flex-wrap:wrap;color:var(--bk-muted);font-size:.78rem}.booking-badge{display:inline-flex;align-items:center;padding:.3rem .5rem;border-radius:999px;background:var(--bk-bg);font-size:.72rem;font-weight:800;text-transform:capitalize}.booking-badge[data-status="confirmed"]{color:var(--bk-success)}.booking-badge[data-status="pending"]{color:var(--bk-warning)}.booking-badge[data-status="cancelled"],.booking-badge[data-status="rejected"]{color:var(--bk-error)}.booking-actions{display:flex;gap:.45rem;flex-wrap:wrap}.booking-btn{min-height:42px;border-radius:10px;border:1px solid var(--bk-border);background:var(--bk-surface);color:var(--bk-text);padding:.55rem .72rem;font:inherit;font-weight:800;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:.35rem}.booking-btn--primary{background:var(--bk-primary);border-color:var(--bk-primary);color:#fff}.booking-btn:disabled{opacity:.55;cursor:not-allowed}.booking-form{display:grid;gap:.7rem}.booking-row{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}.booking-field{display:grid;gap:.28rem}.booking-field label{font-size:.8rem;font-weight:800}.booking-input,.booking-textarea,.booking-select{width:100%;border:1px solid var(--bk-border);border-radius:10px;background:var(--bk-surface);color:var(--bk-text);font:inherit;padding:.66rem .7rem;min-height:44px}.booking-textarea{min-height:90px;resize:vertical}.booking-error{margin:0;color:var(--bk-error);font-size:.76rem}.booking-help{margin:0;color:var(--bk-muted);font-size:.74rem;line-height:1.45}.booking-empty{padding:1.4rem;text-align:center;color:var(--bk-muted)}.booking-alert{padding:.75rem .85rem;border:1px solid var(--bk-border);border-radius:11px;margin-bottom:.7rem;background:var(--bk-bg);font-size:.82rem}.booking-alert--error{color:var(--bk-error)}.booking-sticky{position:sticky;top:calc(var(--header-height,90px) + 1rem)}@media(max-width:850px){.booking-grid{grid-template-columns:1fr}.booking-sticky{position:static}}@media(max-width:560px){.booking-row{grid-template-columns:1fr}.booking-shell{width:min(100% - 1rem,1180px)}}
+</style>
+{% endblock %}
+
+{% block content %}
+{% set booking_items = bookings|default([], true) %}
+<section class="booking-page" id="booking-root" data-create-url="{{ url_for('create_booking_api') }}" data-locations-url="{{ url_for('locations_api') }}">
+  <div class="booking-shell">
+    <header class="booking-head">
+      <div><h1>My Bookings</h1><p>Create a dine-in reservation request and review the booking status returned by the backend.</p></div>
+    </header>
+    <div id="booking-page-error" class="booking-alert booking-alert--error" role="alert" hidden></div>
+    <div class="booking-grid">
+      <section class="booking-card" aria-labelledby="booking-list-title">
+        <div class="booking-card__head"><h2 id="booking-list-title">Bookings</h2><p>Only bookings belonging to your authenticated customer account are shown.</p></div>
+        <div class="booking-card__body">
+          <div class="booking-list" id="booking-list">
+            {% for booking in booking_items %}
+              {% if booking is mapping %}
+              <article class="booking-item" data-booking-id="{{ booking.get('id','') }}">
+                <div class="booking-item__top">
+                  <div><h3>{{ booking.get('booking_reference','Booking') }}</h3><div class="booking-meta"><span>{{ booking.get('date','') }}</span><span>{{ booking.get('time','') }}</span><span>{{ booking.get('guests',0) }} guest{% if booking.get('guests',0)|int != 1 %}s{% endif %}</span></div></div>
+                  <span class="booking-badge" data-status="{{ booking.get('status','pending') }}">{{ booking.get('status','pending')|replace('_',' ') }}</span>
+                </div>
+                {% if booking.get('notes') %}<p class="booking-help">{{ booking.get('notes') }}</p>{% endif %}
+                {% if booking.get('status') not in ['cancelled','completed','rejected'] %}
+                <div class="booking-actions"><button class="booking-btn" type="button" data-cancel-booking="{{ booking.get('id','') }}">Cancel Booking</button></div>
+                {% endif %}
+              </article>
+              {% endif %}
+            {% else %}
+              <div class="booking-empty" id="booking-empty">No bookings yet.</div>
+            {% endfor %}
+          </div>
+          {% if next_cursor %}<p class="booking-help" style="margin-top:.8rem">More bookings are available through the authenticated bookings API.</p>{% endif %}
+        </div>
+      </section>
+
+      <aside class="booking-card booking-sticky" aria-labelledby="booking-create-title">
+        <div class="booking-card__head"><h2 id="booking-create-title">Request a Table</h2><p>The backend requires a dine-in enabled outlet and a time at least 30 minutes in the future.</p></div>
+        <div class="booking-card__body">
+          <form class="booking-form" id="booking-form" novalidate>
+            <div class="booking-field"><label for="booking-outlet">Dine-In Outlet</label><select class="booking-select" id="booking-outlet" required><option value="">Loading outlets...</option></select><p class="booking-error" id="booking-outlet-error" hidden></p></div>
+            <div class="booking-row">
+              <div class="booking-field"><label for="booking-date">Date</label><input class="booking-input" id="booking-date" type="date" required><p class="booking-error" id="booking-date-error" hidden></p></div>
+              <div class="booking-field"><label for="booking-time">Time</label><input class="booking-input" id="booking-time" type="time" required><p class="booking-error" id="booking-time-error" hidden></p></div>
+            </div>
+            <div class="booking-row">
+              <div class="booking-field"><label for="booking-guests">Guests</label><input class="booking-input" id="booking-guests" type="number" min="1" max="100" value="2" required></div>
+              <div class="booking-field"><label for="booking-phone">Phone</label><input class="booking-input" id="booking-phone" type="tel" maxlength="22" autocomplete="tel" required></div>
+            </div>
+            <div class="booking-field"><label for="booking-notes">Notes <span class="booking-help">(optional)</span></label><textarea class="booking-textarea" id="booking-notes" maxlength="800"></textarea></div>
+            <p class="booking-help">Submitting this form creates a booking request with status <strong>pending</strong>. It does not guarantee confirmation.</p>
+            <button class="booking-btn booking-btn--primary" id="booking-submit" type="submit">Request Booking</button>
+          </form>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+  "use strict";
+  const root=document.getElementById("booking-root"); if(!root)return;
+  const form=document.getElementById("booking-form"), outlet=document.getElementById("booking-outlet"), submit=document.getElementById("booking-submit"), pageError=document.getElementById("booking-page-error");
+  const $=id=>document.getElementById(id);
+  const showError=(msg)=>{if(!pageError)return;pageError.textContent=String(msg||"");pageError.hidden=!msg;};
+  const toast=(msg,type)=>{if(window.AppUI&&typeof window.AppUI.showToast==="function")window.AppUI.showToast(msg,type||"info");};
+  const csrfFetch=(url,opts)=>{if(window.AppUI&&typeof window.AppUI.csrfFetch==="function")return window.AppUI.csrfFetch(url,opts||{});return Promise.reject(new Error("CSRF helper unavailable"));};
+  const parseJson=async r=>{try{return await r.json();}catch(_){return null;}};
+  const apiMessage=(r,p)=>p&&p.error&&p.error.message?p.error.message:(r.status===429?"Too many requests. Please wait before trying again.":"The request could not be completed.");
+  async function loadOutlets(){
+    try{const u=new URL(root.dataset.locationsUrl,location.origin);u.searchParams.set("service_mode","dine_in");const r=await fetch(u.pathname+u.search,{credentials:"same-origin",headers:{Accept:"application/json"},cache:"no-store"});const p=await parseJson(r);if(!r.ok||!p||p.success!==true||!p.data||!Array.isArray(p.data.locations))throw new Error();outlet.replaceChildren(new Option("Choose an outlet",""));p.data.locations.forEach(x=>{if(x&&x.id)outlet.add(new Option(String(x.name||x.address||"Dine-In Outlet"),String(x.id)));});if(outlet.options.length===1)outlet.options[0].textContent="No dine-in outlets available";}catch(_){outlet.replaceChildren(new Option("Unable to load outlets",""));showError("Dine-in outlets could not be loaded. Refresh the page and try again.");}
+  }
+  async function createBooking(e){e.preventDefault();showError("");if(!form.reportValidity())return;submit.disabled=true;submit.textContent="Submitting...";const body={outlet_id:outlet.value,date:$("booking-date").value,time:$("booking-time").value,guests:$("booking-guests").value,phone:$("booking-phone").value.trim(),notes:$("booking-notes").value.trim()};try{const r=await csrfFetch(root.dataset.createUrl,{method:"POST",credentials:"same-origin",headers:{Accept:"application/json","Content-Type":"application/json"},body:JSON.stringify(body)});const p=await parseJson(r);if(!r.ok||!p||p.success!==true){showError(apiMessage(r,p));return;}toast("Booking request submitted.","success");location.reload();}catch(_){showError("The booking request could not be submitted. Please try again.");}finally{submit.disabled=false;submit.textContent="Request Booking";}}
+  async function cancelBooking(id,button){if(!id||!confirm("Cancel this booking request?"))return;button.disabled=true;try{const url="/api/bookings/"+encodeURIComponent(id)+"/cancel";const r=await csrfFetch(url,{method:"POST",credentials:"same-origin",headers:{Accept:"application/json"}});const p=await parseJson(r);if(!r.ok||!p||p.success!==true){showError(apiMessage(r,p));button.disabled=false;return;}toast("Booking cancelled.","success");location.reload();}catch(_){showError("The booking could not be cancelled.");button.disabled=false;}}
+  form&&form.addEventListener("submit",createBooking);document.addEventListener("click",e=>{const b=e.target.closest("[data-cancel-booking]");if(b)cancelBooking(b.dataset.cancelBooking,b);});loadOutlets();
+}());
+</script>
+{% endblock %}

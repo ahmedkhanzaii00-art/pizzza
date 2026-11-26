@@ -1,0 +1,5840 @@
+{% extends "base.html" %}
+
+{# =========================================================
+   SECURE ORDER INVOICE / PRINTABLE RECEIPT TEMPLATE
+
+   CURRENT MAIN.PY SOURCE OF TRUTH
+   --------------------------------
+   Current order records already store an order-time snapshot:
+     order_reference
+     customer_snapshot {name, email, phone}
+     service_mode
+     outlet_snapshot {name, address, phone}
+     fulfilment {address, city, area, latitude, longitude}
+     items
+     subtotal_minor
+     delivery_fee_minor
+     total_minor
+     currency
+     payment_method
+     payment_status
+     payment_id
+     order_status
+     customer_notes
+     schedule_for
+     placed_at
+
+   Current item snapshots:
+   Product:
+     product_name
+     quantity
+     selected_options [
+       {group_name, option_name, price_delta_minor, ...}
+     ]
+     base_price_minor
+     unit_price_minor
+     line_total_minor
+
+   Deal:
+     deal_name
+     included_items [
+       {product_name, quantity, allow_customization, ...}
+     ]
+     quantity
+     unit_price_minor
+     line_total_minor
+
+   Current payment records include:
+     method
+     amount_minor
+     currency
+     status
+     provider_transaction_id
+     customer_reference
+     paid_at (after confirmed payment)
+     plus internal/admin fields which MUST NOT be rendered here.
+
+   IMPORTANT CURRENT LIMITATION:
+   main.py does NOT currently register an invoice route or PDF route.
+   This template therefore never invents either route. A protected
+   backend route must load an authorized order and payment, then render
+   this file. Customer ownership must use the existing customer_order()
+   check or equivalent protected staff permission logic.
+
+   This template:
+   - uses stored order snapshot values only;
+   - never queries current products/deals;
+   - never recalculates financial truth in JavaScript;
+   - never creates an invoice number;
+   - never exposes coordinates, internal notes, payment verification
+     notes, staff identity, provider callbacks, tokens, secrets, PIN/OTP;
+   - has no checkout/payment/refund/cancel/reorder controls;
+   - only uses JavaScript for explicit Print and optional Copy Reference.
+========================================================= #}
+
+{% set order_data = order|default({}, true) %}
+{% if order_data is not mapping %}
+    {% set order_data = {} %}
+{% endif %}
+
+{% set payment_data = payment|default({}, true) %}
+{% if payment_data is not mapping %}
+    {% set payment_data = {} %}
+{% endif %}
+
+{% set invoice_data = invoice|default({}, true) %}
+{% if invoice_data is not mapping %}
+    {% set invoice_data = {} %}
+{% endif %}
+
+{% set principal_data = principal|default({}, true) %}
+{% if principal_data is not mapping %}
+    {% set principal_data = {} %}
+{% endif %}
+
+{% set current_role = principal_data.get("role", "")|default("", true)|string %}
+{% set is_customer = current_role == "customer" %}
+{% set is_staff = current_role in ["owner", "super_admin", "admin", "chef"] %}
+
+{% set order_id = order_data.get("id", order_data.get("order_id", ""))|default("", true)|string %}
+{% set order_reference = order_data.get("order_reference", "")|default("", true)|string %}
+{% set service_mode = order_data.get("service_mode", "")|default("", true)|string|lower %}
+{% set order_status = order_data.get("order_status", "")|default("", true)|string|lower %}
+
+{% set stored_payment_method = order_data.get("payment_method", payment_data.get("method", ""))|default("", true)|string|lower %}
+{% set stored_payment_status = order_data.get("payment_status", payment_data.get("status", ""))|default("", true)|string|lower %}
+{% set currency = order_data.get("currency", payment_data.get("currency", "PKR"))|default("PKR", true)|string|upper %}
+
+{% set customer_snapshot = order_data.get("customer_snapshot", {}) %}
+{% if customer_snapshot is not mapping %}
+    {% set customer_snapshot = {} %}
+{% endif %}
+
+{% set outlet_snapshot = order_data.get("outlet_snapshot", {}) %}
+{% if outlet_snapshot is not mapping %}
+    {% set outlet_snapshot = {} %}
+{% endif %}
+
+{% set fulfilment = order_data.get("fulfilment", {}) %}
+{% if fulfilment is not mapping %}
+    {% set fulfilment = {} %}
+{% endif %}
+
+{% set items = order_data.get("items", []) %}
+{% if items is string or items is not sequence %}
+    {% set items = [] %}
+{% endif %}
+
+{% set has_critical_invoice_data =
+    order_data
+    and order_reference
+    and items
+    and "subtotal_minor" in order_data
+    and "total_minor" in order_data
+%}
+
+{% set backend_document_title = invoice_data.get("document_title", "")|default("", true)|string|trim %}
+{% if backend_document_title %}
+    {% set document_title = backend_document_title %}
+{% else %}
+    {% set document_title = "Order Invoice" %}
+{% endif %}
+
+{% set invoice_number = invoice_data.get("invoice_number", "")|default("", true)|string|trim %}
+{% set invoice_date_display = invoice_data.get("issued_at_display", "")|default("", true)|string|trim %}
+{% set order_date_display = order_date_display|default("", true)|string|trim %}
+{% set schedule_display = schedule_for_display|default("", true)|string|trim %}
+{% set payment_date_display = payment_date_display|default("", true)|string|trim %}
+
+{% set optional_pdf_url = pdf_url|default("", true)|string|trim %}
+{% if not (optional_pdf_url.startswith("/") and not optional_pdf_url.startswith("//")) %}
+    {% set optional_pdf_url = "" %}
+{% endif %}
+
+{% set explicit_order_url = order_url|default("", true)|string|trim %}
+{% if not (explicit_order_url.startswith("/") and not explicit_order_url.startswith("//")) %}
+    {% set explicit_order_url = "" %}
+{% endif %}
+
+{% if not explicit_order_url and is_customer and order_id %}
+    {% set explicit_order_url = url_for("order_detail_page", order_id=order_id) %}
+{% endif %}
+
+{% macro service_label(value) -%}
+    {%- if value == "delivery" -%}
+        Delivery
+    {%- elif value == "pickup" -%}
+        Pickup
+    {%- elif value == "dine_in" -%}
+        Dine-In
+    {%- elif value -%}
+        {{- value|replace("_", " ")|title -}}
+    {%- else -%}
+        Not specified
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro payment_method_label(value) -%}
+    {%- if value == "cod" -%}
+        Cash on Delivery
+    {%- elif value == "easypaisa" -%}
+        Easypaisa
+    {%- elif value == "bank_transfer" -%}
+        Bank Transfer
+    {%- elif value -%}
+        {{- value|replace("_", " ")|title -}}
+    {%- else -%}
+        Not specified
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro status_label(value) -%}
+    {%- if value -%}
+        {{- value|replace("_", " ")|title -}}
+    {%- else -%}
+        Not available
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro money_minor(value, currency_code=currency) -%}
+    {%- if value is number and value is not sameas true and value is not sameas false -%}
+        {%- set minor = value|int -%}
+        {%- set negative = minor < 0 -%}
+        {%- set absolute = -minor if negative else minor -%}
+        {%- set major = absolute // 100 -%}
+        {%- set cents = absolute % 100 -%}
+        {%- if negative -%}-{% endif -%}
+        {%- if currency_code == "PKR" -%}
+            Rs.&nbsp;{{ major }}.{{ "%02d"|format(cents) }}
+        {%- else -%}
+            {{ currency_code }}&nbsp;{{ major }}.{{ "%02d"|format(cents) }}
+        {%- endif -%}
+    {%- else -%}
+        —
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro status_class(value) -%}
+    {%- if value in ["paid", "delivered", "picked_up", "completed", "served"] -%}
+        success
+    {%- elif value in ["failed", "rejected", "cancelled", "canceled"] -%}
+        danger
+    {%- elif value in ["pending", "awaiting_verification", "order_placed", "received", "confirmed", "preparing", "packing", "ready", "ready_for_pickup", "out_for_delivery"] -%}
+        warning
+    {%- else -%}
+        neutral
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro item_name(item) -%}
+    {%- if item.get("item_type") == "deal" -%}
+        {{- item.get("deal_name", "Deal")|default("Deal", true) -}}
+    {%- else -%}
+        {{- item.get("product_name", "Item")|default("Item", true) -}}
+    {%- endif -%}
+{%- endmacro %}
+
+{% block title %}
+    {{ document_title }}{% if order_reference %} — {{ order_reference }}{% endif %} | {{ business_name|default("Restaurant", true) }}
+{% endblock %}
+
+{% block meta_description %}
+    Private order invoice for {{ business_name|default("the restaurant", true) }}.
+{% endblock %}
+
+{% block head %}
+    {{ super() }}
+
+    <meta name="robots" content="noindex,nofollow">
+    <meta name="googlebot" content="noindex,nofollow">
+    <meta http-equiv="Cache-Control" content="no-store">
+    <meta http-equiv="Pragma" content="no-cache">
+{% endblock %}
+
+{% block styles %}
+<style>
+    .invoice-page {
+        --iv-primary: var(--primary-color, #b83222);
+        --iv-primary-hover: var(--primary-color-hover, #98281b);
+        --iv-primary-soft: var(--primary-color-soft, #fff0eb);
+        --iv-primary-contrast: var(--primary-contrast, #fff);
+
+        --iv-bg: var(--background-color, #fffaf4);
+        --iv-surface: var(--surface-color, #fff);
+        --iv-surface-muted: var(--surface-muted, #f5eee5);
+
+        --iv-text: var(--text-color, #201c19);
+        --iv-strong: var(--text-strong, #151210);
+        --iv-muted: var(--muted-text, #6f6760);
+        --iv-subtle: var(--subtle-text, #8c8279);
+
+        --iv-border: var(--border-color, #e7ded4);
+        --iv-border-strong: var(--border-strong, #d3c6b9);
+
+        --iv-success: var(--success-color, #247a4a);
+        --iv-success-soft: var(--success-soft, #eaf7ef);
+        --iv-warning: var(--warning-color, #9a6510);
+        --iv-warning-soft: var(--warning-soft, #fff5dc);
+        --iv-error: var(--error-color, #b42318);
+        --iv-error-soft: var(--error-soft, #fff0ee);
+
+        --iv-shadow:
+            var(
+                --shadow-md,
+                0 18px 42px rgba(31, 24, 19, .12)
+            );
+
+        --iv-transition:
+            var(
+                --transition-fast,
+                160ms ease
+            );
+
+        min-height: 70vh;
+
+        padding:
+            clamp(.75rem, 2.4vw, 1.3rem)
+            0
+            clamp(4rem, 7vw, 5rem);
+
+        color: var(--iv-text);
+    }
+
+    .invoice-page,
+    .invoice-page *,
+    .invoice-page *::before,
+    .invoice-page *::after {
+        box-sizing: border-box;
+    }
+
+    .invoice-page [hidden] {
+        display: none !important;
+    }
+
+    .invoice-page svg {
+        display: block;
+
+        fill: none;
+        stroke: currentColor;
+
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+
+    .invoice-shell {
+        width: min(100% - 2rem, 1050px);
+
+        margin-inline: auto;
+    }
+
+    /* =====================================================
+       SCREEN TOOLBAR
+    ====================================================== */
+
+    .invoice-screen-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .55rem;
+        flex-wrap: wrap;
+
+        margin-bottom: .65rem;
+    }
+
+    .invoice-screen-actions__group {
+        display: flex;
+        align-items: center;
+        gap: .36rem;
+        flex-wrap: wrap;
+    }
+
+    .invoice-btn {
+        min-height: 42px;
+
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: .34rem;
+
+        padding: .52rem .64rem;
+
+        border-radius: 9px;
+
+        font: inherit;
+        font-size: .54rem;
+        font-weight: 820;
+        line-height: 1;
+
+        text-decoration: none;
+
+        transition:
+            transform var(--iv-transition),
+            border-color var(--iv-transition),
+            background var(--iv-transition),
+            color var(--iv-transition);
+    }
+
+    button.invoice-btn {
+        cursor: pointer;
+    }
+
+    .invoice-btn svg {
+        width: .75rem;
+        height: .75rem;
+    }
+
+    .invoice-btn--primary {
+        border: 1px solid var(--iv-primary);
+
+        background: var(--iv-primary);
+        color: var(--iv-primary-contrast);
+    }
+
+    .invoice-btn--primary:hover {
+        transform: translateY(-1px);
+
+        border-color: var(--iv-primary-hover);
+        background: var(--iv-primary-hover);
+    }
+
+    .invoice-btn--secondary {
+        border: 1px solid var(--iv-border);
+
+        background: var(--iv-surface);
+        color: var(--iv-text);
+    }
+
+    .invoice-btn--secondary:hover {
+        transform: translateY(-1px);
+
+        border-color: var(--iv-border-strong);
+        background: var(--iv-surface-muted);
+    }
+
+    /* =====================================================
+       DOCUMENT
+    ====================================================== */
+
+    .invoice-document {
+        overflow: hidden;
+
+        border: 1px solid var(--iv-border);
+        border-radius: 18px;
+
+        background: var(--iv-surface);
+
+        box-shadow: var(--iv-shadow);
+    }
+
+    .invoice-document__inner {
+        padding:
+            clamp(1rem, 3.5vw, 1.75rem);
+    }
+
+    .invoice-business-header {
+        display: grid;
+        grid-template-columns:
+            minmax(0, 1fr)
+            auto;
+
+        gap: 1rem;
+        align-items: start;
+
+        padding-bottom: 1rem;
+
+        border-bottom: 2px solid var(--iv-strong);
+    }
+
+    .invoice-brand {
+        display: flex;
+        align-items: center;
+        gap: .65rem;
+
+        min-width: 0;
+    }
+
+    .invoice-brand__logo {
+        width: 54px;
+        height: 54px;
+
+        flex: 0 0 54px;
+
+        object-fit: contain;
+    }
+
+    .invoice-brand__logo.is-unavailable {
+        display: none;
+    }
+
+    .invoice-brand__fallback {
+        width: 54px;
+        height: 54px;
+
+        display: none;
+        place-items: center;
+
+        flex: 0 0 54px;
+
+        border-radius: 14px;
+
+        background: var(--iv-primary-soft);
+        color: var(--iv-primary);
+
+        font-size: 1rem;
+        font-weight: 900;
+    }
+
+    .invoice-brand__fallback.is-visible {
+        display: grid;
+    }
+
+    .invoice-brand h1 {
+        margin: 0;
+
+        color: var(--iv-strong);
+
+        font-size:
+            clamp(
+                1.2rem,
+                3vw,
+                1.75rem
+            );
+
+        font-weight: 920;
+        line-height: 1.1;
+        letter-spacing: -.035em;
+    }
+
+    .invoice-brand__business {
+        margin: .18rem 0 0;
+
+        color: var(--iv-muted);
+
+        font-size: .56rem;
+        line-height: 1.45;
+    }
+
+    .invoice-document-label {
+        text-align: right;
+    }
+
+    .invoice-document-label__type {
+        display: block;
+
+        color: var(--iv-strong);
+
+        font-size: .8rem;
+        font-weight: 900;
+        line-height: 1.25;
+        text-transform: uppercase;
+        letter-spacing: .06em;
+    }
+
+    .invoice-document-label__ref {
+        display: block;
+
+        margin-top: .2rem;
+
+        color: var(--iv-muted);
+
+        font-size: .52rem;
+        line-height: 1.4;
+
+        overflow-wrap: anywhere;
+    }
+
+    /* =====================================================
+       META
+    ====================================================== */
+
+    .invoice-meta-grid {
+        display: grid;
+        grid-template-columns:
+            repeat(
+                4,
+                minmax(0, 1fr)
+            );
+
+        gap: .5rem;
+
+        margin-top: .85rem;
+    }
+
+    .invoice-meta-card {
+        min-width: 0;
+
+        padding: .58rem;
+
+        border: 1px solid var(--iv-border);
+        border-radius: 10px;
+
+        background: var(--iv-bg);
+    }
+
+    .invoice-meta-card dt {
+        margin: 0;
+
+        color: var(--iv-subtle);
+
+        font-size: .45rem;
+        font-weight: 780;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+    }
+
+    .invoice-meta-card dd {
+        margin: .13rem 0 0;
+
+        color: var(--iv-text);
+
+        font-size: .55rem;
+        font-weight: 780;
+        line-height: 1.4;
+
+        overflow-wrap: anywhere;
+    }
+
+    .invoice-status {
+        min-height: 26px;
+
+        display: inline-flex;
+        align-items: center;
+        gap: .24rem;
+
+        padding: .29rem .38rem;
+
+        border: 1px solid var(--iv-border);
+        border-radius: 999px;
+
+        background: var(--iv-surface-muted);
+        color: var(--iv-muted);
+
+        font-size: .46rem;
+        font-weight: 820;
+        line-height: 1;
+    }
+
+    .invoice-status__dot {
+        width: 6px;
+        height: 6px;
+
+        border-radius: 50%;
+
+        background: currentColor;
+    }
+
+    .invoice-status--success {
+        border-color:
+            color-mix(
+                in srgb,
+                var(--iv-success) 24%,
+                var(--iv-border)
+            );
+
+        background: var(--iv-success-soft);
+        color: var(--iv-success);
+    }
+
+    .invoice-status--warning {
+        border-color:
+            color-mix(
+                in srgb,
+                var(--iv-warning) 24%,
+                var(--iv-border)
+            );
+
+        background: var(--iv-warning-soft);
+        color: var(--iv-warning);
+    }
+
+    .invoice-status--danger {
+        border-color:
+            color-mix(
+                in srgb,
+                var(--iv-error) 24%,
+                var(--iv-border)
+            );
+
+        background: var(--iv-error-soft);
+        color: var(--iv-error);
+    }
+
+    /* =====================================================
+       PARTY / SERVICE INFO
+    ====================================================== */
+
+    .invoice-two-column {
+        display: grid;
+        grid-template-columns:
+            repeat(
+                2,
+                minmax(0, 1fr)
+            );
+
+        gap: .65rem;
+
+        margin-top: .85rem;
+    }
+
+    .invoice-info-card {
+        min-width: 0;
+
+        padding: .72rem;
+
+        border: 1px solid var(--iv-border);
+        border-radius: 11px;
+    }
+
+    .invoice-section-title {
+        margin: 0;
+
+        color: var(--iv-strong);
+
+        font-size: .62rem;
+        font-weight: 870;
+        line-height: 1.35;
+    }
+
+    .invoice-info-list {
+        display: grid;
+        gap: .34rem;
+
+        margin: .48rem 0 0;
+    }
+
+    .invoice-info-row {
+        display: grid;
+        grid-template-columns:
+            minmax(92px, .42fr)
+            minmax(0, 1fr);
+
+        gap: .45rem;
+
+        font-size: .52rem;
+        line-height: 1.45;
+    }
+
+    .invoice-info-row dt {
+        color: var(--iv-subtle);
+
+        font-weight: 720;
+    }
+
+    .invoice-info-row dd {
+        margin: 0;
+
+        color: var(--iv-text);
+
+        font-weight: 730;
+
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+    }
+
+    /* =====================================================
+       ITEMS TABLE
+    ====================================================== */
+
+    .invoice-items-section {
+        margin-top: .9rem;
+    }
+
+    .invoice-table-wrap {
+        overflow-x: auto;
+
+        margin-top: .48rem;
+
+        border: 1px solid var(--iv-border);
+        border-radius: 11px;
+    }
+
+    .invoice-table {
+        width: 100%;
+        min-width: 680px;
+
+        border-collapse: collapse;
+
+        font-size: .52rem;
+    }
+
+    .invoice-table th,
+    .invoice-table td {
+        padding: .58rem .62rem;
+
+        border-bottom: 1px solid var(--iv-border);
+
+        vertical-align: top;
+    }
+
+    .invoice-table th {
+        background: var(--iv-bg);
+        color: var(--iv-muted);
+
+        font-size: .45rem;
+        font-weight: 830;
+        letter-spacing: .04em;
+        text-align: left;
+        text-transform: uppercase;
+    }
+
+    .invoice-table tbody tr:last-child td {
+        border-bottom: 0;
+    }
+
+    .invoice-table__item {
+        color: var(--iv-strong);
+
+        font-weight: 820;
+        line-height: 1.4;
+    }
+
+    .invoice-table__kind {
+        display: block;
+
+        margin-top: .08rem;
+
+        color: var(--iv-subtle);
+
+        font-size: .44rem;
+        font-weight: 720;
+        text-transform: uppercase;
+    }
+
+    .invoice-config {
+        display: grid;
+        gap: .14rem;
+
+        margin: 0;
+        padding: 0;
+
+        list-style: none;
+    }
+
+    .invoice-config li {
+        color: var(--iv-muted);
+
+        line-height: 1.4;
+
+        overflow-wrap: anywhere;
+    }
+
+    .invoice-config strong {
+        color: var(--iv-text);
+
+        font-weight: 760;
+    }
+
+    .invoice-table__qty,
+    .invoice-table__money {
+        white-space: nowrap;
+
+        font-variant-numeric: tabular-nums;
+    }
+
+    .invoice-table__money {
+        text-align: right;
+    }
+
+    .invoice-table th.invoice-table__money {
+        text-align: right;
+    }
+
+    /* =====================================================
+       SUMMARY
+    ====================================================== */
+
+    .invoice-summary-grid {
+        display: grid;
+        grid-template-columns:
+            minmax(0, 1fr)
+            minmax(280px, .55fr);
+
+        gap: .75rem;
+        align-items: start;
+
+        margin-top: .9rem;
+    }
+
+    .invoice-note-card,
+    .invoice-payment-card,
+    .invoice-totals {
+        break-inside: avoid;
+    }
+
+    .invoice-note-card,
+    .invoice-payment-card {
+        padding: .7rem;
+
+        border: 1px solid var(--iv-border);
+        border-radius: 11px;
+    }
+
+    .invoice-note-card + .invoice-payment-card {
+        margin-top: .55rem;
+    }
+
+    .invoice-note-card p,
+    .invoice-payment-card p {
+        margin: .34rem 0 0;
+
+        color: var(--iv-muted);
+
+        font-size: .51rem;
+        line-height: 1.48;
+
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+    }
+
+    .invoice-payment-list {
+        display: grid;
+        gap: .34rem;
+
+        margin: .5rem 0 0;
+    }
+
+    .invoice-payment-list > div {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: .6rem;
+
+        font-size: .51rem;
+        line-height: 1.4;
+    }
+
+    .invoice-payment-list dt {
+        color: var(--iv-subtle);
+
+        font-weight: 720;
+    }
+
+    .invoice-payment-list dd {
+        margin: 0;
+
+        color: var(--iv-text);
+
+        font-weight: 780;
+
+        text-align: right;
+        overflow-wrap: anywhere;
+    }
+
+    .invoice-totals {
+        overflow: hidden;
+
+        border: 1px solid var(--iv-border-strong);
+        border-radius: 12px;
+
+        background: var(--iv-bg);
+    }
+
+    .invoice-total-row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: .65rem;
+
+        padding: .55rem .65rem;
+
+        border-bottom: 1px solid var(--iv-border);
+
+        font-size: .53rem;
+        line-height: 1.35;
+    }
+
+    .invoice-total-row:last-child {
+        border-bottom: 0;
+    }
+
+    .invoice-total-row dt {
+        color: var(--iv-muted);
+
+        font-weight: 740;
+    }
+
+    .invoice-total-row dd {
+        margin: 0;
+
+        color: var(--iv-text);
+
+        font-weight: 820;
+
+        white-space: nowrap;
+
+        font-variant-numeric: tabular-nums;
+    }
+
+    .invoice-total-row--grand {
+        padding-top: .7rem;
+        padding-bottom: .7rem;
+
+        background: var(--iv-surface);
+    }
+
+    .invoice-total-row--grand dt {
+        color: var(--iv-strong);
+
+        font-size: .62rem;
+        font-weight: 900;
+    }
+
+    .invoice-total-row--grand dd {
+        color: var(--iv-strong);
+
+        font-size: .72rem;
+        font-weight: 930;
+    }
+
+    /* =====================================================
+       FOOTER / SAFE FAILURE
+    ====================================================== */
+
+    .invoice-document-footer {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: .75rem;
+        flex-wrap: wrap;
+
+        margin-top: 1rem;
+        padding-top: .75rem;
+
+        border-top: 1px solid var(--iv-border);
+
+        color: var(--iv-subtle);
+
+        font-size: .47rem;
+        line-height: 1.45;
+    }
+
+    .invoice-document-footer p {
+        margin: 0;
+
+        max-width: 68ch;
+    }
+
+    .invoice-error-state {
+        padding:
+            clamp(1rem, 4vw, 1.5rem);
+
+        border: 1px solid var(--iv-border);
+        border-radius: 15px;
+
+        background: var(--iv-surface);
+
+        box-shadow: var(--iv-shadow);
+    }
+
+    .invoice-error-state h1 {
+        margin: 0;
+
+        color: var(--iv-strong);
+
+        font-size: 1rem;
+        font-weight: 880;
+    }
+
+    .invoice-error-state p {
+        max-width: 66ch;
+
+        margin: .35rem 0 0;
+
+        color: var(--iv-muted);
+
+        font-size: .57rem;
+        line-height: 1.5;
+    }
+
+    .invoice-error-state__actions {
+        display: flex;
+        gap: .4rem;
+        flex-wrap: wrap;
+
+        margin-top: .7rem;
+    }
+
+    /* =====================================================
+       ACCESSIBILITY
+    ====================================================== */
+
+    .invoice-page a:focus-visible,
+    .invoice-page button:focus-visible {
+        outline:
+            3px solid
+            color-mix(
+                in srgb,
+                var(--iv-primary) 24%,
+                transparent
+            );
+
+        outline-offset: 2px;
+    }
+
+    /* =====================================================
+       RESPONSIVE SCREEN
+    ====================================================== */
+
+    @media (max-width: 820px) {
+        .invoice-meta-grid {
+            grid-template-columns:
+                repeat(
+                    2,
+                    minmax(0, 1fr)
+                );
+        }
+
+        .invoice-summary-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (max-width: 660px) {
+        .invoice-shell {
+            width: min(100% - 1rem, 760px);
+        }
+
+        .invoice-screen-actions {
+            align-items: stretch;
+            flex-direction: column;
+        }
+
+        .invoice-screen-actions__group {
+            width: 100%;
+        }
+
+        .invoice-screen-actions__group .invoice-btn {
+            flex: 1 1 auto;
+        }
+
+        .invoice-business-header {
+            grid-template-columns: 1fr;
+        }
+
+        .invoice-document-label {
+            text-align: left;
+        }
+
+        .invoice-two-column {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (max-width: 460px) {
+        .invoice-page {
+            padding-top: .6rem;
+        }
+
+        .invoice-shell {
+            width: min(100% - .72rem, 760px);
+        }
+
+        .invoice-document {
+            border-radius: 13px;
+        }
+
+        .invoice-document__inner {
+            padding: .72rem;
+        }
+
+        .invoice-meta-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .invoice-brand__logo,
+        .invoice-brand__fallback {
+            width: 44px;
+            height: 44px;
+            flex-basis: 44px;
+        }
+
+        .invoice-screen-actions__group {
+            align-items: stretch;
+            flex-direction: column;
+        }
+
+        .invoice-screen-actions__group .invoice-btn {
+            width: 100%;
+        }
+
+        .invoice-info-row {
+            grid-template-columns: 1fr;
+
+            gap: .06rem;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .invoice-page *,
+        .invoice-page *::before,
+        .invoice-page *::after {
+            scroll-behavior: auto !important;
+
+            transition-duration: .01ms !important;
+            animation-iteration-count: 1 !important;
+        }
+    }
+
+    /* =====================================================
+       PRINT — A4 / HIGH CONTRAST / ONE DOCUMENT COPY
+    ====================================================== */
+
+    @page {
+        size: A4;
+        margin: 12mm;
+    }
+
+    @media print {
+        html,
+        body {
+            background: #fff !important;
+            color: #000 !important;
+        }
+
+        body {
+            min-width: 0 !important;
+        }
+
+        .site-header,
+        .utility-bar,
+        .navbar,
+        .site-drawer,
+        .drawer-overlay,
+        .site-footer,
+        .toast-container,
+        .global-loading-overlay,
+        .top-progress,
+        .back-to-top,
+        .invoice-screen-actions,
+        #global-live-region {
+            display: none !important;
+        }
+
+        .site-main {
+            min-height: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+        }
+
+        .invoice-page {
+            min-height: 0 !important;
+
+            padding: 0 !important;
+
+            background: #fff !important;
+            color: #000 !important;
+        }
+
+        .invoice-shell {
+            width: 100% !important;
+            max-width: none !important;
+
+            margin: 0 !important;
+        }
+
+        .invoice-document {
+            overflow: visible !important;
+
+            border: 0 !important;
+            border-radius: 0 !important;
+
+            background: #fff !important;
+
+            box-shadow: none !important;
+        }
+
+        .invoice-document__inner {
+            padding: 0 !important;
+        }
+
+        .invoice-business-header,
+        .invoice-meta-grid,
+        .invoice-two-column,
+        .invoice-summary-grid,
+        .invoice-payment-card,
+        .invoice-note-card,
+        .invoice-totals,
+        .invoice-document-footer {
+            break-inside: avoid;
+        }
+
+        .invoice-business-header {
+            border-bottom: 2px solid #000 !important;
+        }
+
+        .invoice-brand__fallback {
+            border: 1px solid #000 !important;
+
+            background: #fff !important;
+            color: #000 !important;
+        }
+
+        .invoice-brand__business,
+        .invoice-document-label__ref,
+        .invoice-meta-card dt,
+        .invoice-info-row dt,
+        .invoice-table th,
+        .invoice-config li,
+        .invoice-payment-list dt,
+        .invoice-total-row dt,
+        .invoice-document-footer {
+            color: #333 !important;
+        }
+
+        .invoice-brand h1,
+        .invoice-document-label__type,
+        .invoice-meta-card dd,
+        .invoice-info-row dd,
+        .invoice-table__item,
+        .invoice-payment-list dd,
+        .invoice-total-row dd,
+        .invoice-total-row--grand dt,
+        .invoice-total-row--grand dd {
+            color: #000 !important;
+        }
+
+        .invoice-meta-card,
+        .invoice-info-card,
+        .invoice-table-wrap,
+        .invoice-note-card,
+        .invoice-payment-card,
+        .invoice-totals {
+            border-color: #bbb !important;
+
+            background: #fff !important;
+
+            box-shadow: none !important;
+        }
+
+        .invoice-meta-card,
+        .invoice-table th,
+        .invoice-total-row--grand {
+            background: #f6f6f6 !important;
+        }
+
+        .invoice-status,
+        .invoice-status--success,
+        .invoice-status--warning,
+        .invoice-status--danger {
+            border-color: #777 !important;
+
+            background: #fff !important;
+            color: #000 !important;
+        }
+
+        .invoice-status__dot {
+            background: #000 !important;
+        }
+
+        .invoice-table-wrap {
+            overflow: visible !important;
+        }
+
+        .invoice-table {
+            min-width: 0 !important;
+
+            font-size: 9.5pt !important;
+        }
+
+        .invoice-table thead {
+            display: table-header-group;
+        }
+
+        .invoice-table tr {
+            break-inside: avoid;
+        }
+
+        .invoice-table th,
+        .invoice-table td {
+            border-color: #bbb !important;
+        }
+
+        .invoice-summary-grid {
+            grid-template-columns:
+                minmax(0, 1fr)
+                minmax(250px, .55fr) !important;
+        }
+
+        a {
+            color: #000 !important;
+            text-decoration: none !important;
+        }
+
+        a[href]::after {
+            content: none !important;
+        }
+
+        * {
+            print-color-adjust: exact;
+            -webkit-print-color-adjust: exact;
+        }
+    }
+
+    /* =====================================================================
+       MR. ITALIANO — PROFESSIONAL INVOICE / COMMERCIAL BILL V9
+       =====================================================================
+
+       Reference-theme balance used on screen:
+       - ~65–70% matte black / charcoal environment
+       - ~12–15% warm ivory / white invoice-paper treatment
+       - ~12–15% antique gold / brass emphasis
+       - ~3–5% restrained deep tomato-red accent
+       - tiny silver/grey separators for precision
+
+       The printable invoice remains an actual readable A4 document.
+       Financial values remain backend-authoritative.
+       No invoice number is generated in CSS or JavaScript.
+       ===================================================================== */
+
+    /* =====================================================================
+       01 — THEME TOKENS
+       ===================================================================== */
+
+    .invoice-page {
+        --lux-black-00: #020202;
+        --lux-black-01: #050504;
+        --lux-black-02: #080806;
+        --lux-black-03: #0d0c09;
+        --lux-black-04: #12100d;
+        --lux-black-05: #18140f;
+        --lux-black-06: #211a14;
+
+        --lux-gold-050: #fff9e6;
+        --lux-gold-100: #fbeab8;
+        --lux-gold-200: #f3d582;
+        --lux-gold-300: #e7bc56;
+        --lux-gold-400: #d09a30;
+        --lux-gold-500: #ab721a;
+        --lux-gold-600: #7e4e0d;
+
+        --lux-paper: #fffdfa;
+        --lux-paper-warm: #fff8ee;
+        --lux-paper-soft: #f6eee2;
+        --lux-paper-line: #e4d9ca;
+
+        --lux-red-300: #d76f60;
+        --lux-red-400: #bd493b;
+        --lux-red-500: #963529;
+        --lux-red-soft: rgba(189, 73, 59, .10);
+
+        --lux-silver-050: #f4f2ee;
+        --lux-silver-100: #d8d4cd;
+        --lux-silver-200: #aaa69f;
+        --lux-silver-300: #7e7972;
+
+        --lux-screen-text: #ddd6ca;
+        --lux-screen-muted: #aaa196;
+        --lux-screen-subtle: #7d766d;
+
+        --lux-success: #3f815d;
+        --lux-success-soft: #edf7f0;
+        --lux-warning: #986b1c;
+        --lux-warning-soft: #fff5df;
+        --lux-error: #a83e33;
+        --lux-error-soft: #fff0ed;
+
+        --lux-border:
+            rgba(
+                228,
+                184,
+                81,
+                .14
+            );
+
+        --lux-border-strong:
+            rgba(
+                241,
+                210,
+                127,
+                .28
+            );
+
+        --lux-gold-gradient:
+            linear-gradient(
+                135deg,
+                #ffe8a7 0%,
+                #f3cf72 31%,
+                #dca840 64%,
+                #a36717 100%
+            );
+
+        --lux-dark-gradient:
+            linear-gradient(
+                145deg,
+                #211a14 0%,
+                #12100c 55%,
+                #070605 100%
+            );
+
+        --lux-silver-line:
+            linear-gradient(
+                90deg,
+                transparent 0%,
+                rgba(244, 242, 238, .13) 18%,
+                rgba(228, 184, 81, .30) 50%,
+                rgba(244, 242, 238, .13) 82%,
+                transparent 100%
+            );
+
+        --lux-shadow-sm:
+            0 13px 30px
+            rgba(0, 0, 0, .22);
+
+        --lux-shadow-md:
+            0 24px 58px
+            rgba(0, 0, 0, .31);
+
+        --lux-shadow-lg:
+            0 42px 100px
+            rgba(0, 0, 0, .44);
+
+        --lux-ease:
+            cubic-bezier(
+                .2,
+                .72,
+                .2,
+                1
+            );
+
+        --lux-ease-out:
+            cubic-bezier(
+                .16,
+                1,
+                .3,
+                1
+            );
+
+        --lux-pointer-x:
+            52%;
+
+        --lux-pointer-y:
+            12%;
+
+        /* Bridge the original invoice component variables. */
+        --iv-primary:
+            var(
+                --lux-gold-400
+            );
+
+        --iv-primary-hover:
+            var(
+                --lux-gold-500
+            );
+
+        --iv-primary-soft:
+            rgba(
+                208,
+                154,
+                48,
+                .09
+            );
+
+        --iv-primary-contrast:
+            #1b1107;
+
+        --iv-bg:
+            var(
+                --lux-paper-soft
+            );
+
+        --iv-surface:
+            var(
+                --lux-paper
+            );
+
+        --iv-surface-muted:
+            var(
+                --lux-paper-warm
+            );
+
+        --iv-text:
+            #3f342c;
+
+        --iv-strong:
+            #19130f;
+
+        --iv-muted:
+            #6f6258;
+
+        --iv-subtle:
+            #938477;
+
+        --iv-border:
+            #e4d9ca;
+
+        --iv-border-strong:
+            #cdbca6;
+
+        --iv-success:
+            var(
+                --lux-success
+            );
+
+        --iv-success-soft:
+            var(
+                --lux-success-soft
+            );
+
+        --iv-warning:
+            var(
+                --lux-warning
+            );
+
+        --iv-warning-soft:
+            var(
+                --lux-warning-soft
+            );
+
+        --iv-error:
+            var(
+                --lux-error
+            );
+
+        --iv-error-soft:
+            var(
+                --lux-error-soft
+            );
+
+        --iv-shadow:
+            var(
+                --lux-shadow-lg
+            );
+
+        --iv-transition:
+            180ms
+            var(
+                --lux-ease
+            );
+
+        position:
+            relative;
+
+        isolation:
+            isolate;
+
+        overflow:
+            clip;
+
+        color:
+            var(
+                --lux-screen-text
+            );
+
+        background:
+            radial-gradient(
+                circle at
+                var(--lux-pointer-x)
+                var(--lux-pointer-y),
+                rgba(
+                    228,
+                    184,
+                    81,
+                    .050
+                ),
+                transparent
+                30rem
+            ),
+            radial-gradient(
+                circle at
+                98%
+                3%,
+                rgba(
+                    228,
+                    184,
+                    81,
+                    .090
+                ),
+                transparent
+                31rem
+            ),
+            radial-gradient(
+                circle at
+                -4%
+                45%,
+                rgba(
+                    145,
+                    59,
+                    42,
+                    .045
+                ),
+                transparent
+                33rem
+            ),
+            linear-gradient(
+                180deg,
+                #090807
+                0%,
+                #050504
+                45%,
+                #090705
+                100%
+            );
+    }
+
+    .invoice-page::before {
+        content:
+            "";
+
+        position:
+            absolute;
+
+        z-index:
+            -2;
+
+        top:
+            2rem;
+
+        right:
+            -15rem;
+
+        width:
+            37rem;
+
+        height:
+            37rem;
+
+        border:
+            1px solid
+            rgba(
+                241,
+                210,
+                127,
+                .075
+            );
+
+        border-radius:
+            50%;
+
+        box-shadow:
+            0 0 0 46px
+            rgba(
+                228,
+                184,
+                81,
+                .013
+            ),
+            0 0 0 92px
+            rgba(
+                228,
+                184,
+                81,
+                .007
+            ),
+            0 0 90px
+            rgba(
+                228,
+                184,
+                81,
+                .030
+            );
+
+        transform:
+            rotateX(
+                67deg
+            )
+            rotateZ(
+                -7deg
+            );
+
+        pointer-events:
+            none;
+
+        animation:
+            invoice-lux-orbit
+            17s
+            ease-in-out
+            infinite
+            alternate;
+    }
+
+    @keyframes invoice-lux-orbit {
+        from {
+            transform:
+                translate3d(
+                    0,
+                    0,
+                    0
+                )
+                rotateX(
+                    67deg
+                )
+                rotateZ(
+                    -7deg
+                );
+        }
+
+        to {
+            transform:
+                translate3d(
+                    -34px,
+                    22px,
+                    0
+                )
+                rotateX(
+                    71deg
+                )
+                rotateZ(
+                    7deg
+                );
+        }
+    }
+
+    /* =====================================================================
+       02 — SCREEN TOOLBAR
+       ===================================================================== */
+
+    .invoice-screen-actions {
+        position:
+            relative;
+
+        padding:
+            .66rem;
+
+        border:
+            1px solid
+            rgba(
+                228,
+                184,
+                81,
+                .12
+            );
+
+        border-radius:
+            13px;
+
+        background:
+            linear-gradient(
+                180deg,
+                rgba(
+                    255,
+                    255,
+                    255,
+                    .022
+                ),
+                rgba(
+                    255,
+                    255,
+                    255,
+                    .007
+                )
+            ),
+            #0e0c09;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(
+                255,
+                255,
+                255,
+                .020
+            ),
+            0 14px 32px
+            rgba(
+                0,
+                0,
+                0,
+                .20
+            );
+    }
+
+    .invoice-screen-actions::after {
+        content:
+            "";
+
+        position:
+            absolute;
+
+        top:
+            0;
+
+        right:
+            18%;
+
+        left:
+            18%;
+
+        height:
+            1px;
+
+        background:
+            var(
+                --lux-silver-line
+            );
+
+        opacity:
+            .34;
+
+        pointer-events:
+            none;
+    }
+
+    .invoice-btn {
+        position:
+            relative;
+
+        overflow:
+            hidden;
+
+        isolation:
+            isolate;
+
+        border-radius:
+            9px;
+
+        font-size:
+            .60rem;
+
+        transition:
+            transform
+            180ms
+            var(
+                --lux-ease
+            ),
+            border-color
+            180ms
+            ease,
+            background
+            180ms
+            ease,
+            color
+            180ms
+            ease,
+            box-shadow
+            180ms
+            ease;
+    }
+
+    .invoice-btn--primary {
+        border-color:
+            rgba(
+                255,
+                233,
+                181,
+                .54
+            );
+
+        background:
+            var(
+                --lux-gold-gradient
+            );
+
+        color:
+            #1b1107;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(
+                255,
+                255,
+                255,
+                .36
+            ),
+            0 4px 0
+            #75460c,
+            0 13px 23px
+            rgba(
+                0,
+                0,
+                0,
+                .22
+            );
+    }
+
+    .invoice-btn--primary::before {
+        content:
+            "";
+
+        position:
+            absolute;
+
+        z-index:
+            -1;
+
+        top:
+            -90%;
+
+        bottom:
+            -90%;
+
+        left:
+            -35%;
+
+        width:
+            27%;
+
+        background:
+            linear-gradient(
+                90deg,
+                transparent,
+                rgba(
+                    255,
+                    255,
+                    255,
+                    .48
+                ),
+                transparent
+            );
+
+        transform:
+            rotate(
+                16deg
+            )
+            translateX(
+                -170%
+            );
+
+        transition:
+            transform
+            650ms
+            var(
+                --lux-ease-out
+            );
+    }
+
+    .invoice-btn--primary:hover::before {
+        transform:
+            rotate(
+                16deg
+            )
+            translateX(
+                600%
+            );
+    }
+
+    .invoice-btn--primary:hover {
+        transform:
+            translateY(
+                -3px
+            )
+            scale(
+                1.008
+            );
+
+        border-color:
+            rgba(
+                255,
+                240,
+                203,
+                .72
+            );
+
+        background:
+            var(
+                --lux-gold-gradient
+            );
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(
+                255,
+                255,
+                255,
+                .42
+            ),
+            0 7px 0
+            #75460c,
+            0 22px 37px
+            rgba(
+                0,
+                0,
+                0,
+                .29
+            );
+    }
+
+    .invoice-btn--secondary {
+        border-color:
+            rgba(
+                228,
+                184,
+                81,
+                .13
+            );
+
+        background:
+            rgba(
+                255,
+                255,
+                255,
+                .014
+            );
+
+        color:
+            var(
+                --lux-screen-muted
+            );
+    }
+
+    .invoice-btn--secondary:hover {
+        transform:
+            translateY(
+                -2px
+            );
+
+        border-color:
+            rgba(
+                255,
+                230,
+                168,
+                .25
+            );
+
+        background:
+            rgba(
+                228,
+                184,
+                81,
+                .05
+            );
+
+        color:
+            var(
+                --lux-gold-100
+            );
+    }
+
+    /* =====================================================================
+       03 — INVOICE PAPER
+       ===================================================================== */
+
+    .invoice-document {
+        position:
+            relative;
+
+        overflow:
+            hidden;
+
+        isolation:
+            isolate;
+
+        border:
+            1px solid
+            rgba(
+                255,
+                246,
+                230,
+                .70
+            );
+
+        border-radius:
+            20px;
+
+        background:
+            linear-gradient(
+                180deg,
+                #fffdfa
+                0%,
+                #fffaf3
+                58%,
+                #fff8ee
+                100%
+            );
+
+        box-shadow:
+            0 0 0 1px
+            rgba(
+                228,
+                184,
+                81,
+                .055
+            ),
+            0 40px 88px
+            rgba(
+                0,
+                0,
+                0,
+                .42
+            ),
+            0 0 42px
+            rgba(
+                228,
+                184,
+                81,
+                .035
+            );
+
+        transform:
+            translateZ(
+                0
+            );
+
+        transition:
+            transform
+            240ms
+            var(
+                --lux-ease
+            ),
+            box-shadow
+            240ms
+            ease;
+    }
+
+    .invoice-document:hover {
+        transform:
+            translateY(
+                -2px
+            );
+
+        box-shadow:
+            0 0 0 1px
+            rgba(
+                228,
+                184,
+                81,
+                .075
+            ),
+            0 46px 98px
+            rgba(
+                0,
+                0,
+                0,
+                .46
+            ),
+            0 0 48px
+            rgba(
+                228,
+                184,
+                81,
+                .045
+            );
+    }
+
+    .invoice-document__inner {
+        position:
+            relative;
+
+        z-index:
+            3;
+
+        padding:
+            clamp(
+                1rem,
+                3.5vw,
+                1.9rem
+            );
+    }
+
+    .invoice-document__top-ribbon {
+        position:
+            relative;
+
+        z-index:
+            5;
+
+        display:
+            grid;
+
+        grid-template-columns:
+            minmax(
+                0,
+                8fr
+            )
+            minmax(
+                46px,
+                1.2fr
+            )
+            minmax(
+                34px,
+                .8fr
+            );
+
+        height:
+            9px;
+
+        box-shadow:
+            0 1px 0
+            rgba(
+                255,
+                255,
+                255,
+                .55
+            );
+    }
+
+    .invoice-document__top-ribbon-gold {
+        background:
+            linear-gradient(
+                90deg,
+                #9c6213,
+                #dca840,
+                #f3d582,
+                #c18424
+            );
+    }
+
+    .invoice-document__top-ribbon-ivory {
+        background:
+            #fffdf8;
+    }
+
+    .invoice-document__top-ribbon-red {
+        background:
+            linear-gradient(
+                90deg,
+                #a43a2e,
+                #c95849
+            );
+    }
+
+    /* =====================================================================
+       04 — WATERMARK
+       ===================================================================== */
+
+    .invoice-document__watermark {
+        position:
+            absolute;
+
+        z-index:
+            1;
+
+        top:
+            50%;
+
+        left:
+            50%;
+
+        display:
+            grid;
+
+        justify-items:
+            center;
+
+        width:
+            min(
+                84%,
+                760px
+            );
+
+        transform:
+            translate(
+                -50%,
+                -50%
+            )
+            rotate(
+                -24deg
+            );
+
+        color:
+            rgba(
+                79,
+                56,
+                37,
+                .040
+            );
+
+        text-align:
+            center;
+
+        pointer-events:
+            none;
+
+        user-select:
+            none;
+    }
+
+    .invoice-document__watermark-brand {
+        max-width:
+            100%;
+
+        font-size:
+            clamp(
+                2rem,
+                6vw,
+                5rem
+            );
+
+        font-weight:
+            950;
+
+        line-height:
+            .90;
+
+        letter-spacing:
+            -.055em;
+
+        text-transform:
+            uppercase;
+
+        white-space:
+            nowrap;
+
+        overflow:
+            hidden;
+
+        text-overflow:
+            ellipsis;
+    }
+
+    .invoice-document__watermark-type {
+        margin-top:
+            .35rem;
+
+        color:
+            rgba(
+                189,
+                73,
+                59,
+                .030
+            );
+
+        font-size:
+            clamp(
+                1.1rem,
+                3vw,
+                2.4rem
+            );
+
+        font-weight:
+            900;
+
+        letter-spacing:
+            .28em;
+
+        text-indent:
+            .28em;
+    }
+
+    /* =====================================================================
+       05 — BUSINESS HEADER
+       ===================================================================== */
+
+    .invoice-business-header {
+        position:
+            relative;
+
+        z-index:
+            2;
+
+        align-items:
+            center;
+
+        padding:
+            .85rem;
+
+        border:
+            0;
+
+        border-radius:
+            14px;
+
+        background:
+            radial-gradient(
+                circle at
+                92%
+                12%,
+                rgba(
+                    228,
+                    184,
+                    81,
+                    .11
+                ),
+                transparent
+                13rem
+            ),
+            linear-gradient(
+                145deg,
+                #1f1812,
+                #0d0b08
+            );
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(
+                255,
+                255,
+                255,
+                .055
+            ),
+            0 14px 30px
+            rgba(
+                44,
+                29,
+                17,
+                .16
+            );
+    }
+
+    .invoice-brand__logo {
+        filter:
+            drop-shadow(
+                0 8px 13px
+                rgba(
+                    0,
+                    0,
+                    0,
+                    .22
+                )
+            );
+    }
+
+    .invoice-brand__fallback {
+        border:
+            1px solid
+            rgba(
+                255,
+                234,
+                184,
+                .28
+            );
+
+        background:
+            var(
+                --lux-gold-gradient
+            );
+
+        color:
+            #1b1107;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(
+                255,
+                255,
+                255,
+                .35
+            ),
+            0 4px 0
+            #75460c;
+    }
+
+    .invoice-brand h1 {
+        color:
+            var(
+                --lux-ivory
+            );
+
+        font-size:
+            clamp(
+                1.28rem,
+                3vw,
+                1.9rem
+            );
+
+        letter-spacing:
+            -.042em;
+
+        text-shadow:
+            0 14px 28px
+            rgba(
+                0,
+                0,
+                0,
+                .24
+            );
+    }
+
+    .invoice-brand__business {
+        color:
+            rgba(
+                255,
+                250,
+                241,
+                .58
+            );
+    }
+
+    .invoice-brand__business strong {
+        color:
+            var(
+                --lux-gold-100
+            );
+    }
+
+    .invoice-document-label {
+        min-width:
+            190px;
+
+        padding-left:
+            .8rem;
+
+        border-left:
+            1px solid
+            rgba(
+                241,
+                210,
+                127,
+                .16
+            );
+
+        text-align:
+            right;
+    }
+
+    .invoice-document-label__eyebrow {
+        display:
+            block;
+
+        margin-bottom:
+            .20rem;
+
+        color:
+            rgba(
+                255,
+                250,
+                241,
+                .42
+            );
+
+        font-size:
+            .43rem;
+
+        font-weight:
+            820;
+
+        letter-spacing:
+            .10em;
+
+        text-transform:
+            uppercase;
+    }
+
+    .invoice-document-label__type {
+        color:
+            var(
+                --lux-ivory
+            );
+
+        font-size:
+            1.02rem;
+
+        letter-spacing:
+            .075em;
+    }
+
+    .invoice-document-label__series {
+        display:
+            block;
+
+        margin-top:
+            .46rem;
+
+        color:
+            rgba(
+                255,
+                250,
+                241,
+                .40
+            );
+
+        font-size:
+            .42rem;
+
+        font-weight:
+            760;
+
+        letter-spacing:
+            .08em;
+
+        text-transform:
+            uppercase;
+    }
+
+    .invoice-document-label__ref {
+        color:
+            var(
+                --lux-gold-100
+            );
+
+        font-size:
+            .62rem;
+
+        font-weight:
+            870;
+
+        font-variant-numeric:
+            tabular-nums;
+    }
+
+    /* =====================================================================
+       06 — BILLING RECORD INTRO
+       ===================================================================== */
+
+    .invoice-document-intro {
+        position:
+            relative;
+
+        z-index:
+            2;
+
+        display:
+            flex;
+
+        align-items:
+            center;
+
+        justify-content:
+            space-between;
+
+        gap:
+            .8rem;
+
+        margin-top:
+            .86rem;
+
+        padding:
+            .55rem
+            .64rem;
+
+        border:
+            1px solid
+            #eadfce;
+
+        border-radius:
+            10px;
+
+        background:
+            linear-gradient(
+                90deg,
+                rgba(
+                    208,
+                    154,
+                    48,
+                    .055
+                ),
+                rgba(
+                    255,
+                    255,
+                    255,
+                    .60
+                )
+                48%,
+                rgba(
+                    189,
+                    73,
+                    59,
+                    .035
+                )
+            );
+    }
+
+    .invoice-document-intro__label {
+        color:
+            #6b4b22;
+
+        font-size:
+            .48rem;
+
+        font-weight:
+            900;
+
+        letter-spacing:
+            .09em;
+
+        text-transform:
+            uppercase;
+    }
+
+    .invoice-document-intro__copy {
+        margin:
+            .10rem
+            0
+            0;
+
+        color:
+            #817264;
+
+        font-size:
+            .48rem;
+
+        line-height:
+            1.42;
+    }
+
+    .invoice-document-intro__currency {
+        min-width:
+            78px;
+
+        padding-left:
+            .65rem;
+
+        border-left:
+            1px solid
+            #e2d4c2;
+
+        text-align:
+            right;
+    }
+
+    .invoice-document-intro__currency span {
+        display:
+            block;
+
+        color:
+            #9a8878;
+
+        font-size:
+            .40rem;
+
+        font-weight:
+            760;
+
+        text-transform:
+            uppercase;
+
+        letter-spacing:
+            .08em;
+    }
+
+    .invoice-document-intro__currency strong {
+        display:
+            block;
+
+        margin-top:
+            .05rem;
+
+        color:
+            #2d2118;
+
+        font-size:
+            .60rem;
+
+        font-weight:
+            900;
+    }
+
+    /* =====================================================================
+       07 — META CARDS
+       ===================================================================== */
+
+    .invoice-meta-card {
+        position:
+            relative;
+
+        overflow:
+            hidden;
+
+        border-color:
+            #e4d9ca;
+
+        background:
+            rgba(
+                255,
+                255,
+                255,
+                .72
+            );
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(
+                255,
+                255,
+                255,
+                .82
+            ),
+            0 7px 15px
+            rgba(
+                78,
+                55,
+                35,
+                .045
+            );
+
+        transition:
+            transform
+            180ms
+            var(
+                --lux-ease
+            ),
+            border-color
+            180ms
+            ease,
+            box-shadow
+            180ms
+            ease;
+    }
+
+    .invoice-meta-card::before {
+        content:
+            "";
+
+        position:
+            absolute;
+
+        top:
+            0;
+
+        right:
+            0;
+
+        left:
+            0;
+
+        height:
+            2px;
+
+        background:
+            linear-gradient(
+                90deg,
+                var(
+                    --lux-gold-300
+                ),
+                rgba(
+                    189,
+                    73,
+                    59,
+                    .18
+                )
+            );
+
+        opacity:
+            .72;
+    }
+
+    .invoice-meta-card:hover {
+        transform:
+            translateY(
+                -2px
+            );
+
+        border-color:
+            #d6c5ae;
+
+        box-shadow:
+            0 10px 19px
+            rgba(
+                78,
+                55,
+                35,
+                .065
+            );
+    }
+
+    .invoice-meta-card dt {
+        color:
+            #958373;
+    }
+
+    .invoice-meta-card dd {
+        color:
+            #33281f;
+
+        font-size:
+            .58rem;
+
+        font-variant-numeric:
+            tabular-nums;
+    }
+
+    /* =====================================================================
+       08 — STATUS PILLS
+       ===================================================================== */
+
+    .invoice-status {
+        border:
+            1px solid
+            #ddd0c0;
+
+        background:
+            #f8f0e6;
+
+        color:
+            #75695d;
+    }
+
+    .invoice-status__dot {
+        box-shadow:
+            0 0 7px
+            currentColor;
+    }
+
+    .invoice-status--success {
+        border-color:
+            #bdd8c7;
+
+        background:
+            #edf7f0;
+
+        color:
+            #347351;
+    }
+
+    .invoice-status--warning {
+        border-color:
+            #ead5a9;
+
+        background:
+            #fff6e2;
+
+        color:
+            #8e6316;
+    }
+
+    .invoice-status--danger {
+        border-color:
+            #e5b8b1;
+
+        background:
+            #fff0ed;
+
+        color:
+            #a43d32;
+    }
+
+    /* =====================================================================
+       09 — BILL TO / FULFILMENT
+       ===================================================================== */
+
+    .invoice-info-card {
+        position:
+            relative;
+
+        overflow:
+            hidden;
+
+        border-color:
+            #e3d7c7;
+
+        background:
+            rgba(
+                255,
+                255,
+                255,
+                .70
+            );
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(
+                255,
+                255,
+                255,
+                .82
+            ),
+            0 8px 18px
+            rgba(
+                80,
+                56,
+                36,
+                .040
+            );
+    }
+
+    .invoice-info-card::before {
+        content:
+            "";
+
+        position:
+            absolute;
+
+        top:
+            .68rem;
+
+        bottom:
+            .68rem;
+
+        left:
+            0;
+
+        width:
+            2px;
+
+        border-radius:
+            0
+            999px
+            999px
+            0;
+
+        background:
+            linear-gradient(
+                var(
+                    --lux-gold-300
+                ),
+                var(
+                    --lux-red-400
+                )
+            );
+    }
+
+    .invoice-section-title {
+        color:
+            #261a13;
+
+        font-size:
+            .66rem;
+
+        letter-spacing:
+            -.012em;
+    }
+
+    .invoice-info-row {
+        padding-bottom:
+            .26rem;
+
+        border-bottom:
+            1px dashed
+            #eadfd1;
+    }
+
+    .invoice-info-row:last-child {
+        padding-bottom:
+            0;
+
+        border-bottom:
+            0;
+    }
+
+    .invoice-info-row dt {
+        color:
+            #958476;
+    }
+
+    .invoice-info-row dd {
+        color:
+            #40342a;
+    }
+
+    /* =====================================================================
+       10 — ITEMS TABLE
+       ===================================================================== */
+
+    .invoice-items-section {
+        position:
+            relative;
+
+        z-index:
+            2;
+    }
+
+    .invoice-table-wrap {
+        border-color:
+            #d9cbb9;
+
+        background:
+            rgba(
+                255,
+                255,
+                255,
+                .80
+            );
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(
+                255,
+                255,
+                255,
+                .84
+            ),
+            0 10px 22px
+            rgba(
+                80,
+                56,
+                36,
+                .045
+            );
+    }
+
+    .invoice-table {
+        font-size:
+            .54rem;
+    }
+
+    .invoice-table th {
+        border-bottom:
+            1px solid
+            #d8c9b6;
+
+        background:
+            linear-gradient(
+                180deg,
+                #2a211a,
+                #17120e
+            );
+
+        color:
+            #f4e7d2;
+
+        font-size:
+            .44rem;
+
+        letter-spacing:
+            .075em;
+    }
+
+    .invoice-table th:first-child {
+        box-shadow:
+            inset 3px 0 0
+            var(
+                --lux-gold-300
+            );
+    }
+
+    .invoice-table tbody tr {
+        transition:
+            background
+            160ms
+            ease;
+    }
+
+    .invoice-table tbody tr:nth-child(even) {
+        background:
+            rgba(
+                246,
+                238,
+                226,
+                .52
+            );
+    }
+
+    .invoice-table tbody tr:hover {
+        background:
+            rgba(
+                243,
+                213,
+                130,
+                .085
+            );
+    }
+
+    .invoice-table th,
+    .invoice-table td {
+        border-bottom-color:
+            #e8ded1;
+    }
+
+    .invoice-table__item {
+        color:
+            #231812;
+
+        font-size:
+            .58rem;
+    }
+
+    .invoice-table__kind {
+        color:
+            #a36e27;
+    }
+
+    .invoice-config li,
+    .invoice-muted {
+        color:
+            #766a60;
+    }
+
+    .invoice-config strong {
+        color:
+            #463a30;
+    }
+
+    .invoice-table__money {
+        color:
+            #2c2119;
+
+        font-weight:
+            780;
+    }
+
+    /* =====================================================================
+       11 — PAYMENT / NOTES / TOTALS
+       ===================================================================== */
+
+    .invoice-note-card,
+    .invoice-payment-card {
+        position:
+            relative;
+
+        overflow:
+            hidden;
+
+        border-color:
+            #e3d7c7;
+
+        background:
+            rgba(
+                255,
+                255,
+                255,
+                .70
+            );
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(
+                255,
+                255,
+                255,
+                .82
+            );
+    }
+
+    .invoice-note-card::after,
+    .invoice-payment-card::after {
+        content:
+            "";
+
+        position:
+            absolute;
+
+        top:
+            0;
+
+        right:
+            12%;
+
+        left:
+            12%;
+
+        height:
+            1px;
+
+        background:
+            linear-gradient(
+                90deg,
+                transparent,
+                rgba(
+                    208,
+                    154,
+                    48,
+                    .45
+                ),
+                transparent
+            );
+    }
+
+    .invoice-payment-list dt {
+        color:
+            #958476;
+    }
+
+    .invoice-payment-list dd {
+        color:
+            #3e3229;
+    }
+
+    .invoice-totals {
+        border-color:
+            #c9b28f;
+
+        background:
+            linear-gradient(
+                180deg,
+                #fff9ef,
+                #f7ecdc
+            );
+
+        box-shadow:
+            0 13px 28px
+            rgba(
+                79,
+                54,
+                33,
+                .080
+            );
+    }
+
+    .invoice-total-row {
+        border-bottom-color:
+            #e0d2bf;
+
+        color:
+            #473a30;
+    }
+
+    .invoice-total-row dt {
+        color:
+            #796b5f;
+    }
+
+    .invoice-total-row dd {
+        color:
+            #30251d;
+
+        font-variant-numeric:
+            tabular-nums;
+    }
+
+    .invoice-total-row--grand {
+        position:
+            relative;
+
+        overflow:
+            hidden;
+
+        background:
+            linear-gradient(
+                135deg,
+                #211a14,
+                #0f0c09
+            );
+    }
+
+    .invoice-total-row--grand::before {
+        content:
+            "";
+
+        position:
+            absolute;
+
+        top:
+            0;
+
+        right:
+            0;
+
+        left:
+            0;
+
+        height:
+            2px;
+
+        background:
+            linear-gradient(
+                90deg,
+                var(
+                    --lux-gold-300
+                ),
+                #fff4cd,
+                var(
+                    --lux-red-400
+                )
+            );
+    }
+
+    .invoice-total-row--grand dt {
+        color:
+            rgba(
+                255,
+                250,
+                241,
+                .72
+            );
+    }
+
+    .invoice-total-row--grand dd {
+        color:
+            var(
+                --lux-gold-100
+            );
+
+        font-size:
+            .78rem;
+
+        text-shadow:
+            0 0 14px
+            rgba(
+                228,
+                184,
+                81,
+                .12
+            );
+    }
+
+    /* =====================================================================
+       12 — DOCUMENT FOOTER / RED ACCENT
+       ===================================================================== */
+
+    .invoice-document-footer {
+        position:
+            relative;
+
+        z-index:
+            2;
+
+        align-items:
+            center;
+
+        border-top:
+            1px solid
+            #e5d9ca;
+
+        color:
+            #8d7f72;
+    }
+
+    .invoice-document-footer__copy {
+        display:
+            grid;
+
+        gap:
+            .28rem;
+
+        max-width:
+            76%;
+    }
+
+    .invoice-document-footer__thanks {
+        color:
+            #5c4d41;
+    }
+
+    .invoice-document-footer__thanks strong {
+        color:
+            #7c541e;
+    }
+
+    .invoice-document-footer__seal {
+        width:
+            62px;
+
+        height:
+            62px;
+
+        display:
+            grid;
+
+        place-items:
+            center;
+
+        align-content:
+            center;
+
+        border:
+            1px solid
+            rgba(
+                189,
+                73,
+                59,
+                .30
+            );
+
+        border-radius:
+            50%;
+
+        background:
+            radial-gradient(
+                circle,
+                rgba(
+                    189,
+                    73,
+                    59,
+                    .045
+                ),
+                transparent
+                68%
+            );
+
+        color:
+            var(
+                --lux-red-500
+            );
+
+        transform:
+            rotate(
+                -7deg
+            );
+
+        box-shadow:
+            inset 0 0 0 3px
+            rgba(
+                189,
+                73,
+                59,
+                .035
+            );
+    }
+
+    .invoice-document-footer__seal span {
+        font-size:
+            .72rem;
+
+        font-weight:
+            950;
+
+        line-height:
+            1;
+    }
+
+    .invoice-document-footer__seal small {
+        margin-top:
+            .12rem;
+
+        font-size:
+            .30rem;
+
+        font-weight:
+            850;
+
+        letter-spacing:
+            .06em;
+    }
+
+    .invoice-document__bottom-accent {
+        position:
+            relative;
+
+        z-index:
+            5;
+
+        display:
+            grid;
+
+        grid-template-columns:
+            8fr
+            1.2fr
+            .8fr;
+
+        height:
+            10px;
+
+        margin:
+            1rem
+            calc(
+                clamp(
+                    1rem,
+                    3.5vw,
+                    1.9rem
+                )
+                *
+                -1
+            )
+            calc(
+                clamp(
+                    1rem,
+                    3.5vw,
+                    1.9rem
+                )
+                *
+                -1
+            );
+    }
+
+    .invoice-document__bottom-accent-white {
+        background:
+            linear-gradient(
+                90deg,
+                #fffdf8,
+                #f6eee3
+            );
+    }
+
+    .invoice-document__bottom-accent-red {
+        background:
+            linear-gradient(
+                90deg,
+                var(
+                    --lux-red-400
+                ),
+                #d66a5b
+            );
+    }
+
+    .invoice-document__bottom-accent-gold {
+        background:
+            linear-gradient(
+                90deg,
+                #dca840,
+                #f3d582
+            );
+    }
+
+    /* =====================================================================
+       13 — ERROR STATE
+       ===================================================================== */
+
+    .invoice-error-state {
+        border-color:
+            rgba(
+                228,
+                184,
+                81,
+                .15
+            );
+
+        background:
+            radial-gradient(
+                circle at
+                90%
+                8%,
+                rgba(
+                    228,
+                    184,
+                    81,
+                    .055
+                ),
+                transparent
+                18rem
+            ),
+            linear-gradient(
+                145deg,
+                #17130f,
+                #0d0b08
+            );
+
+        color:
+            var(
+                --lux-screen-text
+            );
+
+        box-shadow:
+            var(
+                --lux-shadow-md
+            );
+    }
+
+    .invoice-error-state h1 {
+        color:
+            var(
+                --lux-ivory
+            );
+    }
+
+    .invoice-error-state p {
+        color:
+            var(
+                --lux-screen-muted
+            );
+    }
+
+    /* =====================================================================
+       14 — SCREEN REVEAL / MICRO-INTERACTION CLASSES
+       ===================================================================== */
+
+    .invoice-lux-reveal {
+        opacity:
+            0;
+
+        filter:
+            blur(
+                4px
+            );
+
+        transform:
+            translateY(
+                22px
+            )
+            scale(
+                .992
+            );
+
+        transition:
+            opacity
+            680ms
+            var(
+                --lux-ease-out
+            ),
+            transform
+            680ms
+            var(
+                --lux-ease-out
+            ),
+            filter
+            680ms
+            var(
+                --lux-ease-out
+            );
+    }
+
+    .invoice-lux-reveal.is-lux-visible {
+        opacity:
+            1;
+
+        filter:
+            blur(
+                0
+            );
+
+        transform:
+            translateY(
+                0
+            )
+            scale(
+                1
+            );
+    }
+
+    .invoice-lux-ripple {
+        position:
+            absolute;
+
+        z-index:
+            20;
+
+        width:
+            14px;
+
+        height:
+            14px;
+
+        border-radius:
+            50%;
+
+        background:
+            rgba(
+                255,
+                255,
+                255,
+                .46
+            );
+
+        pointer-events:
+            none;
+
+        transform:
+            translate(
+                -50%,
+                -50%
+            )
+            scale(
+                0
+            );
+
+        animation:
+            invoice-lux-ripple
+            590ms
+            ease-out
+            forwards;
+    }
+
+    @keyframes invoice-lux-ripple {
+        to {
+            opacity:
+                0;
+
+            transform:
+                translate(
+                    -50%,
+                    -50%
+                )
+                scale(
+                    24
+                );
+        }
+    }
+
+    .invoice-btn.is-lux-copied {
+        border-color:
+            rgba(
+                138,
+                185,
+                154,
+                .34
+            );
+
+        background:
+            rgba(
+                138,
+                185,
+                154,
+                .075
+            );
+
+        color:
+            #a4cfb2;
+    }
+
+    /* =====================================================================
+       15 — RESPONSIVE
+       ===================================================================== */
+
+    @media (max-width: 820px) {
+        .invoice-document-label {
+            min-width:
+                160px;
+        }
+
+        .invoice-document-intro {
+            align-items:
+                flex-start;
+        }
+    }
+
+    @media (max-width: 660px) {
+        .invoice-business-header {
+            align-items:
+                flex-start;
+        }
+
+        .invoice-document-label {
+            min-width:
+                0;
+
+            padding-top:
+                .65rem;
+
+            padding-left:
+                0;
+
+            border-top:
+                1px solid
+                rgba(
+                    241,
+                    210,
+                    127,
+                    .14
+                );
+
+            border-left:
+                0;
+
+            text-align:
+                left;
+        }
+
+        .invoice-document-intro {
+            align-items:
+                stretch;
+
+            flex-direction:
+                column;
+        }
+
+        .invoice-document-intro__currency {
+            min-width:
+                0;
+
+            padding-top:
+                .45rem;
+
+            padding-left:
+                0;
+
+            border-top:
+                1px solid
+                #e2d4c2;
+
+            border-left:
+                0;
+
+            text-align:
+                left;
+        }
+
+        .invoice-document-footer__copy {
+            max-width:
+                100%;
+        }
+    }
+
+    @media (max-width: 460px) {
+        .invoice-document__watermark-brand {
+            font-size:
+                1.7rem;
+        }
+
+        .invoice-document__watermark-type {
+            font-size:
+                .9rem;
+        }
+
+        .invoice-document-footer__seal {
+            width:
+                54px;
+
+            height:
+                54px;
+        }
+    }
+
+    /* =====================================================================
+       16 — TOUCH DEVICES
+       ===================================================================== */
+
+    @media (hover: none),
+           (pointer: coarse) {
+        .invoice-document:hover,
+        .invoice-meta-card:hover,
+        .invoice-btn:hover {
+            transform:
+                none
+                !important;
+        }
+    }
+
+    /* =====================================================================
+       17 — REDUCED MOTION
+       ===================================================================== */
+
+    @media (prefers-reduced-motion: reduce) {
+        .invoice-page::before,
+        .invoice-lux-ripple {
+            animation:
+                none
+                !important;
+        }
+
+        .invoice-lux-reveal,
+        .invoice-lux-reveal.is-lux-visible {
+            opacity:
+                1
+                !important;
+
+            filter:
+                none
+                !important;
+
+            transform:
+                none
+                !important;
+
+            transition:
+                none
+                !important;
+        }
+
+        .invoice-document,
+        .invoice-meta-card,
+        .invoice-btn {
+            transition:
+                none
+                !important;
+
+            transform:
+                none
+                !important;
+        }
+    }
+
+    /* =====================================================================
+       18 — PRINT / PROFESSIONAL A4 BILL
+       ===================================================================== */
+
+    @media print {
+        .invoice-document__watermark {
+            display:
+                grid
+                !important;
+
+            color:
+                rgba(
+                    0,
+                    0,
+                    0,
+                    .035
+                )
+                !important;
+        }
+
+        .invoice-document__watermark-type {
+            color:
+                rgba(
+                    120,
+                    0,
+                    0,
+                    .028
+                )
+                !important;
+        }
+
+        .invoice-document__top-ribbon {
+            height:
+                4mm
+                !important;
+        }
+
+        .invoice-document__bottom-accent {
+            height:
+                3mm
+                !important;
+        }
+
+        .invoice-business-header {
+            border:
+                1px solid
+                #1f1f1f
+                !important;
+
+            background:
+                #141414
+                !important;
+
+            box-shadow:
+                none
+                !important;
+        }
+
+        .invoice-brand h1,
+        .invoice-document-label__type {
+            color:
+                #ffffff
+                !important;
+        }
+
+        .invoice-brand__business,
+        .invoice-document-label__eyebrow,
+        .invoice-document-label__series {
+            color:
+                #d7d7d7
+                !important;
+        }
+
+        .invoice-brand__business strong,
+        .invoice-document-label__ref {
+            color:
+                #f0d189
+                !important;
+        }
+
+        .invoice-document-intro {
+            border-color:
+                #cfcfcf
+                !important;
+
+            background:
+                #f8f8f8
+                !important;
+        }
+
+        .invoice-meta-card,
+        .invoice-info-card,
+        .invoice-note-card,
+        .invoice-payment-card {
+            border-color:
+                #c7c7c7
+                !important;
+
+            background:
+                rgba(
+                    255,
+                    255,
+                    255,
+                    .92
+                )
+                !important;
+        }
+
+        .invoice-table th {
+            background:
+                #1b1b1b
+                !important;
+
+            color:
+                #ffffff
+                !important;
+        }
+
+        .invoice-table tbody tr:nth-child(even) {
+            background:
+                #f7f7f7
+                !important;
+        }
+
+        .invoice-total-row--grand {
+            background:
+                #1b1b1b
+                !important;
+        }
+
+        .invoice-total-row--grand dt {
+            color:
+                #e8e8e8
+                !important;
+        }
+
+        .invoice-total-row--grand dd {
+            color:
+                #f0d189
+                !important;
+        }
+
+        .invoice-document-footer__seal {
+            border-color:
+                #777777
+                !important;
+
+            color:
+                #333333
+                !important;
+
+            box-shadow:
+                none
+                !important;
+        }
+
+        .invoice-document,
+        .invoice-document:hover {
+            transform:
+                none
+                !important;
+
+            box-shadow:
+                none
+                !important;
+        }
+    }
+
+    /* =====================================================================
+       END — PROFESSIONAL INVOICE SYSTEM
+       ===================================================================== */
+
+
+    .invoice-status {
+        font-variant-numeric:
+            tabular-nums;
+    }
+
+    .invoice-table__qty,
+    .invoice-table__money,
+    .invoice-total-row dd,
+    .invoice-payment-list dd,
+    .invoice-meta-card dd,
+    .invoice-document-label__ref {
+        font-feature-settings:
+            "tnum" 1,
+            "lnum" 1;
+    }
+
+    .invoice-table-wrap:focus-visible {
+        outline:
+            3px solid
+            rgba(
+                208,
+                154,
+                48,
+                .18
+            );
+
+        outline-offset:
+            3px;
+    }
+
+
+    @media (max-width: 1180px) {
+        .invoice-document {
+            border-radius:
+                19px;
+        }
+
+        .invoice-meta-card,
+        .invoice-info-card,
+        .invoice-note-card,
+        .invoice-payment-card,
+        .invoice-totals {
+            --invoice-responsive-scale:
+                1;
+        }
+    }
+
+
+    @media (max-width: 980px) {
+        .invoice-document {
+            border-radius:
+                18px;
+        }
+
+        .invoice-meta-card,
+        .invoice-info-card,
+        .invoice-note-card,
+        .invoice-payment-card,
+        .invoice-totals {
+            --invoice-responsive-scale:
+                .98;
+        }
+    }
+
+
+    @media (max-width: 820px) {
+        .invoice-document {
+            border-radius:
+                17px;
+        }
+
+        .invoice-meta-card,
+        .invoice-info-card,
+        .invoice-note-card,
+        .invoice-payment-card,
+        .invoice-totals {
+            --invoice-responsive-scale:
+                .96;
+        }
+    }
+
+
+    @media (max-width: 720px) {
+        .invoice-document {
+            border-radius:
+                16px;
+        }
+
+        .invoice-meta-card,
+        .invoice-info-card,
+        .invoice-note-card,
+        .invoice-payment-card,
+        .invoice-totals {
+            --invoice-responsive-scale:
+                .94;
+        }
+    }
+
+
+    @media (max-width: 660px) {
+        .invoice-document {
+            border-radius:
+                16px;
+        }
+
+        .invoice-meta-card,
+        .invoice-info-card,
+        .invoice-note-card,
+        .invoice-payment-card,
+        .invoice-totals {
+            --invoice-responsive-scale:
+                .92;
+        }
+    }
+
+
+    @media (max-width: 560px) {
+        .invoice-document {
+            border-radius:
+                15px;
+        }
+
+        .invoice-meta-card,
+        .invoice-info-card,
+        .invoice-note-card,
+        .invoice-payment-card,
+        .invoice-totals {
+            --invoice-responsive-scale:
+                .90;
+        }
+    }
+
+
+    @media (max-width: 460px) {
+        .invoice-document {
+            border-radius:
+                14px;
+        }
+
+        .invoice-meta-card,
+        .invoice-info-card,
+        .invoice-note-card,
+        .invoice-payment-card,
+        .invoice-totals {
+            --invoice-responsive-scale:
+                .88;
+        }
+    }
+
+</style>
+{% endblock %}
+
+{% block content %}
+<section
+    class="invoice-page"
+    id="invoice-page-root"
+    data-order-reference="{{ order_reference }}"
+>
+    <span
+        class="visually-hidden"
+        id="invoice-live-region"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+    ></span>
+
+    <div class="invoice-shell">
+        {% if has_critical_invoice_data %}
+            <nav
+                class="invoice-screen-actions"
+                aria-label="Invoice actions"
+            >
+                <div class="invoice-screen-actions__group">
+                    {% if explicit_order_url %}
+                        <a
+                            class="invoice-btn invoice-btn--secondary"
+                            href="{{ explicit_order_url }}"
+                        >
+                            <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <path d="M19 12H5M10 7l-5 5 5 5"></path>
+                            </svg>
+
+                            View Order
+                        </a>
+                    {% endif %}
+
+                    {% if is_customer %}
+                        <a
+                            class="invoice-btn invoice-btn--secondary"
+                            href="{{ url_for('orders_page') }}"
+                        >
+                            My Orders
+                        </a>
+                    {% endif %}
+
+                    <a
+                        class="invoice-btn invoice-btn--secondary"
+                        href="{{ url_for('contact_page') }}"
+                    >
+                        Contact Support
+                    </a>
+                </div>
+
+                <div class="invoice-screen-actions__group">
+                    {% if optional_pdf_url %}
+                        <a
+                            class="invoice-btn invoice-btn--secondary"
+                            href="{{ optional_pdf_url }}"
+                        >
+                            <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <path d="M12 3v12M7 10l5 5 5-5"></path>
+                                <path d="M5 20h14"></path>
+                            </svg>
+
+                            Download PDF
+                        </a>
+                    {% endif %}
+
+                    {% if order_reference %}
+                        <button
+                            class="invoice-btn invoice-btn--secondary"
+                            id="invoice-copy-reference"
+                            type="button"
+                        >
+                            <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <rect x="8" y="8" width="11" height="11" rx="2"></rect>
+                                <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>
+                            </svg>
+
+                            Copy Order Reference
+                        </button>
+                    {% endif %}
+
+                    <button
+                        class="invoice-btn invoice-btn--primary"
+                        id="invoice-print-button"
+                        type="button"
+                    >
+                        <svg
+                            aria-hidden="true"
+                            viewBox="0 0 24 24"
+                        >
+                            <path d="M6 9V3h12v6"></path>
+                            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                            <path d="M6 14h12v7H6z"></path>
+                        </svg>
+
+                        Print Invoice
+                    </button>
+                </div>
+            </nav>
+
+            <article
+                class="invoice-document"
+                aria-labelledby="invoice-heading"
+            >
+                <div
+                    class="invoice-document__watermark"
+                    aria-hidden="true"
+                >
+                    <span class="invoice-document__watermark-brand">
+                        {{ business_name|default("MR. ITALIANO", true) }}
+                    </span>
+
+                    <span class="invoice-document__watermark-type">
+                        INVOICE
+                    </span>
+                </div>
+
+                <div
+                    class="invoice-document__top-ribbon"
+                    aria-hidden="true"
+                >
+                    <span class="invoice-document__top-ribbon-gold"></span>
+                    <span class="invoice-document__top-ribbon-ivory"></span>
+                    <span class="invoice-document__top-ribbon-red"></span>
+                </div>
+
+                <div class="invoice-document__inner">
+                    <header class="invoice-business-header">
+                        <div class="invoice-brand">
+                            <img
+                                class="invoice-brand__logo"
+                                id="invoice-logo"
+                                src="{{ url_for('static', filename='images/logo.svg') }}"
+                                alt=""
+                                width="54"
+                                height="54"
+                            >
+
+                            <span
+                                class="invoice-brand__fallback"
+                                id="invoice-logo-fallback"
+                                aria-hidden="true"
+                            >
+                                {{ (business_name|default("R", true))[:1]|upper }}
+                            </span>
+
+                            <div>
+                                <h1 id="invoice-heading">
+                                    {{ document_title }}
+                                </h1>
+
+                                <p class="invoice-brand__business">
+                                    <strong>
+                                        {{ business_name|default("Restaurant", true) }}
+                                    </strong>
+
+                                    {% if business_phone|default("", true) %}
+                                        <br>
+                                        {{ business_phone }}
+                                    {% endif %}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="invoice-document-label">
+                            <span class="invoice-document-label__eyebrow">
+                                Official Order Document
+                            </span>
+
+                            <span class="invoice-document-label__type">
+                                {{ document_title }}
+                            </span>
+
+                            {% if invoice_number %}
+                                <span class="invoice-document-label__series">
+                                    Invoice No.
+                                </span>
+
+                                <span class="invoice-document-label__ref">
+                                    {{ invoice_number }}
+                                </span>
+                            {% else %}
+                                <span class="invoice-document-label__series">
+                                    Document Reference
+                                </span>
+
+                                <span class="invoice-document-label__ref">
+                                    {{ order_reference }}
+                                </span>
+                            {% endif %}
+                        </div>
+                    </header>
+
+                    <div class="invoice-document-intro">
+                        <div>
+                            <span class="invoice-document-intro__label">
+                                Billing Record
+                            </span>
+
+                            <p class="invoice-document-intro__copy">
+                                Order-time pricing, fulfilment and payment details.
+                            </p>
+                        </div>
+
+                        <div class="invoice-document-intro__currency">
+                            <span>
+                                Currency
+                            </span>
+
+                            <strong>
+                                {{ currency }}
+                            </strong>
+                        </div>
+                    </div>
+
+                    <dl class="invoice-meta-grid">
+                        <div class="invoice-meta-card">
+                            <dt>
+                                Order Reference
+                            </dt>
+
+                            <dd>
+                                {{ order_reference }}
+                            </dd>
+                        </div>
+
+                        <div class="invoice-meta-card">
+                            <dt>
+                                {% if invoice_number %}
+                                    Invoice Date
+                                {% else %}
+                                    Order Date
+                                {% endif %}
+                            </dt>
+
+                            <dd>
+                                {% if invoice_number and invoice_date_display %}
+                                    {{ invoice_date_display }}
+                                {% elif order_date_display %}
+                                    {{ order_date_display }}
+                                {% elif order_data.get("placed_at") %}
+                                    {{ order_data.get("placed_at") }}
+                                {% else %}
+                                    Not available
+                                {% endif %}
+                            </dd>
+                        </div>
+
+                        <div class="invoice-meta-card">
+                            <dt>
+                                Service Type
+                            </dt>
+
+                            <dd>
+                                {{ service_label(service_mode) }}
+                            </dd>
+                        </div>
+
+                        <div class="invoice-meta-card">
+                            <dt>
+                                Order Status
+                            </dt>
+
+                            <dd>
+                                <span
+                                    class="invoice-status invoice-status--{{ status_class(order_status)|trim }}"
+                                >
+                                    <span
+                                        class="invoice-status__dot"
+                                        aria-hidden="true"
+                                    ></span>
+
+                                    {{ status_label(order_status) }}
+                                </span>
+                            </dd>
+                        </div>
+                    </dl>
+
+                    <div class="invoice-two-column">
+                        <section
+                            class="invoice-info-card"
+                            aria-labelledby="invoice-customer-title"
+                        >
+                            <h2
+                                class="invoice-section-title"
+                                id="invoice-customer-title"
+                            >
+                                Bill To
+                            </h2>
+
+                            <dl class="invoice-info-list">
+                                {% if customer_snapshot.get("name") %}
+                                    <div class="invoice-info-row">
+                                        <dt>
+                                            Name
+                                        </dt>
+
+                                        <dd>
+                                            {{ customer_snapshot.get("name") }}
+                                        </dd>
+                                    </div>
+                                {% endif %}
+
+                                {% if customer_snapshot.get("phone") %}
+                                    <div class="invoice-info-row">
+                                        <dt>
+                                            Phone
+                                        </dt>
+
+                                        <dd>
+                                            {{ customer_snapshot.get("phone") }}
+                                        </dd>
+                                    </div>
+                                {% endif %}
+
+                                {% if customer_snapshot.get("email") %}
+                                    <div class="invoice-info-row">
+                                        <dt>
+                                            Email
+                                        </dt>
+
+                                        <dd>
+                                            {{ customer_snapshot.get("email") }}
+                                        </dd>
+                                    </div>
+                                {% endif %}
+
+                                {% if service_mode == "delivery" %}
+                                    {% if fulfilment.get("address") %}
+                                        <div class="invoice-info-row">
+                                            <dt>
+                                                Delivery Address
+                                            </dt>
+
+                                            <dd>
+                                                {{ fulfilment.get("address") }}
+                                            </dd>
+                                        </div>
+                                    {% endif %}
+
+                                    {% if fulfilment.get("area") or fulfilment.get("city") %}
+                                        <div class="invoice-info-row">
+                                            <dt>
+                                                Area
+                                            </dt>
+
+                                            <dd>
+                                                {% if fulfilment.get("area") %}
+                                                    {{ fulfilment.get("area") }}
+                                                {% endif %}
+
+                                                {% if fulfilment.get("area") and fulfilment.get("city") %}
+                                                    ·
+                                                {% endif %}
+
+                                                {% if fulfilment.get("city") %}
+                                                    {{ fulfilment.get("city") }}
+                                                {% endif %}
+                                            </dd>
+                                        </div>
+                                    {% endif %}
+                                {% endif %}
+                            </dl>
+                        </section>
+
+                        <section
+                            class="invoice-info-card"
+                            aria-labelledby="invoice-fulfilment-title"
+                        >
+                            <h2
+                                class="invoice-section-title"
+                                id="invoice-fulfilment-title"
+                            >
+                                Order Fulfilment
+                            </h2>
+
+                            <dl class="invoice-info-list">
+                                <div class="invoice-info-row">
+                                    <dt>
+                                        Service
+                                    </dt>
+
+                                    <dd>
+                                        {{ service_label(service_mode) }}
+                                    </dd>
+                                </div>
+
+                                {% if outlet_snapshot.get("name") %}
+                                    <div class="invoice-info-row">
+                                        <dt>
+                                            Outlet
+                                        </dt>
+
+                                        <dd>
+                                            {{ outlet_snapshot.get("name") }}
+                                        </dd>
+                                    </div>
+                                {% endif %}
+
+                                {% if outlet_snapshot.get("address") %}
+                                    <div class="invoice-info-row">
+                                        <dt>
+                                            Outlet Address
+                                        </dt>
+
+                                        <dd>
+                                            {{ outlet_snapshot.get("address") }}
+                                        </dd>
+                                    </div>
+                                {% endif %}
+
+                                {% if outlet_snapshot.get("phone") %}
+                                    <div class="invoice-info-row">
+                                        <dt>
+                                            Outlet Phone
+                                        </dt>
+
+                                        <dd>
+                                            {{ outlet_snapshot.get("phone") }}
+                                        </dd>
+                                    </div>
+                                {% endif %}
+
+                                {% if order_data.get("schedule_for") %}
+                                    <div class="invoice-info-row">
+                                        <dt>
+                                            Scheduled For
+                                        </dt>
+
+                                        <dd>
+                                            {% if schedule_display %}
+                                                {{ schedule_display }}
+                                            {% else %}
+                                                {{ order_data.get("schedule_for") }}
+                                            {% endif %}
+                                        </dd>
+                                    </div>
+                                {% endif %}
+                            </dl>
+                        </section>
+                    </div>
+
+                    <section
+                        class="invoice-items-section"
+                        aria-labelledby="invoice-items-title"
+                    >
+                        <h2
+                            class="invoice-section-title"
+                            id="invoice-items-title"
+                        >
+                            Invoice Items
+                        </h2>
+
+                        <div
+                            class="invoice-table-wrap"
+                            role="region"
+                            aria-label="Purchased items table"
+                            tabindex="0"
+                        >
+                            <table class="invoice-table">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">
+                                            Item
+                                        </th>
+
+                                        <th scope="col">
+                                            Configuration
+                                        </th>
+
+                                        <th scope="col">
+                                            Qty
+                                        </th>
+
+                                        <th
+                                            class="invoice-table__money"
+                                            scope="col"
+                                        >
+                                            Unit Price
+                                        </th>
+
+                                        <th
+                                            class="invoice-table__money"
+                                            scope="col"
+                                        >
+                                            Amount
+                                        </th>
+                                    </tr>
+                                </thead>
+
+                                <tbody>
+                                    {% for item in items %}
+                                        {% if item is mapping %}
+                                            {% set selected_options = item.get("selected_options", []) %}
+                                            {% if selected_options is string or selected_options is not sequence %}
+                                                {% set selected_options = [] %}
+                                            {% endif %}
+
+                                            {% set included_items = item.get("included_items", []) %}
+                                            {% if included_items is string or included_items is not sequence %}
+                                                {% set included_items = [] %}
+                                            {% endif %}
+
+                                            <tr>
+                                                <td>
+                                                    <span class="invoice-table__item">
+                                                        {{ item_name(item) }}
+                                                    </span>
+
+                                                    <span class="invoice-table__kind">
+                                                        {{ "Deal" if item.get("item_type") == "deal" else "Product" }}
+                                                    </span>
+                                                </td>
+
+                                                <td>
+                                                    {% if selected_options %}
+                                                        <ul class="invoice-config">
+                                                            {% for option in selected_options %}
+                                                                {% if option is mapping and option.get("option_name") %}
+                                                                    <li>
+                                                                        {% if option.get("group_name") %}
+                                                                            <strong>
+                                                                                {{ option.get("group_name") }}:
+                                                                            </strong>
+                                                                        {% endif %}
+
+                                                                        {{ option.get("option_name") }}
+                                                                    </li>
+                                                                {% endif %}
+                                                            {% endfor %}
+                                                        </ul>
+
+                                                    {% elif included_items %}
+                                                        <ul class="invoice-config">
+                                                            {% for included in included_items %}
+                                                                {% if included is mapping and included.get("product_name") %}
+                                                                    <li>
+                                                                        {{ included.get("product_name") }}
+
+                                                                        {% if included.get("quantity") is number %}
+                                                                            × {{ included.get("quantity")|int }}
+                                                                        {% endif %}
+                                                                    </li>
+                                                                {% endif %}
+                                                            {% endfor %}
+                                                        </ul>
+
+                                                    {% else %}
+                                                        <span class="invoice-muted">
+                                                            Standard configuration
+                                                        </span>
+                                                    {% endif %}
+                                                </td>
+
+                                                <td class="invoice-table__qty">
+                                                    {% if item.get("quantity") is number %}
+                                                        {{ item.get("quantity")|int }}
+                                                    {% else %}
+                                                        —
+                                                    {% endif %}
+                                                </td>
+
+                                                <td class="invoice-table__money">
+                                                    {{ money_minor(item.get("unit_price_minor"), currency) }}
+                                                </td>
+
+                                                <td class="invoice-table__money">
+                                                    {{ money_minor(item.get("line_total_minor"), currency) }}
+                                                </td>
+                                            </tr>
+                                        {% endif %}
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <div class="invoice-summary-grid">
+                        <div>
+                            {% if order_data.get("customer_notes") %}
+                                <section
+                                    class="invoice-note-card"
+                                    aria-labelledby="invoice-notes-title"
+                                >
+                                    <h2
+                                        class="invoice-section-title"
+                                        id="invoice-notes-title"
+                                    >
+                                        Customer Note
+                                    </h2>
+
+                                    <p>
+                                        {{ order_data.get("customer_notes") }}
+                                    </p>
+                                </section>
+                            {% endif %}
+
+                            <section
+                                class="invoice-payment-card"
+                                aria-labelledby="invoice-payment-title"
+                            >
+                                <h2
+                                    class="invoice-section-title"
+                                    id="invoice-payment-title"
+                                >
+                                    Payment Details
+                                </h2>
+
+                                <dl class="invoice-payment-list">
+                                    <div>
+                                        <dt>
+                                            Method
+                                        </dt>
+
+                                        <dd>
+                                            {{ payment_method_label(stored_payment_method) }}
+                                        </dd>
+                                    </div>
+
+                                    <div>
+                                        <dt>
+                                            Payment Status
+                                        </dt>
+
+                                        <dd>
+                                            <span
+                                                class="invoice-status invoice-status--{{ status_class(stored_payment_status)|trim }}"
+                                            >
+                                                <span
+                                                    class="invoice-status__dot"
+                                                    aria-hidden="true"
+                                                ></span>
+
+                                                {{ status_label(stored_payment_status) }}
+                                            </span>
+                                        </dd>
+                                    </div>
+
+                                    {% if stored_payment_method == "bank_transfer" and payment_data.get("customer_reference") %}
+                                        <div>
+                                            <dt>
+                                                Customer Reference
+                                            </dt>
+
+                                            <dd>
+                                                {{ payment_data.get("customer_reference") }}
+                                            </dd>
+                                        </div>
+                                    {% endif %}
+
+                                    {% if stored_payment_status == "paid" and payment_data.get("paid_at") %}
+                                        <div>
+                                            <dt>
+                                                Paid At
+                                            </dt>
+
+                                            <dd>
+                                                {% if payment_date_display %}
+                                                    {{ payment_date_display }}
+                                                {% else %}
+                                                    {{ payment_data.get("paid_at") }}
+                                                {% endif %}
+                                            </dd>
+                                        </div>
+                                    {% endif %}
+                                </dl>
+                            </section>
+                        </div>
+
+                        <dl
+                            class="invoice-totals"
+                            aria-label="Invoice totals"
+                        >
+                            <div class="invoice-total-row">
+                                <dt>
+                                    Subtotal
+                                </dt>
+
+                                <dd>
+                                    {{ money_minor(order_data.get("subtotal_minor"), currency) }}
+                                </dd>
+                            </div>
+
+                            {% if service_mode == "delivery" and "delivery_fee_minor" in order_data %}
+                                <div class="invoice-total-row">
+                                    <dt>
+                                        Delivery Fee
+                                    </dt>
+
+                                    <dd>
+                                        {% if order_data.get("delivery_fee_minor") is number and order_data.get("delivery_fee_minor")|int == 0 %}
+                                            Free
+                                        {% else %}
+                                            {{ money_minor(order_data.get("delivery_fee_minor"), currency) }}
+                                        {% endif %}
+                                    </dd>
+                                </div>
+                            {% endif %}
+
+                            <div class="invoice-total-row invoice-total-row--grand">
+                                <dt>
+                                    {% if stored_payment_status == "paid" %}
+                                        Total Paid
+                                    {% elif stored_payment_status in ["pending", "awaiting_verification"] %}
+                                        Amount Due
+                                    {% else %}
+                                        Order Total
+                                    {% endif %}
+                                </dt>
+
+                                <dd>
+                                    {{ money_minor(order_data.get("total_minor"), currency) }}
+                                </dd>
+                            </div>
+                        </dl>
+                    </div>
+
+                    <footer class="invoice-document-footer">
+                        <div class="invoice-document-footer__copy">
+                            <p>
+                                This document reflects the stored order snapshot and server-authoritative amounts for this order.
+                                Current menu prices or product availability do not alter this historical record.
+                            </p>
+
+                            <p class="invoice-document-footer__thanks">
+                                Thank you for choosing
+                                <strong>
+                                    {{ business_name|default("our restaurant", true) }}
+                                </strong>.
+                            </p>
+                        </div>
+
+                        <div
+                            class="invoice-document-footer__seal"
+                            aria-hidden="true"
+                        >
+                            <span>
+                                MR
+                            </span>
+
+                            <small>
+                                ORDER COPY
+                            </small>
+                        </div>
+                    </footer>
+
+                    <div
+                        class="invoice-document__bottom-accent"
+                        aria-hidden="true"
+                    >
+                        <span class="invoice-document__bottom-accent-white"></span>
+                        <span class="invoice-document__bottom-accent-red"></span>
+                        <span class="invoice-document__bottom-accent-gold"></span>
+                    </div>
+                </div>
+            </article>
+
+        {% else %}
+            <section
+                class="invoice-error-state"
+                aria-labelledby="invoice-unavailable-title"
+            >
+                <h1 id="invoice-unavailable-title">
+                    Invoice Unavailable
+                </h1>
+
+                <p>
+                    The authorized order snapshot required to render this invoice is incomplete or was not supplied.
+                    Financial values are not reconstructed in the browser.
+                </p>
+
+                <div class="invoice-error-state__actions">
+                    {% if is_customer %}
+                        <a
+                            class="invoice-btn invoice-btn--primary"
+                            href="{{ url_for('orders_page') }}"
+                        >
+                            My Orders
+                        </a>
+                    {% endif %}
+
+                    <a
+                        class="invoice-btn invoice-btn--secondary"
+                        href="{{ url_for('contact_page') }}"
+                    >
+                        Contact Support
+                    </a>
+                </div>
+            </section>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    "use strict";
+
+    const root =
+        document.getElementById(
+            "invoice-page-root"
+        );
+
+    if (!root) {
+        return;
+    }
+
+    const elements = {
+        printButton:
+            document.getElementById(
+                "invoice-print-button"
+            ),
+
+        copyButton:
+            document.getElementById(
+                "invoice-copy-reference"
+            ),
+
+        logo:
+            document.getElementById(
+                "invoice-logo"
+            ),
+
+        logoFallback:
+            document.getElementById(
+                "invoice-logo-fallback"
+            ),
+
+        live:
+            document.getElementById(
+                "invoice-live-region"
+            )
+    };
+
+    function announce(message) {
+        if (
+            window.AppUI &&
+            typeof window.AppUI.announce ===
+                "function"
+        ) {
+            window.AppUI.announce(
+                message
+            );
+        }
+
+        if (!elements.live) {
+            return;
+        }
+
+        elements.live.textContent =
+            "";
+
+        window.setTimeout(
+            function () {
+                elements.live.textContent =
+                    String(
+                        message ||
+                        ""
+                    );
+            },
+            30
+        );
+    }
+
+    function toast(
+        message,
+        type
+    ) {
+        if (
+            window.AppUI &&
+            typeof window.AppUI.showToast ===
+                "function"
+        ) {
+            window.AppUI.showToast(
+                message,
+                type ||
+                "info"
+            );
+
+            return;
+        }
+
+        if (
+            typeof window.showToast ===
+                "function"
+        ) {
+            window.showToast(
+                message,
+                type ||
+                "info"
+            );
+        }
+    }
+
+    function initializePrintAction() {
+        if (!elements.printButton) {
+            return;
+        }
+
+        elements.printButton.addEventListener(
+            "click",
+            function () {
+                /*
+                 * Explicit customer action only.
+                 * Do not change the button to "Printed":
+                 * the browser print dialog may still be cancelled.
+                 */
+                window.print();
+            }
+        );
+    }
+
+    async function copyReference() {
+        const reference =
+            String(
+                root.dataset.orderReference ||
+                ""
+            ).trim();
+
+        if (!reference) {
+            return;
+        }
+
+        try {
+            if (
+                !navigator.clipboard ||
+                typeof navigator.clipboard.writeText !==
+                    "function"
+            ) {
+                throw new Error(
+                    "Clipboard API unavailable"
+                );
+            }
+
+            await navigator.clipboard.writeText(
+                reference
+            );
+
+            toast(
+                "Order reference copied.",
+                "success"
+            );
+
+            announce(
+                "Order reference copied."
+            );
+        } catch (error) {
+            toast(
+                "Could not copy automatically. The order reference remains visible and selectable.",
+                "warning"
+            );
+
+            announce(
+                "Automatic copy was unavailable."
+            );
+        }
+    }
+
+    function initializeCopyReference() {
+        if (!elements.copyButton) {
+            return;
+        }
+
+        elements.copyButton.addEventListener(
+            "click",
+            copyReference
+        );
+    }
+
+    function initializeLogoFallback() {
+        if (
+            !elements.logo ||
+            !elements.logoFallback
+        ) {
+            return;
+        }
+
+        function showFallback() {
+            elements.logo.classList.add(
+                "is-unavailable"
+            );
+
+            elements.logoFallback.classList.add(
+                "is-visible"
+            );
+        }
+
+        elements.logo.addEventListener(
+            "error",
+            showFallback,
+            {
+                once:
+                    true
+            }
+        );
+
+        if (
+            elements.logo.complete &&
+            elements.logo.naturalWidth ===
+                0
+        ) {
+            showFallback();
+        }
+    }
+
+    function initializeInvoicePage() {
+        initializePrintAction();
+        initializeCopyReference();
+        initializeLogoFallback();
+    }
+
+    if (
+        document.readyState ===
+        "loading"
+    ) {
+        document.addEventListener(
+            "DOMContentLoaded",
+            initializeInvoicePage,
+            {
+                once:
+                    true
+            }
+        );
+    } else {
+        initializeInvoicePage();
+    }
+}());
+
+
+(function () {
+    "use strict";
+
+    /*
+     * Premium invoice presentation layer.
+     * Does not calculate money, create invoice numbers, alter order data,
+     * submit transactions, or call payment APIs.
+     */
+
+    const root =
+        document.getElementById(
+            "invoice-page-root"
+        );
+
+    if (!root) {
+        return;
+    }
+
+    const reducedMedia =
+        window.matchMedia
+            ? window.matchMedia(
+                "(prefers-reduced-motion: reduce)"
+            )
+            : null;
+
+    const fineMedia =
+        window.matchMedia
+            ? window.matchMedia(
+                "(hover: hover) and (pointer: fine)"
+            )
+            : null;
+
+    const isReduced =
+        function () {
+            return Boolean(
+                reducedMedia &&
+                reducedMedia.matches
+            );
+        };
+
+    const isFine =
+        function () {
+            return Boolean(
+                fineMedia &&
+                fineMedia.matches
+            );
+        };
+
+    function clamp(
+        value,
+        minimum,
+        maximum
+    ) {
+        return Math.min(
+            maximum,
+            Math.max(
+                minimum,
+                value
+            )
+        );
+    }
+
+    /* -------------------------------------------------------------
+       Ambient page light
+       ------------------------------------------------------------- */
+
+    function initializeAmbientLight() {
+        if (
+            !isFine() ||
+            isReduced()
+        ) {
+            return;
+        }
+
+        let frame =
+            0;
+
+        let latestX =
+            window.innerWidth /
+            2;
+
+        let latestY =
+            window.innerHeight /
+            6;
+
+        function paint() {
+            frame =
+                0;
+
+            const x =
+                clamp(
+                    (
+                        latestX /
+                        Math.max(
+                            window.innerWidth,
+                            1
+                        )
+                    ) *
+                    100,
+                    0,
+                    100
+                );
+
+            const y =
+                clamp(
+                    (
+                        latestY /
+                        Math.max(
+                            window.innerHeight,
+                            1
+                        )
+                    ) *
+                    100,
+                    0,
+                    100
+                );
+
+            root.style.setProperty(
+                "--lux-pointer-x",
+                x.toFixed(2) +
+                "%"
+            );
+
+            root.style.setProperty(
+                "--lux-pointer-y",
+                y.toFixed(2) +
+                "%"
+            );
+        }
+
+        root.addEventListener(
+            "pointermove",
+            function (event) {
+                latestX =
+                    event.clientX;
+
+                latestY =
+                    event.clientY;
+
+                if (!frame) {
+                    frame =
+                        window.requestAnimationFrame(
+                            paint
+                        );
+                }
+            },
+            {
+                passive:
+                    true
+            }
+        );
+    }
+
+    /* -------------------------------------------------------------
+       Button ripple
+       ------------------------------------------------------------- */
+
+    function addRipple(
+        button,
+        event
+    ) {
+        if (
+            !button ||
+            button.disabled ||
+            isReduced()
+        ) {
+            return;
+        }
+
+        const computed =
+            window.getComputedStyle(
+                button
+            );
+
+        if (
+            computed.position ===
+            "static"
+        ) {
+            button.style.position =
+                "relative";
+        }
+
+        const rect =
+            button.getBoundingClientRect();
+
+        const ripple =
+            document.createElement(
+                "span"
+            );
+
+        ripple.className =
+            "invoice-lux-ripple";
+
+        ripple.style.left =
+            (
+                event.clientX -
+                rect.left
+            ) +
+            "px";
+
+        ripple.style.top =
+            (
+                event.clientY -
+                rect.top
+            ) +
+            "px";
+
+        button.appendChild(
+            ripple
+        );
+
+        window.setTimeout(
+            function () {
+                ripple.remove();
+            },
+            650
+        );
+    }
+
+    function initializeRipples() {
+        document
+            .querySelectorAll(
+                ".invoice-btn"
+            )
+            .forEach(
+                function (button) {
+                    if (
+                        button.dataset.luxuryRippleReady ===
+                        "true"
+                    ) {
+                        return;
+                    }
+
+                    button.dataset.luxuryRippleReady =
+                        "true";
+
+                    button.addEventListener(
+                        "pointerdown",
+                        function (event) {
+                            addRipple(
+                                button,
+                                event
+                            );
+                        }
+                    );
+                }
+            );
+    }
+
+    /* -------------------------------------------------------------
+       Copy visual feedback
+       ------------------------------------------------------------- */
+
+    function initializeCopyFeedback() {
+        const copyButton =
+            document.getElementById(
+                "invoice-copy-reference"
+            );
+
+        if (!copyButton) {
+            return;
+        }
+
+        copyButton.addEventListener(
+            "click",
+            function () {
+                copyButton.classList.remove(
+                    "is-lux-copied"
+                );
+
+                window.setTimeout(
+                    function () {
+                        copyButton.classList.add(
+                            "is-lux-copied"
+                        );
+                    },
+                    25
+                );
+
+                window.setTimeout(
+                    function () {
+                        copyButton.classList.remove(
+                            "is-lux-copied"
+                        );
+                    },
+                    1300
+                );
+            }
+        );
+    }
+
+    /* -------------------------------------------------------------
+       Scroll reveal
+       ------------------------------------------------------------- */
+
+    function initializeReveals() {
+        const targets =
+            Array.from(
+                document.querySelectorAll(
+                    [
+                        ".invoice-screen-actions",
+                        ".invoice-document",
+                        ".invoice-meta-card",
+                        ".invoice-info-card",
+                        ".invoice-items-section",
+                        ".invoice-note-card",
+                        ".invoice-payment-card",
+                        ".invoice-totals"
+                    ].join(
+                        ","
+                    )
+                )
+            );
+
+        if (!targets.length) {
+            return;
+        }
+
+        targets.forEach(
+            function (
+                target,
+                index
+            ) {
+                target.classList.add(
+                    "invoice-lux-reveal"
+                );
+
+                target.style.transitionDelay =
+                    Math.min(
+                        (
+                            index %
+                            7
+                        ) *
+                        35,
+                        175
+                    ) +
+                    "ms";
+            }
+        );
+
+        if (
+            isReduced() ||
+            !(
+                "IntersectionObserver" in
+                window
+            )
+        ) {
+            targets.forEach(
+                function (target) {
+                    target.classList.add(
+                        "is-lux-visible"
+                    );
+                }
+            );
+
+            return;
+        }
+
+        const observer =
+            new IntersectionObserver(
+                function (
+                    entries,
+                    instance
+                ) {
+                    entries.forEach(
+                        function (entry) {
+                            if (
+                                !entry.isIntersecting
+                            ) {
+                                return;
+                            }
+
+                            entry.target.classList.add(
+                                "is-lux-visible"
+                            );
+
+                            instance.unobserve(
+                                entry.target
+                            );
+                        }
+                    );
+                },
+                {
+                    threshold:
+                        .06,
+
+                    rootMargin:
+                        "0px 0px -4% 0px"
+                }
+            );
+
+        targets.forEach(
+            function (target) {
+                observer.observe(
+                    target
+                );
+            }
+        );
+    }
+
+    /* -------------------------------------------------------------
+       Print preparation
+       ------------------------------------------------------------- */
+
+    function initializePrintPreparation() {
+        window.addEventListener(
+            "beforeprint",
+            function () {
+                document
+                    .querySelectorAll(
+                        ".invoice-lux-reveal"
+                    )
+                    .forEach(
+                        function (element) {
+                            element.classList.add(
+                                "is-lux-visible"
+                            );
+                        }
+                    );
+            }
+        );
+    }
+
+    /* -------------------------------------------------------------
+       Theme sync
+       ------------------------------------------------------------- */
+
+    function initializeThemeSync() {
+        const html =
+            document.documentElement;
+
+        root.dataset.luxuryTheme =
+            html.dataset.theme ||
+            "dark";
+
+        if (
+            !(
+                "MutationObserver" in
+                window
+            )
+        ) {
+            return;
+        }
+
+        const observer =
+            new MutationObserver(
+                function () {
+                    root.dataset.luxuryTheme =
+                        html.dataset.theme ||
+                        "dark";
+                }
+            );
+
+        observer.observe(
+            html,
+            {
+                attributes:
+                    true,
+
+                attributeFilter:
+                    [
+                        "data-theme"
+                    ]
+            }
+        );
+    }
+
+    function initializePremiumInvoiceLayer() {
+        root.dataset.luxuryReady =
+            "true";
+
+        initializeAmbientLight();
+        initializeRipples();
+        initializeCopyFeedback();
+        initializeReveals();
+        initializePrintPreparation();
+        initializeThemeSync();
+    }
+
+    if (
+        document.readyState ===
+        "loading"
+    ) {
+        document.addEventListener(
+            "DOMContentLoaded",
+            initializePremiumInvoiceLayer,
+            {
+                once:
+                    true
+            }
+        );
+    } else {
+        initializePremiumInvoiceLayer();
+    }
+}());
+
+</script>
+{% endblock %}

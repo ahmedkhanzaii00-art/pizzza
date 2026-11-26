@@ -1,0 +1,3638 @@
+{% extends "base.html" %}
+
+{% block title %}Product Gallery | {{ business_name|default("Restaurant", true) }}{% endblock %}
+{% block meta_description %}Protected staff product image gallery management.{% endblock %}
+
+{% block head %}
+    {{ super() }}
+    <meta name="robots" content="noindex,nofollow">
+{% endblock %}
+
+{% block styles %}
+<style>
+    .pga-page {
+        --pga-primary: var(--primary-color, #b83222);
+        --pga-primary-hover: var(--primary-color-hover, #98281b);
+        --pga-soft: var(--primary-color-soft, #fff0eb);
+        --pga-border: var(--border-color, #e5e7eb);
+        --pga-muted: var(--text-muted, #6b7280);
+        --pga-surface: var(--surface-color, #ffffff);
+        --pga-bg: var(--background-subtle, #f7f7f8);
+        width: min(1180px, calc(100% - 2rem));
+        margin: 0 auto;
+        padding: 2rem 0 4rem;
+    }
+
+    .pga-breadcrumbs {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: .45rem;
+        margin-bottom: 1.15rem;
+        font-size: .9rem;
+        color: var(--pga-muted);
+    }
+
+    .pga-breadcrumbs a {
+        color: inherit;
+        text-decoration: none;
+    }
+
+    .pga-breadcrumbs a:hover { text-decoration: underline; }
+
+    .pga-hero {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .pga-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: .5rem;
+        margin: 0 0 .55rem;
+        color: var(--pga-primary);
+        font-weight: 750;
+        font-size: .82rem;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+    }
+
+    .pga-kicker::before {
+        content: "";
+        width: .5rem;
+        height: .5rem;
+        border-radius: 999px;
+        background: currentColor;
+    }
+
+    .pga-title {
+        margin: 0;
+        font-size: clamp(1.75rem, 4vw, 2.65rem);
+        line-height: 1.05;
+    }
+
+    .pga-subtitle {
+        margin: .6rem 0 0;
+        max-width: 760px;
+        color: var(--pga-muted);
+        line-height: 1.6;
+    }
+
+    .pga-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .7rem;
+    }
+
+    .pga-btn {
+        appearance: none;
+        border: 1px solid var(--pga-border);
+        border-radius: .8rem;
+        background: var(--pga-surface);
+        color: inherit;
+        min-height: 44px;
+        padding: .72rem 1rem;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: .45rem;
+        transition: transform .15s ease, border-color .15s ease, background .15s ease;
+    }
+
+    .pga-btn:hover:not(:disabled) {
+        border-color: color-mix(in srgb, var(--pga-primary) 35%, var(--pga-border));
+        transform: translateY(-1px);
+    }
+
+    .pga-btn:disabled { opacity: .55; cursor: not-allowed; }
+
+    .pga-btn--primary {
+        border-color: var(--pga-primary);
+        background: var(--pga-primary);
+        color: #fff;
+    }
+
+    .pga-btn--primary:hover:not(:disabled) {
+        background: var(--pga-primary-hover);
+        border-color: var(--pga-primary-hover);
+    }
+
+    .pga-btn--danger {
+        color: #b42318;
+        border-color: #f3c7c3;
+        background: #fff7f6;
+    }
+
+    .pga-btn--small {
+        min-height: 38px;
+        padding: .55rem .72rem;
+        font-size: .88rem;
+    }
+
+    .pga-alert {
+        border: 1px solid #f0c2bd;
+        background: #fff6f5;
+        color: #8d1f17;
+        border-radius: .9rem;
+        padding: .9rem 1rem;
+        margin-bottom: 1rem;
+        line-height: 1.5;
+    }
+
+    .pga-alert[hidden] { display: none !important; }
+
+    .pga-grid {
+        display: grid;
+        grid-template-columns: minmax(260px, .8fr) minmax(0, 1.6fr);
+        gap: 1.25rem;
+        align-items: start;
+    }
+
+    .pga-panel {
+        border: 1px solid var(--pga-border);
+        border-radius: 1rem;
+        background: var(--pga-surface);
+        overflow: hidden;
+        box-shadow: 0 8px 26px rgba(15, 23, 42, .04);
+    }
+
+    .pga-panel__head {
+        padding: 1.05rem 1.15rem;
+        border-bottom: 1px solid var(--pga-border);
+        background: var(--pga-bg);
+    }
+
+    .pga-panel__head h2 {
+        margin: 0;
+        font-size: 1.05rem;
+    }
+
+    .pga-panel__head p {
+        margin: .35rem 0 0;
+        color: var(--pga-muted);
+        font-size: .9rem;
+        line-height: 1.5;
+    }
+
+    .pga-panel__body { padding: 1.15rem; }
+
+    .pga-primary-preview {
+        aspect-ratio: 4 / 3;
+        width: 100%;
+        border-radius: .9rem;
+        overflow: hidden;
+        border: 1px solid var(--pga-border);
+        background: var(--pga-bg);
+        display: grid;
+        place-items: center;
+        color: var(--pga-muted);
+    }
+
+    .pga-primary-preview img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+
+    .pga-primary-meta {
+        margin-top: .9rem;
+        display: grid;
+        gap: .35rem;
+    }
+
+    .pga-primary-meta strong { font-size: .92rem; }
+
+    .pga-primary-url {
+        margin: 0;
+        color: var(--pga-muted);
+        font-size: .82rem;
+        word-break: break-all;
+        line-height: 1.45;
+    }
+
+    .pga-help {
+        margin: .85rem 0 0;
+        padding: .8rem .9rem;
+        border-radius: .8rem;
+        background: var(--pga-soft);
+        color: #6e271f;
+        font-size: .86rem;
+        line-height: 1.55;
+    }
+
+    .pga-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .8rem;
+        margin-bottom: 1rem;
+    }
+
+    .pga-count {
+        color: var(--pga-muted);
+        font-size: .9rem;
+    }
+
+    .pga-list {
+        display: grid;
+        gap: .9rem;
+    }
+
+    .pga-empty {
+        border: 1px dashed var(--pga-border);
+        border-radius: .9rem;
+        padding: 1.4rem;
+        text-align: center;
+        color: var(--pga-muted);
+        background: var(--pga-bg);
+    }
+
+    .pga-item {
+        display: grid;
+        grid-template-columns: 108px minmax(0, 1fr);
+        gap: 1rem;
+        padding: .9rem;
+        border: 1px solid var(--pga-border);
+        border-radius: .9rem;
+        background: var(--pga-surface);
+    }
+
+    .pga-item__preview {
+        width: 108px;
+        aspect-ratio: 1 / 1;
+        border-radius: .75rem;
+        border: 1px solid var(--pga-border);
+        overflow: hidden;
+        background: var(--pga-bg);
+        display: grid;
+        place-items: center;
+        color: var(--pga-muted);
+        font-size: .78rem;
+        text-align: center;
+        padding: .35rem;
+    }
+
+    .pga-item__preview img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+
+    .pga-item__main { min-width: 0; }
+
+    .pga-item__top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: .75rem;
+        margin-bottom: .55rem;
+    }
+
+    .pga-item__label {
+        font-weight: 800;
+        font-size: .93rem;
+    }
+
+    .pga-order-badge {
+        border-radius: 999px;
+        padding: .26rem .55rem;
+        background: var(--pga-soft);
+        color: var(--pga-primary);
+        font-size: .75rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+
+    .pga-field label {
+        display: block;
+        margin-bottom: .35rem;
+        font-size: .84rem;
+        font-weight: 750;
+    }
+
+    .pga-input {
+        width: 100%;
+        min-height: 43px;
+        border: 1px solid var(--pga-border);
+        border-radius: .7rem;
+        background: var(--pga-surface);
+        color: inherit;
+        padding: .65rem .75rem;
+        font: inherit;
+        outline: none;
+    }
+
+    .pga-input:focus {
+        border-color: var(--pga-primary);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--pga-primary) 14%, transparent);
+    }
+
+    .pga-input[aria-invalid="true"] { border-color: #b42318; }
+
+    .pga-field-error {
+        margin: .35rem 0 0;
+        color: #b42318;
+        font-size: .8rem;
+    }
+
+    .pga-item__buttons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .5rem;
+        margin-top: .7rem;
+    }
+
+    .pga-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: .8rem;
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--pga-border);
+    }
+
+    .pga-status {
+        min-height: 1.35rem;
+        color: var(--pga-muted);
+        font-size: .86rem;
+    }
+
+    @media (max-width: 860px) {
+        .pga-grid { grid-template-columns: 1fr; }
+        .pga-hero { align-items: flex-start; flex-direction: column; }
+    }
+
+    @media (max-width: 580px) {
+        .pga-page { width: min(100% - 1.1rem, 1180px); padding-top: 1.2rem; }
+        .pga-item { grid-template-columns: 76px minmax(0, 1fr); gap: .7rem; }
+        .pga-item__preview { width: 76px; }
+        .pga-toolbar, .pga-footer { align-items: stretch; flex-direction: column; }
+        .pga-toolbar .pga-btn, .pga-footer .pga-btn { width: 100%; }
+    }
+
+
+    /* =====================================================================
+       MR. ITALIANO — PRODUCT GALLERY ADMIN / LUXURY DARK EDITION
+       =====================================================================
+       Visual system intentionally follows the homepage direction:
+       - charcoal / near-black restaurant canvas
+       - warm antique gold for actions and hierarchy
+       - controlled ivory / cream "white touch"
+       - tiny muted silver details for separation
+       - dimensional cards, food-stage depth and soft perspective
+       - polished motion that stays secondary to the admin workflow
+       - existing Flask / Jinja / upload / save behavior remains untouched
+       ===================================================================== */
+
+    .pga-page {
+        --pga-black-0: #020202;
+        --pga-black-1: #050504;
+        --pga-black-2: #080705;
+        --pga-black-3: #0c0a08;
+        --pga-black-4: #11100d;
+        --pga-black-5: #17130f;
+        --pga-black-6: #1d1812;
+        --pga-black-7: #251d15;
+
+        --pga-gold-50: #fff9e9;
+        --pga-gold-100: #fcebc0;
+        --pga-gold-200: #f4d780;
+        --pga-gold-300: #e9bc52;
+        --pga-gold-400: #d89c2b;
+        --pga-gold-500: #ad7117;
+        --pga-gold-600: #7d4b0a;
+
+        --pga-ivory: #fffaf1;
+        --pga-cream: #f6ead8;
+        --pga-cream-2: #ead9c2;
+        --pga-cream-3: #d7bea0;
+        --pga-silver: #d9d5ce;
+        --pga-silver-muted: #aaa59c;
+
+        --pga-danger: #e57162;
+        --pga-danger-strong: #ef897c;
+        --pga-success: #8bbb9b;
+        --pga-info: #93adc9;
+
+        --pga-lux-border: rgba(241, 210, 127, .14);
+        --pga-lux-border-strong: rgba(255, 230, 166, .27);
+        --pga-lux-border-silver: rgba(216, 212, 205, .09);
+
+        --pga-gold-gradient:
+            linear-gradient(
+                135deg,
+                #ffe7a3 0%,
+                #f3cf72 28%,
+                #dda53d 61%,
+                #aa6d16 100%
+            );
+
+        --pga-dark-gradient:
+            linear-gradient(
+                145deg,
+                #18130f 0%,
+                #0d0b08 56%,
+                #050504 100%
+            );
+
+        --pga-cream-gradient:
+            linear-gradient(
+                145deg,
+                #fffaf2 0%,
+                #f7ead8 58%,
+                #e8d4ba 100%
+            );
+
+        --pga-sheen:
+            linear-gradient(
+                110deg,
+                transparent 0%,
+                rgba(255,255,255,.02) 38%,
+                rgba(255,237,194,.10) 50%,
+                rgba(255,255,255,.025) 62%,
+                transparent 100%
+            );
+
+        --pga-silver-line:
+            linear-gradient(
+                90deg,
+                transparent 0%,
+                rgba(216,212,205,.12) 21%,
+                rgba(241,210,127,.36) 50%,
+                rgba(216,212,205,.12) 79%,
+                transparent 100%
+            );
+
+        --pga-shadow-sm:
+            0 12px 28px rgba(0,0,0,.22);
+
+        --pga-shadow-md:
+            0 22px 52px rgba(0,0,0,.31);
+
+        --pga-shadow-lg:
+            0 39px 92px rgba(0,0,0,.44);
+
+        --pga-ease:
+            cubic-bezier(.2,.72,.2,1);
+
+        --pga-ease-out:
+            cubic-bezier(.16,1,.3,1);
+
+        --pga-pointer-x: 72%;
+        --pga-pointer-y: 8%;
+
+        --pga-primary: var(--pga-gold-400);
+        --pga-primary-hover: var(--pga-gold-300);
+        --pga-soft: rgba(228, 184, 81, .075);
+        --pga-border: var(--pga-lux-border);
+        --pga-muted: #a99e91;
+        --pga-surface: #11100d;
+        --pga-bg: #0c0b09;
+
+        position: relative;
+        isolation: isolate;
+        overflow: clip;
+
+        width:
+            min(
+                1240px,
+                calc(100% - 2rem)
+            );
+
+        margin:
+            0
+            auto;
+
+        padding:
+            clamp(1.35rem, 3vw, 2.25rem)
+            0
+            clamp(4.25rem, 8vw, 6.6rem);
+
+        color:
+            #ddd5c9;
+
+        background:
+            radial-gradient(
+                circle at
+                var(--pga-pointer-x)
+                var(--pga-pointer-y),
+                rgba(228,184,81,.055),
+                transparent 30rem
+            ),
+            radial-gradient(
+                circle at 104% 9%,
+                rgba(228,184,81,.105),
+                transparent 27rem
+            ),
+            radial-gradient(
+                circle at -8% 52%,
+                rgba(112,81,43,.07),
+                transparent 35rem
+            ),
+            linear-gradient(
+                180deg,
+                #090807 0%,
+                #050504 48%,
+                #090705 100%
+            );
+
+        border-radius:
+            0 0 28px 28px;
+    }
+
+    .pga-page::before {
+        content: "";
+        position: absolute;
+        z-index: -3;
+        inset: 0;
+        pointer-events: none;
+
+        background-image:
+            linear-gradient(
+                rgba(255,255,255,.009) 1px,
+                transparent 1px
+            ),
+            linear-gradient(
+                90deg,
+                rgba(255,255,255,.012) 1px,
+                transparent 1px
+            );
+
+        background-size:
+            48px 48px;
+
+        mask-image:
+            linear-gradient(
+                180deg,
+                rgba(0,0,0,.82) 0%,
+                transparent 78%
+            );
+    }
+
+    .pga-page::after {
+        content: "";
+        position: absolute;
+        z-index: -2;
+
+        top: -11rem;
+        right: -16rem;
+
+        width: 38rem;
+        height: 38rem;
+
+        border:
+            1px solid
+            rgba(241,210,127,.075);
+
+        border-radius: 50%;
+
+        box-shadow:
+            0 0 0 54px
+            rgba(228,184,81,.010),
+            0 0 0 108px
+            rgba(228,184,81,.005);
+
+        transform:
+            rotateX(64deg)
+            rotateZ(-8deg);
+
+        pointer-events: none;
+
+        animation:
+            pga-orbit-float
+            17s
+            ease-in-out
+            infinite
+            alternate;
+    }
+
+    @keyframes pga-orbit-float {
+        from {
+            transform:
+                translate3d(0,0,0)
+                rotateX(64deg)
+                rotateZ(-8deg);
+        }
+
+        to {
+            transform:
+                translate3d(-34px,22px,0)
+                rotateX(69deg)
+                rotateZ(7deg);
+        }
+    }
+
+    /* ---------------------------------------------------------------------
+       Breadcrumbs
+       --------------------------------------------------------------------- */
+
+    .pga-breadcrumbs {
+        position: relative;
+        z-index: 3;
+
+        gap: .5rem;
+
+        margin-bottom:
+            1.05rem;
+
+        padding:
+            .48rem
+            .62rem;
+
+        width:
+            fit-content;
+
+        max-width:
+            100%;
+
+        border:
+            1px solid
+            rgba(216,212,205,.075);
+
+        border-radius:
+            999px;
+
+        background:
+            rgba(255,255,255,.018);
+
+        color:
+            var(--pga-muted);
+
+        font-size:
+            .72rem;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.018),
+            0 10px 22px
+            rgba(0,0,0,.11);
+
+        backdrop-filter:
+            blur(10px);
+    }
+
+    .pga-breadcrumbs a {
+        color:
+            #c8beb0;
+
+        font-weight:
+            760;
+
+        transition:
+            color 170ms ease,
+            transform 170ms var(--pga-ease);
+    }
+
+    .pga-breadcrumbs a:hover {
+        color:
+            var(--pga-gold-200);
+
+        text-decoration: none;
+
+        transform:
+            translateY(-1px);
+    }
+
+    .pga-breadcrumbs strong {
+        color:
+            var(--pga-ivory);
+
+        font-weight: 850;
+    }
+
+    .pga-breadcrumbs span[aria-hidden="true"] {
+        color:
+            rgba(241,210,127,.34);
+    }
+
+    /* ---------------------------------------------------------------------
+       Hero / title zone
+       --------------------------------------------------------------------- */
+
+    .pga-hero {
+        position: relative;
+        z-index: 2;
+
+        align-items:
+            flex-end;
+
+        gap:
+            1.4rem;
+
+        margin-bottom:
+            clamp(1.3rem, 3vw, 2rem);
+
+        padding:
+            clamp(1.1rem, 2.6vw, 1.6rem)
+            0
+            clamp(1.05rem, 2.4vw, 1.4rem);
+
+        border-bottom:
+            1px solid
+            rgba(216,212,205,.07);
+    }
+
+    .pga-hero::after {
+        content: "";
+        position: absolute;
+
+        right: 48%;
+        bottom: -1px;
+        left: 0;
+
+        height: 1px;
+
+        background:
+            linear-gradient(
+                90deg,
+                var(--pga-gold-300),
+                rgba(216,212,205,.15),
+                transparent
+            );
+
+        opacity: .78;
+    }
+
+    .pga-kicker {
+        min-height:
+            28px;
+
+        padding:
+            .3rem
+            .58rem;
+
+        margin-bottom:
+            .72rem;
+
+        border:
+            1px solid
+            rgba(228,184,81,.15);
+
+        border-radius:
+            999px;
+
+        background:
+            rgba(255,255,255,.017);
+
+        color:
+            var(--pga-gold-200);
+
+        font-size:
+            .6rem;
+
+        font-weight: 900;
+        letter-spacing: .12em;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.025),
+            0 9px 19px
+            rgba(0,0,0,.13);
+    }
+
+    .pga-kicker::before {
+        width: 17px;
+        height: 1px;
+
+        border-radius: 999px;
+
+        background:
+            linear-gradient(
+                90deg,
+                var(--pga-gold-100),
+                var(--pga-gold-400)
+            );
+
+        box-shadow:
+            0 0 12px
+            rgba(228,184,81,.22);
+    }
+
+    .pga-title {
+        max-width:
+            12ch;
+
+        margin: 0;
+
+        color:
+            var(--pga-ivory);
+
+        font-size:
+            clamp(
+                2.75rem,
+                5.8vw,
+                5rem
+            );
+
+        font-weight: 950;
+        line-height: .91;
+        letter-spacing: -.07em;
+
+        text-shadow:
+            0 24px 54px
+            rgba(0,0,0,.32);
+    }
+
+    .pga-subtitle {
+        max-width:
+            76ch;
+
+        margin-top:
+            .82rem;
+
+        color:
+            #aca195;
+
+        font-size:
+            .82rem;
+
+        line-height:
+            1.68;
+    }
+
+    .pga-actions {
+        align-items:
+            center;
+
+        justify-content:
+            flex-end;
+
+        gap:
+            .55rem;
+    }
+
+    /* ---------------------------------------------------------------------
+       Buttons — tactile gold / charcoal restaurant controls
+       --------------------------------------------------------------------- */
+
+    .pga-btn {
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
+
+        min-height:
+            43px;
+
+        padding:
+            .64rem
+            .86rem;
+
+        border:
+            1px solid
+            rgba(241,210,127,.14);
+
+        border-radius:
+            9px;
+
+        background:
+            linear-gradient(
+                145deg,
+                rgba(255,255,255,.026),
+                rgba(255,255,255,.007)
+            ),
+            #12100d;
+
+        color:
+            #ded5c8;
+
+        font-size:
+            .68rem;
+
+        font-weight:
+            860;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.028),
+            0 3px 0
+            #070604,
+            0 11px 20px
+            rgba(0,0,0,.18);
+
+        transform:
+            translateY(0);
+
+        transform-style:
+            preserve-3d;
+
+        transition:
+            transform 180ms var(--pga-ease),
+            border-color 180ms ease,
+            background 180ms ease,
+            color 180ms ease,
+            box-shadow 180ms ease,
+            opacity 180ms ease;
+    }
+
+    .pga-btn::before {
+        content: "";
+        position: absolute;
+        z-index: -1;
+
+        top: -85%;
+        bottom: -85%;
+        left: -42%;
+
+        width: 28%;
+
+        background:
+            linear-gradient(
+                90deg,
+                transparent,
+                rgba(255,255,255,.24),
+                transparent
+            );
+
+        transform:
+            rotate(17deg)
+            translateX(-190%);
+
+        transition:
+            transform
+            700ms
+            var(--pga-ease-out);
+    }
+
+    .pga-btn:hover:not(:disabled) {
+        border-color:
+            rgba(255,230,166,.28);
+
+        background:
+            linear-gradient(
+                145deg,
+                rgba(228,184,81,.06),
+                rgba(255,255,255,.008)
+            ),
+            #15120e;
+
+        color:
+            var(--pga-ivory);
+
+        transform:
+            translateY(-3px);
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.035),
+            0 6px 0
+            #070604,
+            0 16px 27px
+            rgba(0,0,0,.24);
+    }
+
+    .pga-btn:hover:not(:disabled)::before {
+        transform:
+            rotate(17deg)
+            translateX(620%);
+    }
+
+    .pga-btn:active:not(:disabled) {
+        transform:
+            translateY(1px);
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.02),
+            0 2px 0
+            #070604,
+            0 8px 14px
+            rgba(0,0,0,.17);
+    }
+
+    .pga-btn:disabled {
+        opacity: .46;
+        cursor: not-allowed;
+        filter: saturate(.45);
+    }
+
+    .pga-btn--primary {
+        border-color:
+            rgba(255,233,181,.54);
+
+        background:
+            var(--pga-gold-gradient);
+
+        color:
+            #1b1107;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.36),
+            0 4px 0
+            #74440c,
+            0 13px 24px
+            rgba(0,0,0,.24);
+
+        text-shadow:
+            0 1px 0
+            rgba(255,255,255,.26);
+    }
+
+    .pga-btn--primary:hover:not(:disabled) {
+        border-color:
+            rgba(255,241,205,.70);
+
+        background:
+            linear-gradient(
+                135deg,
+                #fff0bd 0%,
+                #f5d476 30%,
+                #e1aa3e 64%,
+                #b6791a 100%
+            );
+
+        color:
+            #170d04;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.43),
+            0 7px 0
+            #74440c,
+            0 18px 31px
+            rgba(214,159,51,.18);
+    }
+
+    .pga-btn--danger {
+        border-color:
+            rgba(229,113,98,.22);
+
+        background:
+            rgba(229,113,98,.065);
+
+        color:
+            #ef9186;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.018),
+            0 3px 0
+            rgba(83,29,23,.55),
+            0 10px 18px
+            rgba(0,0,0,.14);
+    }
+
+    .pga-btn--danger:hover:not(:disabled) {
+        border-color:
+            rgba(239,137,124,.38);
+
+        background:
+            rgba(229,113,98,.095);
+
+        color:
+            #ffaaa0;
+    }
+
+    .pga-btn--small {
+        min-height:
+            36px;
+
+        padding:
+            .5rem
+            .66rem;
+
+        font-size:
+            .61rem;
+    }
+
+    /* ---------------------------------------------------------------------
+       Alert state
+       --------------------------------------------------------------------- */
+
+    .pga-alert {
+        position: relative;
+        overflow: hidden;
+
+        margin-bottom:
+            1rem;
+
+        padding:
+            .82rem
+            .9rem;
+
+        border:
+            1px solid
+            rgba(229,113,98,.28);
+
+        border-radius:
+            11px;
+
+        background:
+            linear-gradient(
+                145deg,
+                rgba(229,113,98,.075),
+                rgba(229,113,98,.035)
+            ),
+            #100b09;
+
+        color:
+            #ef958a;
+
+        font-size:
+            .68rem;
+
+        line-height:
+            1.52;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.015),
+            0 14px 28px
+            rgba(0,0,0,.14);
+    }
+
+    .pga-alert::before {
+        content: "";
+        position: absolute;
+
+        top: 0;
+        bottom: 0;
+        left: 0;
+
+        width: 3px;
+
+        background:
+            linear-gradient(
+                #ffb0a7,
+                #d95d4f
+            );
+    }
+
+    /* ---------------------------------------------------------------------
+       Main two-column workspace
+       --------------------------------------------------------------------- */
+
+    .pga-grid {
+        position: relative;
+        z-index: 2;
+
+        grid-template-columns:
+            minmax(285px,.78fr)
+            minmax(0,1.72fr);
+
+        gap:
+            clamp(1rem, 2.8vw, 1.5rem);
+
+        align-items:
+            start;
+
+        perspective:
+            1300px;
+    }
+
+    .pga-panel {
+        --pga-panel-x: 78%;
+        --pga-panel-y: 8%;
+        --pga-panel-rx: 0deg;
+        --pga-panel-ry: 0deg;
+        --pga-panel-lift: 0px;
+
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
+
+        border:
+            1px solid
+            rgba(228,184,81,.12);
+
+        border-radius:
+            18px;
+
+        background:
+            radial-gradient(
+                circle at
+                var(--pga-panel-x)
+                var(--pga-panel-y),
+                rgba(255,231,164,.045),
+                transparent 15rem
+            ),
+            linear-gradient(
+                145deg,
+                rgba(255,255,255,.034),
+                rgba(255,255,255,.006)
+            ),
+            #11100d;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.030),
+            0 21px 48px
+            rgba(0,0,0,.26);
+
+        transform:
+            perspective(1200px)
+            rotateX(var(--pga-panel-rx))
+            rotateY(var(--pga-panel-ry))
+            translateY(var(--pga-panel-lift));
+
+        transform-style:
+            preserve-3d;
+
+        transition:
+            transform 250ms var(--pga-ease),
+            border-color 200ms ease,
+            box-shadow 250ms ease;
+    }
+
+    .pga-panel::after {
+        content: "";
+        position: absolute;
+
+        top: 0;
+        right: 14%;
+        left: 14%;
+
+        height: 1px;
+
+        background:
+            var(--pga-silver-line);
+
+        opacity: .36;
+        pointer-events: none;
+    }
+
+    .pga-panel:hover {
+        --pga-panel-lift: -3px;
+
+        border-color:
+            rgba(255,230,166,.22);
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.041),
+            0 29px 64px
+            rgba(0,0,0,.32);
+    }
+
+    /* White / cream touch — mirrors the homepage light editorial section. */
+
+    .pga-grid > aside.pga-panel {
+        border-color:
+            rgba(255,243,219,.48);
+
+        background:
+            radial-gradient(
+                circle at 86% 10%,
+                rgba(216,156,43,.12),
+                transparent 14rem
+            ),
+            var(--pga-cream-gradient);
+
+        color:
+            #2a2119;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.72),
+            0 25px 58px
+            rgba(0,0,0,.25);
+    }
+
+    .pga-grid > aside.pga-panel::after {
+        background:
+            linear-gradient(
+                90deg,
+                transparent,
+                rgba(176,120,32,.33),
+                transparent
+            );
+
+        opacity: .62;
+    }
+
+    .pga-panel__head {
+        position: relative;
+
+        padding:
+            1rem
+            1.05rem;
+
+        border-bottom:
+            1px solid
+            rgba(216,212,205,.065);
+
+        background:
+            linear-gradient(
+                180deg,
+                rgba(255,255,255,.018),
+                rgba(255,255,255,.005)
+            );
+    }
+
+    .pga-grid > aside.pga-panel
+    .pga-panel__head {
+        border-bottom-color:
+            rgba(109,78,37,.12);
+
+        background:
+            linear-gradient(
+                180deg,
+                rgba(255,255,255,.42),
+                rgba(255,255,255,.12)
+            );
+    }
+
+    .pga-panel__head h2 {
+        margin: 0;
+
+        color:
+            var(--pga-ivory);
+
+        font-size:
+            .95rem;
+
+        font-weight:
+            900;
+
+        letter-spacing:
+            -.022em;
+    }
+
+    .pga-grid > aside.pga-panel
+    .pga-panel__head h2 {
+        color:
+            #251b13;
+    }
+
+    .pga-panel__head p {
+        margin-top:
+            .32rem;
+
+        color:
+            var(--pga-muted);
+
+        font-size:
+            .64rem;
+
+        line-height:
+            1.52;
+    }
+
+    .pga-grid > aside.pga-panel
+    .pga-panel__head p {
+        color:
+            #766653;
+    }
+
+    .pga-panel__body {
+        padding:
+            1.05rem;
+    }
+
+    /* ---------------------------------------------------------------------
+       Main image / cover visual stage
+       --------------------------------------------------------------------- */
+
+    .pga-primary-preview {
+        --pga-preview-rx: 0deg;
+        --pga-preview-ry: 0deg;
+        --pga-preview-scale: 1;
+
+        position: relative;
+        isolation: isolate;
+
+        aspect-ratio:
+            4 / 3;
+
+        border:
+            1px solid
+            rgba(97,65,29,.20);
+
+        border-radius:
+            14px;
+
+        background:
+            radial-gradient(
+                circle at 72% 26%,
+                rgba(229,172,58,.22),
+                transparent 38%
+            ),
+            linear-gradient(
+                145deg,
+                #2d2118,
+                #120d09
+            );
+
+        color:
+            #d5bd97;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.11),
+            0 4px 0
+            rgba(88,56,23,.24),
+            0 18px 34px
+            rgba(73,46,20,.18);
+
+        transform:
+            perspective(980px)
+            rotateX(var(--pga-preview-rx))
+            rotateY(var(--pga-preview-ry))
+            scale(var(--pga-preview-scale));
+
+        transform-style:
+            preserve-3d;
+
+        transition:
+            transform 260ms var(--pga-ease),
+            box-shadow 260ms ease;
+    }
+
+    .pga-primary-preview::before {
+        content: "";
+        position: absolute;
+        z-index: 4;
+        inset: 0;
+
+        background:
+            radial-gradient(
+                circle at 73% 20%,
+                rgba(255,224,149,.12),
+                transparent 34%
+            ),
+            linear-gradient(
+                180deg,
+                rgba(255,255,255,.05),
+                transparent 28%,
+                transparent 72%,
+                rgba(16,8,4,.14)
+            );
+
+        pointer-events: none;
+        mix-blend-mode: screen;
+    }
+
+    .pga-primary-preview::after {
+        content: "";
+        position: absolute;
+        z-index: 5;
+
+        inset: 8px;
+
+        border:
+            1px solid
+            rgba(255,255,255,.15);
+
+        border-radius:
+            10px;
+
+        pointer-events: none;
+    }
+
+    .pga-primary-preview:hover {
+        --pga-preview-scale: 1.012;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.13),
+            0 6px 0
+            rgba(88,56,23,.22),
+            0 24px 44px
+            rgba(73,46,20,.23);
+    }
+
+    .pga-primary-preview img {
+        position: relative;
+        z-index: 2;
+
+        object-fit:
+            cover;
+
+        filter:
+            saturate(1.06)
+            contrast(1.025);
+
+        transform:
+            scale(1.025)
+            translateZ(20px);
+
+        transition:
+            transform 620ms var(--pga-ease),
+            filter 250ms ease;
+    }
+
+    .pga-primary-preview:hover img {
+        transform:
+            scale(1.065)
+            translateZ(28px);
+
+        filter:
+            saturate(1.11)
+            contrast(1.04);
+    }
+
+    .pga-primary-meta {
+        margin-top:
+            .84rem;
+
+        gap:
+            .28rem;
+    }
+
+    .pga-primary-meta strong {
+        color:
+            #2f2116;
+
+        font-size:
+            .66rem;
+
+        font-weight:
+            900;
+
+        text-transform:
+            uppercase;
+
+        letter-spacing:
+            .08em;
+    }
+
+    .pga-primary-url {
+        color:
+            #756552;
+
+        font-size:
+            .58rem;
+
+        line-height:
+            1.48;
+    }
+
+    .pga-help {
+        position: relative;
+        overflow: hidden;
+
+        margin-top:
+            .8rem;
+
+        padding:
+            .72rem
+            .78rem;
+
+        border:
+            1px solid
+            rgba(158,107,32,.18);
+
+        border-radius:
+            10px;
+
+        background:
+            rgba(255,255,255,.44);
+
+        color:
+            #675440;
+
+        font-size:
+            .61rem;
+
+        line-height:
+            1.55;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.68);
+    }
+
+    .pga-help::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: 3px;
+        background:
+            linear-gradient(
+                var(--pga-gold-200),
+                var(--pga-gold-500)
+            );
+    }
+
+    .pga-help strong {
+        color:
+            #3b2a1a;
+    }
+
+    /* ---------------------------------------------------------------------
+       Toolbar and count
+       --------------------------------------------------------------------- */
+
+    .pga-toolbar {
+        position: relative;
+
+        margin-bottom:
+            .92rem;
+
+        padding-bottom:
+            .82rem;
+
+        border-bottom:
+            1px solid
+            rgba(216,212,205,.065);
+    }
+
+    .pga-count {
+        display:
+            inline-flex;
+
+        align-items:
+            center;
+
+        min-height:
+            30px;
+
+        padding:
+            .3rem
+            .52rem;
+
+        border:
+            1px solid
+            rgba(228,184,81,.10);
+
+        border-radius:
+            999px;
+
+        background:
+            rgba(255,255,255,.017);
+
+        color:
+            #9f958a;
+
+        font-size:
+            .58rem;
+
+        font-weight:
+            760;
+    }
+
+    /* ---------------------------------------------------------------------
+       Gallery list and item cards
+       --------------------------------------------------------------------- */
+
+    .pga-list {
+        gap:
+            .74rem;
+
+        perspective:
+            1200px;
+    }
+
+    .pga-empty {
+        position: relative;
+        overflow: hidden;
+
+        padding:
+            1.35rem;
+
+        border:
+            1px dashed
+            rgba(228,184,81,.18);
+
+        border-radius:
+            13px;
+
+        background:
+            radial-gradient(
+                circle at 50% 0%,
+                rgba(228,184,81,.05),
+                transparent 12rem
+            ),
+            rgba(255,255,255,.012);
+
+        color:
+            #9d9286;
+
+        font-size:
+            .66rem;
+
+        line-height:
+            1.6;
+    }
+
+    .pga-empty strong {
+        color:
+            var(--pga-gold-200);
+    }
+
+    .pga-item {
+        --pga-item-x: 84%;
+        --pga-item-y: 8%;
+        --pga-item-rx: 0deg;
+        --pga-item-ry: 0deg;
+        --pga-item-lift: 0px;
+
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
+
+        grid-template-columns:
+            116px
+            minmax(0,1fr);
+
+        gap:
+            .9rem;
+
+        padding:
+            .78rem;
+
+        border:
+            1px solid
+            rgba(228,184,81,.105);
+
+        border-radius:
+            13px;
+
+        background:
+            radial-gradient(
+                circle at
+                var(--pga-item-x)
+                var(--pga-item-y),
+                rgba(255,231,164,.04),
+                transparent 11rem
+            ),
+            linear-gradient(
+                145deg,
+                rgba(255,255,255,.022),
+                rgba(255,255,255,.005)
+            ),
+            #0e0d0a;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.022),
+            0 3px 0
+            #070604,
+            0 13px 24px
+            rgba(0,0,0,.17);
+
+        transform:
+            perspective(1000px)
+            rotateX(var(--pga-item-rx))
+            rotateY(var(--pga-item-ry))
+            translateY(var(--pga-item-lift));
+
+        transform-style:
+            preserve-3d;
+
+        transition:
+            transform 220ms var(--pga-ease),
+            border-color 180ms ease,
+            box-shadow 220ms ease,
+            background 180ms ease;
+    }
+
+    .pga-item::before {
+        content: "";
+        position: absolute;
+        z-index: 0;
+
+        top: 0;
+        right: 16%;
+        left: 16%;
+
+        height: 1px;
+
+        background:
+            var(--pga-silver-line);
+
+        opacity: .28;
+        pointer-events: none;
+    }
+
+    .pga-item::after {
+        content: "";
+        position: absolute;
+        z-index: 0;
+
+        top: -90%;
+        bottom: -90%;
+        left: -40%;
+
+        width: 22%;
+
+        background:
+            linear-gradient(
+                90deg,
+                transparent,
+                rgba(255,255,255,.05),
+                transparent
+            );
+
+        transform:
+            rotate(18deg)
+            translateX(-190%);
+
+        transition:
+            transform
+            850ms
+            var(--pga-ease-out);
+
+        pointer-events: none;
+    }
+
+    .pga-item:hover {
+        --pga-item-lift: -3px;
+
+        border-color:
+            rgba(255,230,166,.20);
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.03),
+            0 6px 0
+            #070604,
+            0 19px 34px
+            rgba(0,0,0,.23);
+    }
+
+    .pga-item:hover::after {
+        transform:
+            rotate(18deg)
+            translateX(720%);
+    }
+
+    .pga-item__preview {
+        position: relative;
+        z-index: 2;
+        isolation: isolate;
+
+        width:
+            116px;
+
+        aspect-ratio:
+            1 / 1;
+
+        padding:
+            .32rem;
+
+        border:
+            1px solid
+            rgba(241,210,127,.14);
+
+        border-radius:
+            11px;
+
+        background:
+            radial-gradient(
+                circle at 70% 22%,
+                rgba(228,184,81,.11),
+                transparent 62%
+            ),
+            #17130f;
+
+        color:
+            #8f857a;
+
+        font-size:
+            .56rem;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.035),
+            0 9px 19px
+            rgba(0,0,0,.18);
+
+        transform:
+            translateZ(12px);
+    }
+
+    .pga-item__preview::after {
+        content: "";
+        position: absolute;
+        z-index: 4;
+        inset: 5px;
+
+        border:
+            1px solid
+            rgba(255,255,255,.12);
+
+        border-radius:
+            7px;
+
+        pointer-events: none;
+    }
+
+    .pga-item__preview img {
+        position: relative;
+        z-index: 2;
+
+        object-fit:
+            cover;
+
+        filter:
+            saturate(1.04)
+            contrast(1.02);
+
+        transition:
+            transform 480ms var(--pga-ease),
+            filter 220ms ease;
+    }
+
+    .pga-item:hover
+    .pga-item__preview img {
+        transform:
+            scale(1.065);
+
+        filter:
+            saturate(1.10)
+            contrast(1.035);
+    }
+
+    .pga-item__main {
+        position: relative;
+        z-index: 2;
+    }
+
+    .pga-item__top {
+        margin-bottom:
+            .48rem;
+    }
+
+    .pga-item__label {
+        color:
+            var(--pga-ivory);
+
+        font-size:
+            .71rem;
+
+        font-weight:
+            900;
+
+        letter-spacing:
+            -.015em;
+    }
+
+    .pga-order-badge {
+        min-height:
+            24px;
+
+        display:
+            inline-flex;
+
+        align-items:
+            center;
+
+        padding:
+            .22rem
+            .45rem;
+
+        border:
+            1px solid
+            rgba(228,184,81,.13);
+
+        border-radius:
+            999px;
+
+        background:
+            rgba(228,184,81,.065);
+
+        color:
+            var(--pga-gold-200);
+
+        font-size:
+            .51rem;
+
+        font-weight:
+            860;
+
+        letter-spacing:
+            .035em;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.018);
+    }
+
+    /* ---------------------------------------------------------------------
+       Inputs / form typography
+       --------------------------------------------------------------------- */
+
+    .pga-field label {
+        margin-bottom:
+            .28rem;
+
+        color:
+            #c6bbaf;
+
+        font-size:
+            .58rem;
+
+        font-weight:
+            820;
+    }
+
+    .pga-input {
+        min-height:
+            42px;
+
+        padding:
+            .62rem
+            .68rem;
+
+        border:
+            1px solid
+            rgba(228,184,81,.105);
+
+        border-radius:
+            9px;
+
+        background:
+            linear-gradient(
+                180deg,
+                rgba(255,255,255,.015),
+                rgba(255,255,255,.004)
+            ),
+            #090806;
+
+        color:
+            #ded6ca;
+
+        caret-color:
+            var(--pga-gold-200);
+
+        font-size:
+            .64rem;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255,255,255,.014);
+
+        transition:
+            border-color 180ms ease,
+            box-shadow 180ms ease,
+            background 180ms ease,
+            transform 180ms var(--pga-ease);
+    }
+
+    .pga-input::placeholder {
+        color:
+            #70685f;
+    }
+
+    .pga-input:hover {
+        border-color:
+            rgba(241,210,127,.19);
+
+        background:
+            #0c0a08;
+    }
+
+    .pga-input:focus {
+        border-color:
+            rgba(241,210,127,.42);
+
+        background:
+            #0f0d0a;
+
+        box-shadow:
+            0 0 0 4px
+            rgba(228,184,81,.052),
+            inset 0 1px 0
+            rgba(255,255,255,.018);
+    }
+
+    .pga-input[aria-invalid="true"] {
+        border-color:
+            rgba(229,113,98,.52);
+
+        box-shadow:
+            0 0 0 4px
+            rgba(229,113,98,.05);
+    }
+
+    .pga-field-error {
+        color:
+            #ef958a;
+
+        font-size:
+            .56rem;
+
+        font-weight:
+            730;
+    }
+
+    .pga-item__buttons {
+        gap:
+            .42rem;
+
+        margin-top:
+            .58rem;
+    }
+
+    /* ---------------------------------------------------------------------
+       Footer save strip
+       --------------------------------------------------------------------- */
+
+    .pga-footer {
+        position: relative;
+
+        margin-top:
+            1rem;
+
+        padding-top:
+            .9rem;
+
+        border-top:
+            1px solid
+            rgba(216,212,205,.065);
+    }
+
+    .pga-footer::before {
+        content: "";
+        position: absolute;
+
+        top: -1px;
+        left: 0;
+
+        width:
+            34%;
+
+        height: 1px;
+
+        background:
+            linear-gradient(
+                90deg,
+                var(--pga-gold-300),
+                transparent
+            );
+
+        opacity: .54;
+    }
+
+    .pga-status {
+        display:
+            inline-flex;
+
+        align-items:
+            center;
+
+        min-height:
+            28px;
+
+        color:
+            #9e9488;
+
+        font-size:
+            .59rem;
+
+        font-weight:
+            720;
+    }
+
+    .pga-status:not(:empty)::before {
+        content: "";
+
+        width: 7px;
+        height: 7px;
+
+        margin-right:
+            .4rem;
+
+        border-radius:
+            50%;
+
+        background:
+            var(--pga-gold-300);
+
+        box-shadow:
+            0 0 0 4px
+            rgba(228,184,81,.055);
+    }
+
+    /* ---------------------------------------------------------------------
+       Loaded / reveal motion
+       --------------------------------------------------------------------- */
+
+    .pga-page.pga-enhanced
+    .pga-breadcrumbs,
+    .pga-page.pga-enhanced
+    .pga-hero,
+    .pga-page.pga-enhanced
+    .pga-panel {
+        animation:
+            pga-rise-in
+            760ms
+            var(--pga-ease-out)
+            both;
+    }
+
+    .pga-page.pga-enhanced
+    .pga-hero {
+        animation-delay:
+            70ms;
+    }
+
+    .pga-page.pga-enhanced
+    .pga-grid > .pga-panel:nth-child(1) {
+        animation-delay:
+            120ms;
+    }
+
+    .pga-page.pga-enhanced
+    .pga-grid > .pga-panel:nth-child(2) {
+        animation-delay:
+            180ms;
+    }
+
+    @keyframes pga-rise-in {
+        from {
+            opacity: 0;
+
+            transform:
+                translateY(18px)
+                scale(.992);
+        }
+
+        to {
+            opacity: 1;
+
+            transform:
+                translateY(0)
+                scale(1);
+        }
+    }
+
+    .pga-item[data-pga-reveal="pending"] {
+        opacity: 0;
+
+        transform:
+            translateY(14px)
+            scale(.992);
+    }
+
+    .pga-item[data-pga-reveal="visible"] {
+        animation:
+            pga-item-reveal
+            520ms
+            var(--pga-ease-out)
+            both;
+    }
+
+    @keyframes pga-item-reveal {
+        from {
+            opacity: 0;
+            transform:
+                translateY(14px)
+                scale(.992);
+        }
+
+        to {
+            opacity: 1;
+            transform:
+                translateY(0)
+                scale(1);
+        }
+    }
+
+    /* Soft breathing highlight for "unsaved changes" without changing text. */
+
+    .pga-page.pga-is-dirty
+    #pga-save {
+        animation:
+            pga-save-pulse
+            2.5s
+            ease-in-out
+            infinite;
+    }
+
+    @keyframes pga-save-pulse {
+        0%,
+        100% {
+            box-shadow:
+                inset 0 1px 0
+                rgba(255,255,255,.36),
+                0 4px 0
+                #74440c,
+                0 13px 24px
+                rgba(0,0,0,.24);
+        }
+
+        50% {
+            box-shadow:
+                inset 0 1px 0
+                rgba(255,255,255,.42),
+                0 5px 0
+                #74440c,
+                0 17px 31px
+                rgba(214,159,51,.20),
+                0 0 0 5px
+                rgba(228,184,81,.035);
+        }
+    }
+
+    /* ---------------------------------------------------------------------
+       Selection / focus / accessibility polish
+       --------------------------------------------------------------------- */
+
+    .pga-page ::selection {
+        background:
+            rgba(228,184,81,.26);
+
+        color:
+            var(--pga-ivory);
+    }
+
+    .pga-page
+    .pga-btn:focus-visible,
+    .pga-page
+    .pga-input:focus-visible,
+    .pga-page
+    a:focus-visible {
+        outline:
+            3px solid
+            rgba(241,210,127,.34);
+
+        outline-offset:
+            3px;
+    }
+
+    /* ---------------------------------------------------------------------
+       Responsive behavior / zoom tolerance
+       --------------------------------------------------------------------- */
+
+    @media (max-width: 1120px) {
+        .pga-page {
+            width:
+                min(
+                    1160px,
+                    calc(100% - 1.45rem)
+                );
+        }
+
+        .pga-grid {
+            grid-template-columns:
+                minmax(255px,.72fr)
+                minmax(0,1.58fr);
+        }
+
+        .pga-title {
+            font-size:
+                clamp(
+                    2.45rem,
+                    5.4vw,
+                    4.2rem
+                );
+        }
+
+        .pga-item {
+            grid-template-columns:
+                104px
+                minmax(0,1fr);
+        }
+
+        .pga-item__preview {
+            width: 104px;
+        }
+    }
+
+    @media (max-width: 980px) {
+        .pga-grid {
+            grid-template-columns:
+                1fr;
+        }
+
+        .pga-grid > aside.pga-panel {
+            display:
+                grid;
+
+            grid-template-columns:
+                minmax(230px,.78fr)
+                minmax(0,1.22fr);
+        }
+
+        .pga-grid > aside.pga-panel
+        .pga-panel__head {
+            grid-column:
+                1 / -1;
+        }
+
+        .pga-grid > aside.pga-panel
+        .pga-panel__body {
+            grid-column:
+                1 / -1;
+        }
+    }
+
+    @media (max-width: 860px) {
+        .pga-page {
+            width:
+                min(
+                    100% - 1rem,
+                    1180px
+                );
+
+            padding-top:
+                1rem;
+        }
+
+        .pga-hero {
+            align-items:
+                flex-start;
+
+            flex-direction:
+                column;
+        }
+
+        .pga-hero
+        .pga-actions {
+            justify-content:
+                flex-start;
+        }
+
+        .pga-title {
+            font-size:
+                clamp(
+                    2.3rem,
+                    8vw,
+                    3.6rem
+                );
+        }
+    }
+
+    @media (max-width: 680px) {
+        .pga-page {
+            border-radius:
+                0 0 20px 20px;
+        }
+
+        .pga-breadcrumbs {
+            border-radius:
+                12px;
+        }
+
+        .pga-title {
+            max-width:
+                100%;
+        }
+
+        .pga-actions,
+        .pga-hero .pga-actions,
+        .pga-toolbar .pga-actions {
+            width:
+                100%;
+        }
+
+        .pga-hero
+        .pga-actions
+        .pga-btn,
+        .pga-toolbar
+        .pga-actions
+        .pga-btn {
+            flex:
+                1 1 auto;
+        }
+
+        .pga-item {
+            grid-template-columns:
+                92px
+                minmax(0,1fr);
+
+            gap:
+                .68rem;
+
+            padding:
+                .68rem;
+        }
+
+        .pga-item__preview {
+            width:
+                92px;
+        }
+    }
+
+    @media (max-width: 580px) {
+        .pga-page {
+            width:
+                min(
+                    100% - .72rem,
+                    1180px
+                );
+
+            padding-top:
+                .82rem;
+        }
+
+        .pga-kicker {
+            font-size:
+                .53rem;
+        }
+
+        .pga-subtitle {
+            font-size:
+                .72rem;
+        }
+
+        .pga-panel__head,
+        .pga-panel__body {
+            padding:
+                .82rem;
+        }
+
+        .pga-toolbar,
+        .pga-footer {
+            align-items:
+                stretch;
+
+            flex-direction:
+                column;
+        }
+
+        .pga-toolbar
+        .pga-btn,
+        .pga-footer
+        .pga-btn {
+            width:
+                100%;
+        }
+
+        .pga-item {
+            grid-template-columns:
+                78px
+                minmax(0,1fr);
+        }
+
+        .pga-item__preview {
+            width:
+                78px;
+        }
+
+        .pga-item__top {
+            align-items:
+                flex-start;
+
+            flex-direction:
+                column;
+
+            gap:
+                .34rem;
+        }
+    }
+
+    @media (max-width: 430px) {
+        .pga-title {
+            font-size:
+                clamp(
+                    2.05rem,
+                    11vw,
+                    2.8rem
+                );
+        }
+
+        .pga-grid > aside.pga-panel {
+            display:
+                block;
+        }
+
+        .pga-item {
+            grid-template-columns:
+                1fr;
+        }
+
+        .pga-item__preview {
+            width:
+                100%;
+
+            aspect-ratio:
+                16 / 9;
+        }
+
+        .pga-item__buttons {
+            display:
+                grid;
+
+            grid-template-columns:
+                repeat(2,minmax(0,1fr));
+        }
+
+        .pga-item__buttons
+        .pga-btn--danger {
+            grid-column:
+                1 / -1;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .pga-page,
+        .pga-page *,
+        .pga-page *::before,
+        .pga-page *::after {
+            scroll-behavior:
+                auto !important;
+
+            animation-duration:
+                .01ms !important;
+
+            animation-iteration-count:
+                1 !important;
+
+            transition-duration:
+                .01ms !important;
+        }
+    }
+
+</style>
+{% endblock %}
+
+{% block content %}
+<section
+    class="pga-page"
+    id="product-gallery-admin"
+    data-submit-url="{{ gallery_submit_url }}"
+    data-upload-url="{{ gallery_upload_url|default('', true) }}"
+    data-products-url="{{ products_list_url }}"
+    data-edit-url="{{ product_edit_url }}"
+    data-max-images="{{ max_gallery_images|default(10, true) }}"
+    data-primary-image="{{ primary_image_url|default('', true)|e }}"
+>
+    <nav class="pga-breadcrumbs" aria-label="Breadcrumb">
+        <a href="{{ products_list_url }}">Products</a>
+        <span aria-hidden="true">/</span>
+        <span>{{ product.name|default("Product", true) }}</span>
+        <span aria-hidden="true">/</span>
+        <strong>Gallery</strong>
+    </nav>
+
+    <header class="pga-hero">
+        <div>
+            <p class="pga-kicker">Protected Staff Workspace</p>
+            <h1 class="pga-title">Product Gallery</h1>
+            <p class="pga-subtitle">
+                Choose the exact display order for {{ product.name|default("this product", true) }}.
+                The main product image stays Picture 1; the extra images below become Picture 2, Picture 3, and so on.
+            </p>
+        </div>
+        <div class="pga-actions">
+            <a class="pga-btn" href="{{ product_edit_url }}">Edit Product</a>
+            <a class="pga-btn" href="{{ products_list_url }}">Back to Products</a>
+        </div>
+    </header>
+
+    <div class="pga-alert" id="pga-error" role="alert" hidden></div>
+
+    <div class="pga-grid">
+        <aside class="pga-panel">
+            <header class="pga-panel__head">
+                <h2>Picture 1 — Main / Cover</h2>
+                <p>This image comes from the Product Image URL field and remains the menu/card cover image.</p>
+            </header>
+            <div class="pga-panel__body">
+                <div class="pga-primary-preview" id="pga-primary-preview">
+                    {% if primary_image_url %}
+                        <img src="{{ primary_image_url }}" alt="{{ product.name|default('Product', true) }} main image" data-primary-image>
+                    {% else %}
+                        <span>No main image set</span>
+                    {% endif %}
+                </div>
+                <div class="pga-primary-meta">
+                    <strong>Main image URL</strong>
+                    {% if primary_image_url %}
+                        <p class="pga-primary-url">{{ primary_image_url }}</p>
+                    {% else %}
+                        <p class="pga-primary-url">No Product Image URL has been saved yet.</p>
+                    {% endif %}
+                </div>
+                <p class="pga-help">
+                    To change Picture 1, use <strong>Edit Product</strong>. This gallery page controls only the additional pictures.
+                </p>
+            </div>
+        </aside>
+
+        <section class="pga-panel" aria-labelledby="pga-extra-title">
+            <header class="pga-panel__head">
+                <h2 id="pga-extra-title">Additional Pictures</h2>
+                <p>Select JPG, PNG, or WebP files directly from your computer, or add an image URL manually. Uploaded files are appended as additional pictures; use Move Up / Move Down and Save Gallery to control final order.</p>
+            </header>
+            <div class="pga-panel__body">
+                <div class="pga-toolbar">
+                    <div class="pga-count" id="pga-count" aria-live="polite"></div>
+                    <div class="pga-actions">
+                        <input id="pga-file-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
+                        <button class="pga-btn pga-btn--primary" type="button" id="pga-select-files">Select Images</button>
+                        <button class="pga-btn" type="button" id="pga-add">+ Add Image URL</button>
+                    </div>
+                </div>
+
+                <div class="pga-list" id="pga-list" aria-live="polite">
+                    {% for image_url in gallery_images|default([], true) %}
+                        <article class="pga-item" data-gallery-item>
+                            <div class="pga-item__preview" data-preview>
+                                <img src="{{ image_url }}" alt="Gallery preview {{ loop.index + 1 }}" data-preview-image>
+                            </div>
+                            <div class="pga-item__main">
+                                <div class="pga-item__top">
+                                    <span class="pga-item__label" data-picture-label>Picture {{ loop.index + 1 }}</span>
+                                    <span class="pga-order-badge" data-order-badge>Position {{ loop.index + 1 }}</span>
+                                </div>
+                                <div class="pga-field">
+                                    <label>Image URL</label>
+                                    <input
+                                        class="pga-input"
+                                        type="url"
+                                        inputmode="url"
+                                        value="{{ image_url }}"
+                                        placeholder="http://127.0.0.1:5000/static/images/products/example.jpg"
+                                        autocomplete="off"
+                                        data-gallery-url
+                                    >
+                                    <p class="pga-field-error" data-field-error hidden></p>
+                                </div>
+                                <div class="pga-item__buttons">
+                                    <button class="pga-btn pga-btn--small" type="button" data-move-up>Move Up</button>
+                                    <button class="pga-btn pga-btn--small" type="button" data-move-down>Move Down</button>
+                                    <button class="pga-btn pga-btn--small pga-btn--danger" type="button" data-remove>Remove</button>
+                                </div>
+                            </div>
+                        </article>
+                    {% endfor %}
+                </div>
+
+                <div class="pga-empty" id="pga-empty" {% if gallery_images %}hidden{% endif %}>
+                    No additional pictures yet. Click <strong>+ Add Picture</strong> when you want Picture 2.
+                </div>
+
+                <div class="pga-footer">
+                    <div class="pga-status" id="pga-status" aria-live="polite"></div>
+                    <button class="pga-btn pga-btn--primary" type="button" id="pga-save">Save Gallery</button>
+                </div>
+            </div>
+        </section>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    "use strict";
+
+    const root = document.getElementById("product-gallery-admin");
+    if (!root) return;
+
+    const list = document.getElementById("pga-list");
+    const empty = document.getElementById("pga-empty");
+    const addButton = document.getElementById("pga-add");
+    const selectFilesButton = document.getElementById("pga-select-files");
+    const fileInput = document.getElementById("pga-file-input");
+    const saveButton = document.getElementById("pga-save");
+    const count = document.getElementById("pga-count");
+    const errorBox = document.getElementById("pga-error");
+    const status = document.getElementById("pga-status");
+
+    const maxImages = Math.max(0, Number(root.dataset.maxImages || "10") || 10);
+    const primaryImage = String(root.dataset.primaryImage || "").trim();
+    const submitUrl = safeInternalUrl(root.dataset.submitUrl);
+    const uploadUrl = safeInternalUrl(root.dataset.uploadUrl);
+
+    let dirty = false;
+    let saving = false;
+
+    function safeInternalUrl(value) {
+        const raw = String(value || "").trim();
+        return raw.startsWith("/") && !raw.startsWith("//") ? raw : "";
+    }
+
+    function toast(message, type) {
+        if (window.AppUI && typeof window.AppUI.showToast === "function") {
+            window.AppUI.showToast(message, type || "info");
+            return;
+        }
+        if (typeof window.showToast === "function") {
+            window.showToast(message, type || "info");
+        }
+    }
+
+    async function secureFetch(url, options) {
+        if (window.AppUI && typeof window.AppUI.csrfFetch === "function") {
+            return window.AppUI.csrfFetch(url, options || {});
+        }
+        const requestOptions = options || {};
+        const headers = new Headers(requestOptions.headers || {});
+        const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+        const token = csrfMeta ? String(csrfMeta.getAttribute("content") || "") : "";
+        if (token) headers.set("X-CSRFToken", token);
+        return fetch(url, { ...requestOptions, credentials: "same-origin", headers: headers });
+    }
+
+    async function safeJson(response) {
+        try { return await response.json(); }
+        catch (error) { return null; }
+    }
+
+    function backendMessage(payload, fallback) {
+        return String(
+            payload && payload.error && payload.error.message
+                ? payload.error.message
+                : fallback
+        );
+    }
+
+    function showError(message) {
+        errorBox.textContent = String(message || "Please review the gallery.");
+        errorBox.hidden = false;
+        errorBox.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    function clearError() {
+        errorBox.textContent = "";
+        errorBox.hidden = true;
+    }
+
+    function items() {
+        return Array.from(list.querySelectorAll("[data-gallery-item]"));
+    }
+
+    function isHttpUrl(value) {
+        try {
+            const parsed = new URL(value);
+            return parsed.protocol === "http:" || parsed.protocol === "https:";
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function updatePreview(item) {
+        const input = item.querySelector("[data-gallery-url]");
+        const preview = item.querySelector("[data-preview]");
+        const value = String(input ? input.value : "").trim();
+        if (!preview) return;
+
+        preview.innerHTML = "";
+        if (!value || !isHttpUrl(value)) {
+            const span = document.createElement("span");
+            span.textContent = value ? "Invalid URL" : "Preview";
+            preview.appendChild(span);
+            return;
+        }
+
+        const image = document.createElement("img");
+        image.alt = "Gallery image preview";
+        image.src = value;
+        image.addEventListener("error", function () {
+            preview.innerHTML = "";
+            const span = document.createElement("span");
+            span.textContent = "Image could not load";
+            preview.appendChild(span);
+        }, { once: true });
+        preview.appendChild(image);
+    }
+
+    function updateUi() {
+        const rows = items();
+        rows.forEach(function (item, index) {
+            const number = index + 2;
+            const label = item.querySelector("[data-picture-label]");
+            const badge = item.querySelector("[data-order-badge]");
+            const up = item.querySelector("[data-move-up]");
+            const down = item.querySelector("[data-move-down]");
+
+            if (label) label.textContent = "Picture " + number;
+            if (badge) badge.textContent = "Position " + number;
+            if (up) up.disabled = index === 0;
+            if (down) down.disabled = index === rows.length - 1;
+            updatePreview(item);
+        });
+
+        count.textContent = rows.length + " of " + maxImages + " additional pictures";
+        addButton.disabled = rows.length >= maxImages || saving;
+        empty.hidden = rows.length !== 0;
+    }
+
+    function createItem(value) {
+        const article = document.createElement("article");
+        article.className = "pga-item";
+        article.setAttribute("data-gallery-item", "");
+        article.innerHTML = `
+            <div class="pga-item__preview" data-preview><span>Preview</span></div>
+            <div class="pga-item__main">
+                <div class="pga-item__top">
+                    <span class="pga-item__label" data-picture-label>Picture</span>
+                    <span class="pga-order-badge" data-order-badge>Position</span>
+                </div>
+                <div class="pga-field">
+                    <label>Image URL</label>
+                    <input class="pga-input" type="url" inputmode="url"
+                        placeholder="http://127.0.0.1:5000/static/images/products/example.jpg"
+                        autocomplete="off" data-gallery-url>
+                    <p class="pga-field-error" data-field-error hidden></p>
+                </div>
+                <div class="pga-item__buttons">
+                    <button class="pga-btn pga-btn--small" type="button" data-move-up>Move Up</button>
+                    <button class="pga-btn pga-btn--small" type="button" data-move-down>Move Down</button>
+                    <button class="pga-btn pga-btn--small pga-btn--danger" type="button" data-remove>Remove</button>
+                </div>
+            </div>`;
+
+        const input = article.querySelector("[data-gallery-url]");
+        if (input) input.value = String(value || "");
+        return article;
+    }
+
+    function markDirty() {
+        dirty = true;
+        status.textContent = "Unsaved changes";
+    }
+
+    function addItem(value) {
+        if (items().length >= maxImages) {
+            showError("You can add at most " + maxImages + " additional pictures for this product.");
+            return;
+        }
+        clearError();
+        const item = createItem(value || "");
+        list.appendChild(item);
+        updateUi();
+        markDirty();
+        const input = item.querySelector("[data-gallery-url]");
+        if (input) input.focus();
+    }
+
+    function clearFieldErrors() {
+        items().forEach(function (item) {
+            const input = item.querySelector("[data-gallery-url]");
+            const fieldError = item.querySelector("[data-field-error]");
+            if (input) input.removeAttribute("aria-invalid");
+            if (fieldError) {
+                fieldError.textContent = "";
+                fieldError.hidden = true;
+            }
+        });
+    }
+
+    function fieldError(item, message) {
+        const input = item.querySelector("[data-gallery-url]");
+        const output = item.querySelector("[data-field-error]");
+        if (input) input.setAttribute("aria-invalid", "true");
+        if (output) {
+            output.textContent = message;
+            output.hidden = false;
+        }
+    }
+
+    function collectGallery() {
+        clearFieldErrors();
+        clearError();
+
+        const rows = items();
+        const urls = [];
+        const seen = new Set();
+        let valid = true;
+
+        rows.forEach(function (item) {
+            const input = item.querySelector("[data-gallery-url]");
+            const value = String(input ? input.value : "").trim();
+
+            if (!value) {
+                fieldError(item, "Enter an image URL or remove this picture.");
+                valid = false;
+                return;
+            }
+            if (!isHttpUrl(value)) {
+                fieldError(item, "Use a complete http:// or https:// image URL.");
+                valid = false;
+                return;
+            }
+            if (primaryImage && value === primaryImage) {
+                fieldError(item, "This is already Picture 1 (the main image). Use a different image.");
+                valid = false;
+                return;
+            }
+            if (seen.has(value)) {
+                fieldError(item, "This image is already in the gallery.");
+                valid = false;
+                return;
+            }
+            seen.add(value);
+            urls.push(value);
+        });
+
+        if (!valid) {
+            showError("One or more gallery pictures need attention before saving.");
+            return null;
+        }
+        return urls;
+    }
+
+    function setSaving(next) {
+        saving = Boolean(next);
+        saveButton.disabled = saving;
+        saveButton.textContent = saving ? "Saving..." : "Save Gallery";
+        if (selectFilesButton) selectFilesButton.disabled = saving;
+        if (fileInput) fileInput.disabled = saving;
+        updateUi();
+    }
+
+    function replaceRows(urls) {
+        list.innerHTML = "";
+        (urls || []).forEach(function (url) {
+            list.appendChild(createItem(url));
+        });
+        updateUi();
+    }
+
+    async function saveGallery() {
+        if (saving) return;
+        if (!submitUrl) {
+            showError("The gallery save endpoint is not configured by the backend.");
+            return;
+        }
+
+        const gallery = collectGallery();
+        if (!gallery) return;
+
+        if (navigator.onLine === false) {
+            showError("You appear to be offline. Reconnect before saving the gallery.");
+            return;
+        }
+
+        setSaving(true);
+        status.textContent = "Saving gallery...";
+
+        try {
+            const response = await secureFetch(submitUrl, {
+                method: "PUT",
+                credentials: "same-origin",
+                headers: {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ gallery_images: gallery })
+            });
+            const payload = await safeJson(response);
+
+            if (!response.ok || !payload || payload.success !== true) {
+                if (response.status === 401) {
+                    showError("Your session expired. Please sign in again before saving the gallery.");
+                } else if (response.status === 403) {
+                    showError("You no longer have permission to manage this product gallery.");
+                } else if (response.status === 404) {
+                    showError("This product is no longer available.");
+                } else if (response.status === 422) {
+                    showError(backendMessage(payload, "The gallery contains an invalid image URL."));
+                } else if (response.status === 429) {
+                    showError("Too many requests. Please wait a moment and try again.");
+                } else {
+                    showError(backendMessage(payload, "The gallery could not be saved."));
+                }
+                return;
+            }
+
+            const saved = payload.data && Array.isArray(payload.data.gallery_images)
+                ? payload.data.gallery_images
+                : gallery;
+            replaceRows(saved);
+            dirty = false;
+            status.textContent = "Gallery saved";
+            toast("Product gallery saved.", "success");
+            clearError();
+        } catch (error) {
+            showError("The gallery could not be saved because of a connection problem.");
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    async function uploadSelectedFiles() {
+        if (saving || !fileInput) return;
+        const files = Array.from(fileInput.files || []);
+        if (!files.length) return;
+        if (dirty) {
+            showError("Save or discard the current gallery changes before uploading more images.");
+            fileInput.value = "";
+            return;
+        }
+        if (!uploadUrl) {
+            showError("The direct image upload endpoint is not configured by the backend.");
+            fileInput.value = "";
+            return;
+        }
+
+        const remaining = maxImages - items().length;
+        if (remaining <= 0 || files.length > remaining) {
+            showError("You can upload only " + Math.max(0, remaining) + " more additional picture(s) for this product.");
+            fileInput.value = "";
+            return;
+        }
+
+        clearError();
+        setSaving(true);
+        status.textContent = "Uploading " + files.length + (files.length === 1 ? " image..." : " images...");
+
+        const body = new FormData();
+        files.forEach(function (file) {
+            body.append("gallery_files", file);
+        });
+
+        try {
+            const response = await secureFetch(uploadUrl, {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "Accept": "application/json" },
+                body: body
+            });
+            const payload = await safeJson(response);
+            if (!response.ok || !payload || payload.success !== true) {
+                if (response.status === 401) {
+                    showError("Your session expired. Please sign in again before uploading images.");
+                } else if (response.status === 403) {
+                    showError("You no longer have permission to upload product images.");
+                } else if (response.status === 413) {
+                    showError("One or more selected images are too large for this upload.");
+                } else if (response.status === 422 || response.status === 409) {
+                    showError(backendMessage(payload, "One or more selected files are not valid product images."));
+                } else {
+                    showError(backendMessage(payload, "The selected images could not be uploaded."));
+                }
+                return;
+            }
+
+            const saved = payload.data && Array.isArray(payload.data.gallery_images)
+                ? payload.data.gallery_images
+                : [];
+            replaceRows(saved);
+            dirty = false;
+            status.textContent = files.length + (files.length === 1 ? " image uploaded" : " images uploaded");
+            toast("Product images uploaded.", "success");
+        } catch (error) {
+            showError("The selected images could not be uploaded because of a connection problem.");
+        } finally {
+            fileInput.value = "";
+            setSaving(false);
+        }
+    }
+
+    if (selectFilesButton && fileInput) {
+        selectFilesButton.addEventListener("click", function () {
+            if (!saving) fileInput.click();
+        });
+        fileInput.addEventListener("change", uploadSelectedFiles);
+    }
+
+    addButton.addEventListener("click", function () {
+        addItem("");
+    });
+
+    saveButton.addEventListener("click", saveGallery);
+
+    list.addEventListener("input", function (event) {
+        const input = event.target.closest("[data-gallery-url]");
+        if (!input) return;
+        const item = input.closest("[data-gallery-item]");
+        if (item) {
+            const fieldErrorOutput = item.querySelector("[data-field-error]");
+            input.removeAttribute("aria-invalid");
+            if (fieldErrorOutput) {
+                fieldErrorOutput.textContent = "";
+                fieldErrorOutput.hidden = true;
+            }
+            updatePreview(item);
+        }
+        markDirty();
+    });
+
+    list.addEventListener("click", function (event) {
+        const button = event.target.closest("button");
+        if (!button) return;
+        const item = button.closest("[data-gallery-item]");
+        if (!item) return;
+
+        if (button.matches("[data-remove]")) {
+            item.remove();
+            markDirty();
+            updateUi();
+            return;
+        }
+
+        if (button.matches("[data-move-up]")) {
+            const previous = item.previousElementSibling;
+            if (previous) {
+                list.insertBefore(item, previous);
+                markDirty();
+                updateUi();
+            }
+            return;
+        }
+
+        if (button.matches("[data-move-down]")) {
+            const next = item.nextElementSibling;
+            if (next) {
+                list.insertBefore(next, item);
+                markDirty();
+                updateUi();
+            }
+        }
+    });
+
+    window.addEventListener("beforeunload", function (event) {
+        if (!dirty || saving) return;
+        event.preventDefault();
+        event.returnValue = "";
+    });
+
+    const primaryImg = document.querySelector("[data-primary-image]");
+    if (primaryImg) {
+        primaryImg.addEventListener("error", function () {
+            const holder = document.getElementById("pga-primary-preview");
+            if (!holder) return;
+            holder.innerHTML = "<span>Main image could not load</span>";
+        }, { once: true });
+    }
+
+    updateUi();
+})();
+</script>
+
+<script>
+(function () {
+    "use strict";
+
+    const page = document.getElementById("product-gallery-admin");
+    if (!page || page.dataset.visualEnhancementReady === "true") return;
+
+    page.dataset.visualEnhancementReady = "true";
+    page.classList.add("pga-enhanced");
+
+    const reducedMotion = window.matchMedia &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const finePointer = window.matchMedia &&
+        window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+
+    const saveButton = document.getElementById("pga-save");
+    const statusOutput = document.getElementById("pga-status");
+    const list = document.getElementById("pga-list");
+    const primaryPreview = document.getElementById("pga-primary-preview");
+
+    function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+    }
+
+    function number(value, fallback) {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    }
+
+    function setPageLight(event) {
+        if (!finePointer || reducedMotion) return;
+
+        const rect = page.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+
+        const x = clamp(
+            ((event.clientX - rect.left) / rect.width) * 100,
+            0,
+            100
+        );
+
+        const y = clamp(
+            ((event.clientY - rect.top) / rect.height) * 100,
+            0,
+            100
+        );
+
+        page.style.setProperty("--pga-pointer-x", x.toFixed(2) + "%");
+        page.style.setProperty("--pga-pointer-y", y.toFixed(2) + "%");
+    }
+
+    if (finePointer && !reducedMotion) {
+        page.addEventListener("pointermove", setPageLight, { passive: true });
+    }
+
+    function attachTilt(
+        element,
+        options
+    ) {
+        if (!element || !finePointer || reducedMotion) return;
+        if (element.dataset.pgaTiltReady === "true") return;
+
+        element.dataset.pgaTiltReady = "true";
+
+        const settings = Object.assign({
+            maxX: 2.2,
+            maxY: 2.8,
+            lightX: "--pga-panel-x",
+            lightY: "--pga-panel-y",
+            rotateX: "--pga-panel-rx",
+            rotateY: "--pga-panel-ry"
+        }, options || {});
+
+        let frame = 0;
+        let latestEvent = null;
+
+        function render() {
+            frame = 0;
+            if (!latestEvent) return;
+
+            const rect = element.getBoundingClientRect();
+            if (!rect.width || !rect.height) return;
+
+            const px = clamp(
+                (latestEvent.clientX - rect.left) / rect.width,
+                0,
+                1
+            );
+
+            const py = clamp(
+                (latestEvent.clientY - rect.top) / rect.height,
+                0,
+                1
+            );
+
+            const ry = (px - .5) * settings.maxY * 2;
+            const rx = (.5 - py) * settings.maxX * 2;
+
+            element.style.setProperty(
+                settings.rotateX,
+                rx.toFixed(2) + "deg"
+            );
+
+            element.style.setProperty(
+                settings.rotateY,
+                ry.toFixed(2) + "deg"
+            );
+
+            if (settings.lightX) {
+                element.style.setProperty(
+                    settings.lightX,
+                    (px * 100).toFixed(1) + "%"
+                );
+            }
+
+            if (settings.lightY) {
+                element.style.setProperty(
+                    settings.lightY,
+                    (py * 100).toFixed(1) + "%"
+                );
+            }
+        }
+
+        function onPointerMove(event) {
+            latestEvent = event;
+            if (frame) return;
+            frame = window.requestAnimationFrame(render);
+        }
+
+        function resetTilt() {
+            latestEvent = null;
+            if (frame) {
+                window.cancelAnimationFrame(frame);
+                frame = 0;
+            }
+
+            element.style.setProperty(settings.rotateX, "0deg");
+            element.style.setProperty(settings.rotateY, "0deg");
+        }
+
+        element.addEventListener(
+            "pointermove",
+            onPointerMove,
+            { passive: true }
+        );
+
+        element.addEventListener(
+            "pointerleave",
+            resetTilt,
+            { passive: true }
+        );
+
+        element.addEventListener(
+            "pointercancel",
+            resetTilt,
+            { passive: true }
+        );
+    }
+
+    function attachPreviewTilt(element) {
+        if (!element || !finePointer || reducedMotion) return;
+        if (element.dataset.pgaPreviewTiltReady === "true") return;
+
+        element.dataset.pgaPreviewTiltReady = "true";
+
+        let frame = 0;
+        let latestEvent = null;
+
+        function render() {
+            frame = 0;
+            if (!latestEvent) return;
+
+            const rect = element.getBoundingClientRect();
+            if (!rect.width || !rect.height) return;
+
+            const px = clamp(
+                (latestEvent.clientX - rect.left) / rect.width,
+                0,
+                1
+            );
+
+            const py = clamp(
+                (latestEvent.clientY - rect.top) / rect.height,
+                0,
+                1
+            );
+
+            element.style.setProperty(
+                "--pga-preview-rx",
+                (((.5 - py) * 3.6)).toFixed(2) + "deg"
+            );
+
+            element.style.setProperty(
+                "--pga-preview-ry",
+                (((px - .5) * 4.8)).toFixed(2) + "deg"
+            );
+        }
+
+        function move(event) {
+            latestEvent = event;
+            if (!frame) frame = window.requestAnimationFrame(render);
+        }
+
+        function reset() {
+            latestEvent = null;
+            if (frame) {
+                window.cancelAnimationFrame(frame);
+                frame = 0;
+            }
+            element.style.setProperty("--pga-preview-rx", "0deg");
+            element.style.setProperty("--pga-preview-ry", "0deg");
+        }
+
+        element.addEventListener("pointermove", move, { passive: true });
+        element.addEventListener("pointerleave", reset, { passive: true });
+        element.addEventListener("pointercancel", reset, { passive: true });
+    }
+
+    function decoratePanel(panel) {
+        attachTilt(panel, {
+            maxX: 1.55,
+            maxY: 2.0,
+            lightX: "--pga-panel-x",
+            lightY: "--pga-panel-y",
+            rotateX: "--pga-panel-rx",
+            rotateY: "--pga-panel-ry"
+        });
+    }
+
+    function decorateItem(item) {
+        if (!item || item.dataset.pgaDecorated === "true") return;
+        item.dataset.pgaDecorated = "true";
+
+        attachTilt(item, {
+            maxX: 1.1,
+            maxY: 1.5,
+            lightX: "--pga-item-x",
+            lightY: "--pga-item-y",
+            rotateX: "--pga-item-rx",
+            rotateY: "--pga-item-ry"
+        });
+
+        if (!reducedMotion && "IntersectionObserver" in window) {
+            item.dataset.pgaReveal = "pending";
+            revealObserver.observe(item);
+        } else {
+            item.dataset.pgaReveal = "visible";
+        }
+    }
+
+    const revealObserver = (!reducedMotion && "IntersectionObserver" in window)
+        ? new IntersectionObserver(function (entries, observer) {
+            entries.forEach(function (entry) {
+                if (!entry.isIntersecting) return;
+                entry.target.dataset.pgaReveal = "visible";
+                observer.unobserve(entry.target);
+            });
+        }, {
+            root: null,
+            rootMargin: "0px 0px -6% 0px",
+            threshold: .08
+        })
+        : {
+            observe: function (element) {
+                if (element) element.dataset.pgaReveal = "visible";
+            },
+            unobserve: function () {}
+        };
+
+    Array.from(page.querySelectorAll(".pga-panel"))
+        .forEach(decoratePanel);
+
+    attachPreviewTilt(primaryPreview);
+
+    function decorateCurrentItems() {
+        Array.from(page.querySelectorAll("[data-gallery-item]"))
+            .forEach(decorateItem);
+    }
+
+    decorateCurrentItems();
+
+    if (list && "MutationObserver" in window) {
+        const observer = new MutationObserver(function (records) {
+            let needsRefresh = false;
+
+            records.forEach(function (record) {
+                if (record.type !== "childList") return;
+                if (record.addedNodes && record.addedNodes.length) {
+                    needsRefresh = true;
+                }
+            });
+
+            if (needsRefresh) {
+                window.requestAnimationFrame(decorateCurrentItems);
+            }
+        });
+
+        observer.observe(list, {
+            childList: true,
+            subtree: false
+        });
+    }
+
+    function syncDirtyVisual() {
+        if (!statusOutput) return;
+        const message = String(statusOutput.textContent || "")
+            .trim()
+            .toLowerCase();
+
+        page.classList.toggle(
+            "pga-is-dirty",
+            message.indexOf("unsaved") !== -1
+        );
+    }
+
+    if (statusOutput && "MutationObserver" in window) {
+        const statusObserver = new MutationObserver(syncDirtyVisual);
+        statusObserver.observe(statusOutput, {
+            childList: true,
+            subtree: true,
+            characterData: true
+        });
+        syncDirtyVisual();
+    }
+
+    function addPressDepth(button) {
+        if (!button || button.dataset.pgaPressReady === "true") return;
+        button.dataset.pgaPressReady = "true";
+
+        button.addEventListener("pointerdown", function () {
+            if (button.disabled) return;
+            button.classList.add("pga-is-pressed");
+        });
+
+        function release() {
+            button.classList.remove("pga-is-pressed");
+        }
+
+        button.addEventListener("pointerup", release, { passive: true });
+        button.addEventListener("pointerleave", release, { passive: true });
+        button.addEventListener("pointercancel", release, { passive: true });
+    }
+
+    function decorateButtons() {
+        Array.from(page.querySelectorAll(".pga-btn"))
+            .forEach(addPressDepth);
+    }
+
+    decorateButtons();
+
+    if (list && "MutationObserver" in window) {
+        const buttonObserver = new MutationObserver(function () {
+            decorateButtons();
+        });
+
+        buttonObserver.observe(list, {
+            childList: true,
+            subtree: true
+        });
+    }
+
+    if (!reducedMotion && saveButton && "IntersectionObserver" in window) {
+        const saveObserver = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+                saveButton.style.setProperty(
+                    "--pga-save-visible",
+                    entry.isIntersecting ? "1" : "0"
+                );
+            });
+        }, {
+            threshold: .2
+        });
+
+        saveObserver.observe(saveButton);
+    }
+
+    /* Keep visual state stable when browser restores the page from bfcache. */
+    window.addEventListener("pageshow", function () {
+        decorateCurrentItems();
+        decorateButtons();
+        syncDirtyVisual();
+    });
+})();
+</script>
+
+{% endblock %}

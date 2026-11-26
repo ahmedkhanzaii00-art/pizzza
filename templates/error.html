@@ -1,0 +1,2124 @@
+{% extends "base.html" %}
+
+{# =========================================================
+   REUSABLE ERROR PAGE
+
+   Current main.py source-of-truth notes:
+   - API/JSON errors remain JSON.
+   - Browser errors are currently routed to errors/<status>.html.
+   - render_error_page currently passes:
+       error_code      -> symbolic application code
+       error_message   -> customer-facing message
+   - AppError browser handling may also pass:
+       error_details
+   - current render_page always supplies:
+       business_name
+       business_phone
+       principal
+
+   This template is intentionally compatible with a future minimal
+   backend patch that renders "error.html" and additionally supplies
+   status_code/http_status.
+
+   It never renders error_details, tracebacks, request URLs, query
+   strings, cookies, session data, Firebase internals, or secrets.
+========================================================= #}
+
+{% set principal_data = principal|default({}, true) %}
+{% if principal_data is not mapping %}
+    {% set principal_data = {} %}
+{% endif %}
+
+{% set current_role = principal_data.get("role", "")|default("", true) %}
+{% set is_customer = current_role == "customer" %}
+
+{% set symbolic_code = error_code|default("", true)|string|upper|trim %}
+
+{% set status_map = {
+    "BAD_REQUEST": 400,
+    "CSRF_FAILED": 400,
+    "AUTH_REQUIRED": 401,
+    "AUTHENTICATION_REQUIRED": 401,
+    "SESSION_EXPIRED": 401,
+    "ACCESS_DENIED": 403,
+    "FORBIDDEN": 403,
+    "CUSTOMER_ONLY": 403,
+    "NOT_FOUND": 404,
+    "METHOD_NOT_ALLOWED": 405,
+    "REQUEST_TIMEOUT": 408,
+    "CONFLICT": 409,
+    "REQUEST_TOO_LARGE": 413,
+    "PAYLOAD_TOO_LARGE": 413,
+    "VALIDATION_ERROR": 422,
+    "UNPROCESSABLE_CONTENT": 422,
+    "RATE_LIMITED": 429,
+    "TOO_MANY_REQUESTS": 429,
+    "INTERNAL_SERVER_ERROR": 500,
+    "BAD_GATEWAY": 502,
+    "SERVICE_UNAVAILABLE": 503,
+    "FIREBASE_UNAVAILABLE": 503
+} %}
+
+{% set supplied_status = status_code|default(http_status|default(error_status|default(0, true), true), true)|int %}
+
+{% if supplied_status >= 400 and supplied_status <= 599 %}
+    {% set status = supplied_status %}
+{% elif symbolic_code in status_map %}
+    {% set status = status_map.get(symbolic_code) %}
+{% elif symbolic_code.endswith("_NOT_FOUND") %}
+    {% set status = 404 %}
+{% elif "RATE_LIMIT" in symbolic_code %}
+    {% set status = 429 %}
+{% elif "AUTH_REQUIRED" in symbolic_code or "SESSION_EXPIRED" in symbolic_code %}
+    {% set status = 401 %}
+{% elif "ACCESS_DENIED" in symbolic_code or "FORBIDDEN" in symbolic_code or symbolic_code.endswith("_ONLY") %}
+    {% set status = 403 %}
+{% elif "UNAVAILABLE" in symbolic_code or "CONFIGURATION" in symbolic_code %}
+    {% set status = 503 %}
+{% elif "CONFLICT" in symbolic_code or "ALREADY_" in symbolic_code %}
+    {% set status = 409 %}
+{% elif "INVALID" in symbolic_code or "REQUIRED" in symbolic_code or "VALIDATION" in symbolic_code %}
+    {% set status = 422 %}
+{% else %}
+    {% set status = 500 %}
+{% endif %}
+
+{% set default_titles = {
+    400: "Something Went Wrong With That Request",
+    401: "Please Sign In",
+    403: "You Don't Have Access to This Page",
+    404: "Page Not Found",
+    405: "That Action Isn't Available Here",
+    408: "The Request Took Too Long",
+    409: "Something Changed",
+    413: "Request Too Large",
+    422: "Unable to Process This Request",
+    429: "Too Many Requests",
+    500: "Something Went Wrong",
+    502: "Temporary Service Issue",
+    503: "We're Temporarily Unavailable"
+} %}
+
+{% set default_messages = {
+    400: "We couldn't process that request. Return to a safe page and try again.",
+    401: "Your session may be missing or expired. Sign in to continue.",
+    403: "This page isn't available to your account. You can return to a public area of the site or contact support if you need help.",
+    404: "The page or resource you're looking for may have moved, may no longer exist, or may not be available to you.",
+    405: "That action can't be completed from this page. Return to a safe page and continue from there.",
+    408: "The request took too long to complete. Use a safe navigation option below before trying again.",
+    409: "The information changed while you were working. Review the current state before continuing.",
+    413: "The submitted request is too large to process. Return to the previous page and try a smaller request where appropriate.",
+    422: "Some information in the request could not be processed. Return to the original page and review the information you entered.",
+    429: "You've made several requests in a short period. Please wait a little before trying again.",
+    500: "We couldn't complete that request. Your next safest step is to return to a known page and review the current state before repeating any transaction.",
+    502: "A temporary service problem prevented the request from completing. Please try again later.",
+    503: "The service is temporarily unavailable. Please try again shortly."
+} %}
+
+{% set default_title = default_titles.get(status, "Something Went Wrong") %}
+{% set default_message = default_messages.get(status, "We couldn't complete that request. Please return to a safe page and try again later.") %}
+
+{#
+   For known authorization/method errors, deliberately prefer the
+   template's safer wording over current backend text because current
+   main.py includes internal-facing language in those two handlers.
+#}
+{% if status in [403, 405] %}
+    {% set display_title = default_title %}
+    {% set display_message = default_message %}
+{% elif symbolic_code == "CSRF_FAILED" %}
+    {% set display_title = "Your Form Session Expired" %}
+    {% set display_message = "The form security token is missing, invalid, or expired. Refresh the original form page before trying again." %}
+{% elif symbolic_code in ["SESSION_EXPIRED", "AUTH_TOKEN_EXPIRED", "TOKEN_EXPIRED"] %}
+    {% set display_title = "Please Sign In Again" %}
+    {% set display_message = "Your session has expired. Sign in again to continue securely." %}
+{% else %}
+    {% set display_title = error_title|default(default_title, true) %}
+    {% set display_message = error_message|default(default_message, true) %}
+{% endif %}
+
+{% set variant_map = {
+    400: "warning",
+    401: "auth",
+    403: "auth",
+    404: "not-found",
+    405: "warning",
+    408: "warning",
+    409: "warning",
+    413: "warning",
+    422: "warning",
+    429: "rate-limit",
+    500: "server",
+    502: "server",
+    503: "server"
+} %}
+{% set variant = variant_map.get(status, "server") %}
+
+{% set public_reference = error_reference|default(request_id|default("", true), true)|string|trim %}
+{% set retry_seconds_raw = retry_after_seconds|default(0, true) %}
+{% if retry_seconds_raw is number %}
+    {% set retry_seconds = retry_seconds_raw|int %}
+{% else %}
+    {% set retry_seconds = 0 %}
+{% endif %}
+{% if retry_seconds < 0 or retry_seconds > 86400 %}
+    {% set retry_seconds = 0 %}
+{% endif %}
+
+{% set retry_text = retry_after|default("", true)|string|trim %}
+{% set maintenance_text = maintenance_message|default("", true)|string|trim %}
+{% set estimated_return_text = estimated_return|default("", true)|string|trim %}
+
+{% set backend_retry_url = safe_retry_url|default(retry_url|default("", true), true)|string|trim %}
+{% if backend_retry_url.startswith("/") and not backend_retry_url.startswith("//") %}
+    {% set resolved_retry_url = backend_retry_url %}
+{% else %}
+    {% set resolved_retry_url = "" %}
+{% endif %}
+
+{% set backend_return_url = safe_next_url|default("", true)|string|trim %}
+{% if backend_return_url.startswith("/") and not backend_return_url.startswith("//") %}
+    {% set resolved_return_url = backend_return_url %}
+{% else %}
+    {% set resolved_return_url = "" %}
+{% endif %}
+
+{% set custom_primary = primary_action|default({}, true) %}
+{% if custom_primary is not mapping %}
+    {% set custom_primary = {} %}
+{% endif %}
+
+{% set custom_secondary = secondary_actions|default([], true) %}
+{% if custom_secondary is string or custom_secondary is not sequence %}
+    {% set custom_secondary = [] %}
+{% endif %}
+
+{% set action_endpoint_urls = {
+    "home_page": url_for("home_page"),
+    "menu_page": url_for("menu_page"),
+    "deals_page": url_for("deals_page"),
+    "login_page": url_for("login_page"),
+    "orders_page": url_for("orders_page"),
+    "cart_page": url_for("cart_page"),
+    "locations_page": url_for("locations_page"),
+    "contact_page": url_for("contact_page"),
+    "support_page": url_for("support_page")
+} %}
+
+{% macro safe_action_href(action) -%}
+    {%- if action is mapping -%}
+        {%- set action_endpoint = action.get("endpoint", "")|default("", true) -%}
+        {%- set action_url = action.get("url", action.get("href", ""))|default("", true)|trim -%}
+
+        {%- if action_endpoint in action_endpoint_urls -%}
+            {{- action_endpoint_urls.get(action_endpoint) -}}
+        {%- elif action_url.startswith("/") and not action_url.startswith("//") -%}
+            {{- action_url -}}
+        {%- elif action_url.startswith("https://") or action_url.startswith("http://") -%}
+            {{- action_url -}}
+        {%- endif -%}
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro render_custom_action(action, fallback_style="secondary") -%}
+    {%- if action is mapping -%}
+        {%- set href = safe_action_href(action)|trim -%}
+        {%- set label = action.get("label", "")|default("", true) -%}
+        {%- set requested_style = action.get("style", fallback_style)|default(fallback_style, true) -%}
+        {%- set style = requested_style if requested_style in ["primary", "secondary", "outline", "text"] else fallback_style -%}
+        {%- set external = href.startswith("https://") or href.startswith("http://") -%}
+
+        {%- if href and label -%}
+            <a
+                class="error-action error-action--{{ style }}"
+                href="{{ href }}"
+                {% if external %}target="_blank" rel="noopener noreferrer"{% endif %}
+            >
+                <span>{{ label }}</span>
+
+                <svg
+                    class="error-action__icon"
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                >
+                    <path d="M5 12h14M14 7l5 5-5 5"></path>
+                </svg>
+
+                {% if external %}
+                    <span class="visually-hidden">
+                        (opens in a new tab)
+                    </span>
+                {% endif %}
+            </a>
+        {%- endif -%}
+    {%- endif -%}
+{%- endmacro %}
+
+{% block title %}{{ status }} — {{ display_title }} | {{ business_name|default("Restaurant", true) }}{% endblock %}
+
+{% block meta_description %}{{ display_message }}{% endblock %}
+
+{% block head %}
+    {{ super() }}
+
+    {#
+       base.html currently has a hard-coded index,follow robots tag.
+       This additional restrictive directive keeps this error template
+       non-indexable until base.html gains a dedicated robots block.
+    #}
+    <meta
+        name="robots"
+        content="noindex,nofollow"
+    >
+{% endblock %}
+
+{% block styles %}
+<style>
+    .error-page {
+        --er-primary: var(--primary-color, #b83222);
+        --er-primary-hover: var(--primary-color-hover, #98281b);
+        --er-primary-soft: var(--primary-color-soft, #fff0eb);
+        --er-primary-contrast: var(--primary-contrast, #fff);
+
+        --er-bg: var(--background-color, #fffaf4);
+        --er-bg-soft: var(--background-subtle, #f8f2ea);
+        --er-surface: var(--surface-color, #fff);
+        --er-surface-muted: var(--surface-muted, #f5eee5);
+
+        --er-text: var(--text-color, #201c19);
+        --er-strong: var(--text-strong, #151210);
+        --er-muted: var(--muted-text, #6f6760);
+        --er-subtle: var(--subtle-text, #8c8279);
+
+        --er-border: var(--border-color, #e7ded4);
+        --er-border-strong: var(--border-strong, #d3c6b9);
+
+        --er-error: var(--error-color, #b42318);
+        --er-error-soft: var(--error-soft, #fff0ee);
+        --er-warning: var(--warning-color, #9a6510);
+        --er-warning-soft: var(--warning-soft, #fff5dc);
+        --er-info: var(--info-color, #285ea8);
+        --er-info-soft: var(--info-soft, #edf4ff);
+        --er-success: var(--success-color, #247a4a);
+        --er-success-soft: var(--success-soft, #eaf7ef);
+
+        --er-radius-sm: var(--radius-sm, 8px);
+        --er-radius-md: var(--radius-md, 12px);
+        --er-radius-lg: var(--radius-lg, 18px);
+        --er-radius-xl: var(--radius-xl, 26px);
+
+        --er-shadow-sm:
+            var(
+                --shadow-sm,
+                0 8px 24px rgba(31, 24, 19, .08)
+            );
+
+        --er-shadow-md:
+            var(
+                --shadow-md,
+                0 22px 52px rgba(31, 24, 19, .13)
+            );
+
+        --er-transition:
+            var(
+                --transition-fast,
+                160ms ease
+            );
+
+        min-height:
+            clamp(
+                520px,
+                72vh,
+                780px
+            );
+
+        display: grid;
+        place-items: center;
+
+        padding:
+            clamp(1rem, 4vw, 2rem)
+            0
+            clamp(3.5rem, 7vw, 5rem);
+
+        color: var(--er-text);
+
+        background:
+            radial-gradient(
+                circle at 0 5%,
+                color-mix(
+                    in srgb,
+                    var(--er-primary) 5%,
+                    transparent
+                ),
+                transparent 28rem
+            ),
+            radial-gradient(
+                circle at 100% 75%,
+                color-mix(
+                    in srgb,
+                    var(--accent-color, #d99b35) 4%,
+                    transparent
+                ),
+                transparent 23rem
+            );
+    }
+
+    .error-page,
+    .error-page *,
+    .error-page *::before,
+    .error-page *::after {
+        box-sizing: border-box;
+    }
+
+    .error-page [hidden] {
+        display: none !important;
+    }
+
+    .error-page svg {
+        display: block;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+
+    .error-shell {
+        width: min(100% - 2rem, 920px);
+        margin-inline: auto;
+    }
+
+    .error-card {
+        position: relative;
+
+        overflow: hidden;
+
+        display: grid;
+        grid-template-columns:
+            minmax(220px, .65fr)
+            minmax(0, 1.35fr);
+
+        border: 1px solid var(--er-border);
+        border-radius: var(--er-radius-xl);
+
+        background: var(--er-surface);
+
+        box-shadow: var(--er-shadow-md);
+    }
+
+    .error-card::before {
+        content: "";
+
+        position: absolute;
+        inset: 0;
+
+        pointer-events: none;
+
+        background:
+            linear-gradient(
+                115deg,
+                color-mix(
+                    in srgb,
+                    var(--er-primary) 2%,
+                    transparent
+                ),
+                transparent 42%
+            );
+    }
+
+    /* =====================================================
+       VISUAL SIDE
+    ====================================================== */
+
+    .error-visual {
+        position: relative;
+        z-index: 1;
+
+        min-height: 400px;
+
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+
+        padding:
+            clamp(1rem, 3vw, 1.5rem);
+
+        border-inline-end:
+            1px solid var(--er-border);
+
+        background:
+            linear-gradient(
+                150deg,
+                var(--er-bg-soft),
+                var(--er-surface-muted)
+            );
+
+        text-align: center;
+    }
+
+    .error-page--auth
+    .error-visual {
+        background:
+            linear-gradient(
+                150deg,
+                var(--er-info-soft),
+                var(--er-bg-soft)
+            );
+    }
+
+    .error-page--rate-limit
+    .error-visual,
+    .error-page--warning
+    .error-visual {
+        background:
+            linear-gradient(
+                150deg,
+                var(--er-warning-soft),
+                var(--er-bg-soft)
+            );
+    }
+
+    .error-page--server
+    .error-visual {
+        background:
+            linear-gradient(
+                150deg,
+                color-mix(
+                    in srgb,
+                    var(--er-error-soft) 55%,
+                    var(--er-bg-soft)
+                ),
+                var(--er-bg-soft)
+            );
+    }
+
+    .error-illustration {
+        position: relative;
+
+        width: 118px;
+        height: 118px;
+
+        display: grid;
+        place-items: center;
+
+        margin-bottom: .72rem;
+
+        border:
+            1px solid
+            color-mix(
+                in srgb,
+                var(--er-primary) 16%,
+                var(--er-border)
+            );
+
+        border-radius: 32px;
+
+        background: var(--er-surface);
+        color: var(--er-primary);
+
+        box-shadow: var(--er-shadow-sm);
+    }
+
+    .error-page--auth
+    .error-illustration {
+        color: var(--er-info);
+    }
+
+    .error-page--warning
+    .error-illustration,
+    .error-page--rate-limit
+    .error-illustration {
+        color: var(--er-warning);
+    }
+
+    .error-page--server
+    .error-illustration {
+        color:
+            color-mix(
+                in srgb,
+                var(--er-error) 76%,
+                var(--er-primary)
+            );
+    }
+
+    .error-illustration::after {
+        content: "";
+
+        position: absolute;
+        inset: -11px;
+
+        border:
+            1px dashed
+            color-mix(
+                in srgb,
+                currentColor 22%,
+                transparent
+            );
+
+        border-radius: 38px;
+
+        pointer-events: none;
+    }
+
+    .error-illustration svg {
+        width: 2.7rem;
+        height: 2.7rem;
+    }
+
+    .error-code-label {
+        margin: 0;
+
+        color: var(--er-subtle);
+
+        font-size: .52rem;
+        font-weight: 820;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+    }
+
+    .error-code-number {
+        display: block;
+
+        margin-top: .12rem;
+
+        color: var(--er-strong);
+
+        font-size:
+            clamp(
+                2.5rem,
+                7vw,
+                4.3rem
+            );
+
+        font-weight: 920;
+        line-height: .95;
+        letter-spacing: -.06em;
+
+        font-variant-numeric: tabular-nums;
+    }
+
+    .error-symbolic-code {
+        max-width: 24ch;
+
+        margin: .42rem 0 0;
+
+        color: var(--er-muted);
+
+        font-family:
+            ui-monospace,
+            SFMono-Regular,
+            Menlo,
+            Consolas,
+            monospace;
+
+        font-size: .48rem;
+        font-weight: 730;
+        line-height: 1.35;
+
+        overflow-wrap: anywhere;
+    }
+
+    /* =====================================================
+       CONTENT SIDE
+    ====================================================== */
+
+    .error-content {
+        position: relative;
+        z-index: 1;
+
+        min-width: 0;
+
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+
+        padding:
+            clamp(1.05rem, 4vw, 2rem);
+    }
+
+    .error-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+
+        width: fit-content;
+
+        margin: 0 0 .44rem;
+
+        color: var(--er-primary);
+
+        font-size: .6rem;
+        font-weight: 850;
+        letter-spacing: .075em;
+        text-transform: uppercase;
+    }
+
+    .error-kicker::before {
+        content: "";
+
+        width: 21px;
+        height: 2px;
+
+        border-radius: 999px;
+
+        background: currentColor;
+    }
+
+    .error-page--auth
+    .error-kicker {
+        color: var(--er-info);
+    }
+
+    .error-page--warning
+    .error-kicker,
+    .error-page--rate-limit
+    .error-kicker {
+        color: var(--er-warning);
+    }
+
+    .error-page--server
+    .error-kicker {
+        color:
+            color-mix(
+                in srgb,
+                var(--er-error) 76%,
+                var(--er-primary)
+            );
+    }
+
+    .error-title {
+        max-width: 21ch;
+
+        margin: 0;
+
+        color: var(--er-strong);
+
+        font-size:
+            clamp(
+                1.45rem,
+                4vw,
+                2.25rem
+            );
+
+        font-weight: 900;
+        line-height: 1.08;
+        letter-spacing: -.04em;
+
+        text-wrap: balance;
+    }
+
+    .error-message {
+        max-width: 60ch;
+
+        margin: .58rem 0 0;
+
+        color: var(--er-muted);
+
+        font-size: .68rem;
+        line-height: 1.62;
+    }
+
+    .error-context-note {
+        display: grid;
+        grid-template-columns:
+            auto
+            minmax(0, 1fr);
+
+        gap: .44rem;
+        align-items: start;
+
+        margin-top: .72rem;
+        padding: .62rem;
+
+        border: 1px solid var(--er-border);
+        border-radius: 10px;
+
+        background: var(--er-bg-soft);
+        color: var(--er-muted);
+
+        font-size: .53rem;
+        line-height: 1.46;
+    }
+
+    .error-context-note svg {
+        width: .78rem;
+        height: .78rem;
+
+        margin-top: .02rem;
+
+        flex: 0 0 .78rem;
+
+        color: var(--er-primary);
+    }
+
+    .error-context-note--warning {
+        border-color:
+            color-mix(
+                in srgb,
+                var(--er-warning) 22%,
+                var(--er-border)
+            );
+
+        background: var(--er-warning-soft);
+        color:
+            color-mix(
+                in srgb,
+                var(--er-warning) 78%,
+                var(--er-text)
+            );
+    }
+
+    .error-context-note--warning svg {
+        color: var(--er-warning);
+    }
+
+    .error-context-note strong {
+        color: var(--er-text);
+    }
+
+    /* =====================================================
+       RETRY / COUNTDOWN
+    ====================================================== */
+
+    .error-retry-panel {
+        margin-top: .7rem;
+        padding: .64rem;
+
+        border: 1px solid
+            color-mix(
+                in srgb,
+                var(--er-warning) 24%,
+                var(--er-border)
+            );
+
+        border-radius: 11px;
+
+        background: var(--er-warning-soft);
+    }
+
+    .error-retry-panel__row {
+        display: flex;
+        align-items: flex-start;
+        gap: .46rem;
+    }
+
+    .error-retry-panel__row > svg {
+        width: .82rem;
+        height: .82rem;
+
+        flex: 0 0 .82rem;
+
+        margin-top: .02rem;
+
+        color: var(--er-warning);
+    }
+
+    .error-retry-panel__title {
+        margin: 0;
+
+        color: var(--er-text);
+
+        font-size: .56rem;
+        font-weight: 820;
+    }
+
+    .error-retry-panel__copy {
+        margin: .12rem 0 0;
+
+        color:
+            color-mix(
+                in srgb,
+                var(--er-warning) 72%,
+                var(--er-text)
+            );
+
+        font-size: .52rem;
+        line-height: 1.44;
+    }
+
+    .error-countdown {
+        display: inline;
+
+        font-variant-numeric: tabular-nums;
+        font-weight: 850;
+    }
+
+    /* =====================================================
+       REFERENCE
+    ====================================================== */
+
+    .error-reference {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .6rem;
+
+        margin-top: .72rem;
+        padding: .58rem .62rem;
+
+        border: 1px solid var(--er-border);
+        border-radius: 10px;
+
+        background: var(--er-bg-soft);
+    }
+
+    .error-reference__copy {
+        min-width: 0;
+    }
+
+    .error-reference__label {
+        display: block;
+
+        color: var(--er-subtle);
+
+        font-size: .47rem;
+        font-weight: 780;
+        letter-spacing: .045em;
+        text-transform: uppercase;
+    }
+
+    .error-reference code {
+        display: block;
+
+        margin-top: .08rem;
+
+        color: var(--er-text);
+
+        font-family:
+            ui-monospace,
+            SFMono-Regular,
+            Menlo,
+            Consolas,
+            monospace;
+
+        font-size: .53rem;
+        font-weight: 760;
+        line-height: 1.4;
+
+        overflow-wrap: anywhere;
+    }
+
+    .error-reference__hint {
+        margin: .17rem 0 0;
+
+        color: var(--er-muted);
+
+        font-size: .49rem;
+        line-height: 1.4;
+    }
+
+    /* =====================================================
+       ACTIONS
+    ====================================================== */
+
+    .error-actions {
+        display: flex;
+        gap: .42rem;
+        flex-wrap: wrap;
+
+        margin-top: .85rem;
+    }
+
+    .error-actions--secondary {
+        margin-top: .48rem;
+    }
+
+    .error-action {
+        min-height: 42px;
+
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: .36rem;
+
+        padding: .57rem .72rem;
+
+        border-radius: 9px;
+
+        font: inherit;
+        font-size: .58rem;
+        font-weight: 820;
+        line-height: 1;
+
+        text-decoration: none;
+
+        transition:
+            transform var(--er-transition),
+            border-color var(--er-transition),
+            background var(--er-transition),
+            color var(--er-transition),
+            opacity var(--er-transition);
+    }
+
+    button.error-action {
+        cursor: pointer;
+    }
+
+    .error-action__icon {
+        width: .8rem;
+        height: .8rem;
+
+        flex: 0 0 .8rem;
+    }
+
+    .error-action--primary {
+        border: 1px solid var(--er-primary);
+
+        background: var(--er-primary);
+        color: var(--er-primary-contrast);
+    }
+
+    .error-action--primary:hover:not(:disabled),
+    .error-action--primary:focus-visible {
+        transform: translateY(-1px);
+
+        border-color: var(--er-primary-hover);
+        background: var(--er-primary-hover);
+    }
+
+    .error-action--secondary {
+        border: 1px solid var(--er-border);
+
+        background: var(--er-bg);
+        color: var(--er-text);
+    }
+
+    .error-action--secondary:hover:not(:disabled),
+    .error-action--secondary:focus-visible {
+        transform: translateY(-1px);
+
+        border-color: var(--er-border-strong);
+        background: var(--er-surface-muted);
+    }
+
+    .error-action--outline {
+        border: 1px solid
+            color-mix(
+                in srgb,
+                var(--er-primary) 34%,
+                var(--er-border)
+            );
+
+        background: transparent;
+        color: var(--er-primary);
+    }
+
+    .error-action--outline:hover:not(:disabled),
+    .error-action--outline:focus-visible {
+        background: var(--er-primary-soft);
+    }
+
+    .error-action--text {
+        border: 1px solid transparent;
+
+        background: transparent;
+        color: var(--er-primary);
+    }
+
+    .error-action--text:hover:not(:disabled),
+    .error-action--text:focus-visible {
+        background: var(--er-primary-soft);
+    }
+
+    .error-action--compact {
+        min-height: 34px;
+
+        padding: .43rem .52rem;
+
+        font-size: .51rem;
+    }
+
+    .error-action:disabled,
+    .error-action[aria-disabled="true"] {
+        cursor: not-allowed;
+        opacity: .52;
+        transform: none !important;
+    }
+
+    .error-action[aria-disabled="true"] {
+        pointer-events: none;
+    }
+
+    /* =====================================================
+       SUPPORT FOOTNOTE
+    ====================================================== */
+
+    .error-footnote {
+        margin: .68rem 0 0;
+
+        color: var(--er-subtle);
+
+        font-size: .49rem;
+        line-height: 1.45;
+    }
+
+    .error-footnote a {
+        color: var(--er-primary);
+        font-weight: 760;
+        text-decoration: underline;
+        text-underline-offset: .15em;
+    }
+
+    /* =====================================================
+       FOCUS
+    ====================================================== */
+
+    .error-page a:focus-visible,
+    .error-page button:focus-visible {
+        outline:
+            3px solid
+            color-mix(
+                in srgb,
+                var(--er-primary) 24%,
+                transparent
+            );
+
+        outline-offset: 2px;
+    }
+
+    /* =====================================================
+       RESPONSIVE
+    ====================================================== */
+
+    @media (max-width: 760px) {
+        .error-page {
+            min-height: auto;
+
+            padding-top: 1rem;
+        }
+
+        .error-shell {
+            width: min(100% - 1.1rem, 680px);
+        }
+
+        .error-card {
+            grid-template-columns: 1fr;
+        }
+
+        .error-visual {
+            min-height: 190px;
+
+            border-inline-end: 0;
+            border-bottom: 1px solid var(--er-border);
+        }
+
+        .error-illustration {
+            width: 78px;
+            height: 78px;
+
+            margin-bottom: .52rem;
+
+            border-radius: 21px;
+        }
+
+        .error-illustration::after {
+            inset: -7px;
+            border-radius: 25px;
+        }
+
+        .error-illustration svg {
+            width: 1.9rem;
+            height: 1.9rem;
+        }
+
+        .error-code-number {
+            font-size:
+                clamp(
+                    2.1rem,
+                    12vw,
+                    3rem
+                );
+        }
+    }
+
+    @media (max-width: 500px) {
+        .error-shell {
+            width: min(100% - .82rem, 680px);
+        }
+
+        .error-card {
+            border-radius: 18px;
+        }
+
+        .error-visual {
+            min-height: 165px;
+        }
+
+        .error-content {
+            padding: .95rem;
+        }
+
+        .error-title {
+            font-size:
+                clamp(
+                    1.28rem,
+                    8vw,
+                    1.75rem
+                );
+        }
+
+        .error-actions,
+        .error-actions--secondary {
+            align-items: stretch;
+            flex-direction: column;
+        }
+
+        .error-action {
+            width: 100%;
+        }
+
+        .error-reference {
+            align-items: stretch;
+            flex-direction: column;
+        }
+
+        .error-reference
+        .error-action {
+            width: 100%;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .error-page *,
+        .error-page *::before,
+        .error-page *::after {
+            scroll-behavior: auto !important;
+            transition-duration: .01ms !important;
+            animation-iteration-count: 1 !important;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<main
+    class="error-page error-page--{{ variant }}"
+    id="error-page-root"
+    data-home-url="{{ url_for('home_page') }}"
+    data-retry-seconds="{{ retry_seconds }}"
+    {% if resolved_retry_url %}
+        data-retry-url="{{ resolved_retry_url }}"
+    {% endif %}
+>
+    <span
+        class="visually-hidden"
+        id="error-page-live"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+    ></span>
+
+    <div class="error-shell">
+        <section
+            class="error-card"
+            aria-labelledby="error-page-title"
+        >
+            <div
+                class="error-visual"
+                aria-hidden="true"
+            >
+                <span class="error-illustration">
+                    {% if status in [401, 403] %}
+                        <svg viewBox="0 0 24 24">
+                            <rect x="5" y="10" width="14" height="10" rx="2"></rect>
+                            <path d="M8 10V7a4 4 0 0 1 8 0v3"></path>
+                            <path d="M12 14v2"></path>
+                        </svg>
+
+                    {% elif status == 404 %}
+                        <svg viewBox="0 0 24 24">
+                            <path d="M4 5h16v14H4z"></path>
+                            <path d="M8 9h8M8 13h5"></path>
+                            <path d="m15.5 16.5 4 4M19.5 16.5l-4 4"></path>
+                        </svg>
+
+                    {% elif status == 429 %}
+                        <svg viewBox="0 0 24 24">
+                            <circle cx="12" cy="12" r="9"></circle>
+                            <path d="M12 7v5l3 2"></path>
+                            <path d="M4.5 4.5 6 6"></path>
+                        </svg>
+
+                    {% elif status in [500, 502, 503] %}
+                        <svg viewBox="0 0 24 24">
+                            <path d="M12 3 2.8 20h18.4L12 3Z"></path>
+                            <path d="M12 9v5M12 17h.01"></path>
+                        </svg>
+
+                    {% elif status == 409 %}
+                        <svg viewBox="0 0 24 24">
+                            <path d="M4 7h10M14 4l3 3-3 3"></path>
+                            <path d="M20 17H10M10 14l-3 3 3 3"></path>
+                        </svg>
+
+                    {% elif status == 413 %}
+                        <svg viewBox="0 0 24 24">
+                            <path d="M5 3h10l4 4v14H5z"></path>
+                            <path d="M15 3v5h5"></path>
+                            <path d="M9 14h6M12 11v6"></path>
+                        </svg>
+
+                    {% else %}
+                        <svg viewBox="0 0 24 24">
+                            <circle cx="12" cy="12" r="9"></circle>
+                            <path d="M12 8v5M12 16.5h.01"></path>
+                        </svg>
+                    {% endif %}
+                </span>
+
+                <p class="error-code-label">
+                    Error
+                </p>
+
+                <span class="error-code-number">
+                    {{ status }}
+                </span>
+
+                {% if symbolic_code %}
+                    <p class="error-symbolic-code">
+                        {{ symbolic_code }}
+                    </p>
+                {% endif %}
+            </div>
+
+            <div class="error-content">
+                <p class="error-kicker">
+                    {% if status == 404 %}
+                        We couldn't find that page
+                    {% elif status in [401, 403] %}
+                        Access
+                    {% elif status == 429 %}
+                        Please wait
+                    {% elif status >= 500 %}
+                        Temporary problem
+                    {% else %}
+                        Request problem
+                    {% endif %}
+                </p>
+
+                <h1
+                    class="error-title"
+                    id="error-page-title"
+                >
+                    {{ display_title }}
+                </h1>
+
+                <p class="error-message">
+                    {{ display_message }}
+                </p>
+
+                {% if status == 500 %}
+                    <div class="error-context-note error-context-note--warning">
+                        <svg
+                            aria-hidden="true"
+                            viewBox="0 0 24 24"
+                        >
+                            <circle cx="12" cy="12" r="9"></circle>
+                            <path d="M12 8v5M12 16.5h.01"></path>
+                        </svg>
+
+                        <span>
+                            If this happened while placing an order, starting a payment, cancelling an order, or making another change,
+                            <strong>do not blindly repeat the action.</strong>
+                            Check the current order/account state first.
+                        </span>
+                    </div>
+                {% elif status == 409 %}
+                    <div class="error-context-note">
+                        <svg
+                            aria-hidden="true"
+                            viewBox="0 0 24 24"
+                        >
+                            <circle cx="12" cy="12" r="9"></circle>
+                            <path d="M12 10v6M12 7h.01"></path>
+                        </svg>
+
+                        <span>
+                            Review the current cart, order or page state before repeating the action.
+                        </span>
+                    </div>
+                {% elif symbolic_code == "CSRF_FAILED" %}
+                    <div class="error-context-note">
+                        <svg
+                            aria-hidden="true"
+                            viewBox="0 0 24 24"
+                        >
+                            <path d="M12 3 5 6v5.4c0 4.3 2.8 7.5 7 9.1 4.2-1.6 7-4.8 7-9.1V6l-7-3Z"></path>
+                            <path d="M12 8v5M12 16.5h.01"></path>
+                        </svg>
+
+                        <span>
+                            For your security, return to the original form and submit it again with a fresh session.
+                            This page will not automatically repeat the failed request.
+                        </span>
+                    </div>
+                {% elif status == 404 %}
+                    <div class="error-context-note">
+                        <svg
+                            aria-hidden="true"
+                            viewBox="0 0 24 24"
+                        >
+                            <path d="M12 21s6-5.3 6-11a6 6 0 1 0-12 0c0 5.7 6 11 6 11Z"></path>
+                            <circle cx="12" cy="10" r="2"></circle>
+                        </svg>
+
+                        <span>
+                            For privacy, this page does not confirm whether a private order, account resource or staff resource exists.
+                        </span>
+                    </div>
+                {% endif %}
+
+                {% if status == 503 and maintenance_text %}
+                    <div class="error-context-note">
+                        <svg
+                            aria-hidden="true"
+                            viewBox="0 0 24 24"
+                        >
+                            <path d="M4 20h16M6 20V9l6-5 6 5v11"></path>
+                            <path d="M9 14h6"></path>
+                        </svg>
+
+                        <span>
+                            {{ maintenance_text }}
+
+                            {% if estimated_return_text %}
+                                <br>
+                                {{ estimated_return_text }}
+                            {% endif %}
+                        </span>
+                    </div>
+                {% endif %}
+
+                {% if status == 429 and (retry_seconds > 0 or retry_text) %}
+                    <section
+                        class="error-retry-panel"
+                        aria-labelledby="error-retry-title"
+                    >
+                        <div class="error-retry-panel__row">
+                            <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <circle cx="12" cy="12" r="9"></circle>
+                                <path d="M12 7v5l3 2"></path>
+                            </svg>
+
+                            <div>
+                                <h2
+                                    class="error-retry-panel__title"
+                                    id="error-retry-title"
+                                >
+                                    When to try again
+                                </h2>
+
+                                {% if retry_seconds > 0 %}
+                                    <p class="error-retry-panel__copy">
+                                        The server provided a retry delay.
+                                        You can try again in approximately
+                                        <span
+                                            class="error-countdown"
+                                            id="error-retry-countdown"
+                                        >{{ retry_seconds }} seconds</span>.
+                                    </p>
+                                {% elif retry_text %}
+                                    <p class="error-retry-panel__copy">
+                                        {{ retry_text }}
+                                    </p>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </section>
+                {% endif %}
+
+                {% if public_reference %}
+                    <section
+                        class="error-reference"
+                        aria-label="Error support reference"
+                    >
+                        <div class="error-reference__copy">
+                            <span class="error-reference__label">
+                                Support Reference
+                            </span>
+
+                            <code id="error-reference-value">
+                                {{ public_reference }}
+                            </code>
+
+                            <p class="error-reference__hint">
+                                If you contact support, include this reference.
+                            </p>
+                        </div>
+
+                        <button
+                            class="error-action error-action--secondary error-action--compact"
+                            id="error-copy-reference"
+                            type="button"
+                        >
+                            <svg
+                                class="error-action__icon"
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <rect x="8" y="8" width="11" height="11" rx="2"></rect>
+                                <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"></path>
+                            </svg>
+
+                            Copy Reference
+                        </button>
+                    </section>
+                {% endif %}
+
+                <div
+                    class="error-actions"
+                    aria-label="Primary error actions"
+                >
+                    {% set custom_primary_href = safe_action_href(custom_primary)|trim %}
+
+                    {% if custom_primary_href and custom_primary.get("label") %}
+                        {{ render_custom_action(custom_primary, "primary") }}
+
+                    {% elif status == 401 %}
+                        {% if resolved_return_url %}
+                            <a
+                                class="error-action error-action--primary"
+                                href="{{ url_for('login_page') }}"
+                            >
+                                <svg
+                                    class="error-action__icon"
+                                    aria-hidden="true"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <circle cx="12" cy="8" r="3"></circle>
+                                    <path d="M5 20c.6-4.2 3-6.4 7-6.4s6.4 2.2 7 6.4"></path>
+                                </svg>
+
+                                Sign In
+                            </a>
+                        {% else %}
+                            <a
+                                class="error-action error-action--primary"
+                                href="{{ url_for('login_page') }}"
+                            >
+                                <svg
+                                    class="error-action__icon"
+                                    aria-hidden="true"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <circle cx="12" cy="8" r="3"></circle>
+                                    <path d="M5 20c.6-4.2 3-6.4 7-6.4s6.4 2.2 7 6.4"></path>
+                                </svg>
+
+                                Sign In
+                            </a>
+                        {% endif %}
+
+                    {% elif status == 404 %}
+                        <a
+                            class="error-action error-action--primary"
+                            href="{{ url_for('home_page') }}"
+                        >
+                            <svg
+                                class="error-action__icon"
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <path d="M4 11 12 4l8 7"></path>
+                                <path d="M6 10v10h12V10"></path>
+                                <path d="M10 20v-6h4v6"></path>
+                            </svg>
+
+                            Go Home
+                        </a>
+
+                    {% elif status == 429 and resolved_retry_url and retry_seconds == 0 %}
+                        <a
+                            class="error-action error-action--primary"
+                            href="{{ resolved_retry_url }}"
+                            id="error-retry-link"
+                        >
+                            <svg
+                                class="error-action__icon"
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <path d="M20 7v5h-5"></path>
+                                <path d="M19 12a7 7 0 1 0-2 5"></path>
+                            </svg>
+
+                            Try Again
+                        </a>
+
+                    {% elif status in [408, 502, 503] and resolved_retry_url %}
+                        <a
+                            class="error-action error-action--primary"
+                            href="{{ resolved_retry_url }}"
+                        >
+                            <svg
+                                class="error-action__icon"
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <path d="M20 7v5h-5"></path>
+                                <path d="M19 12a7 7 0 1 0-2 5"></path>
+                            </svg>
+
+                            Try Again
+                        </a>
+
+                    {% elif status in [400, 405, 413, 422] %}
+                        <a
+                            class="error-action error-action--primary"
+                            href="{{ url_for('home_page') }}"
+                        >
+                            <svg
+                                class="error-action__icon"
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <path d="M4 11 12 4l8 7"></path>
+                                <path d="M6 10v10h12V10"></path>
+                            </svg>
+
+                            Return Home
+                        </a>
+
+                    {% elif status == 409 %}
+                        <a
+                            class="error-action error-action--primary"
+                            href="{{ url_for('cart_page') }}"
+                        >
+                            <svg
+                                class="error-action__icon"
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <path d="M3 5h2l2 10h10l2-7H7"></path>
+                                <circle cx="9" cy="19" r="1"></circle>
+                                <circle cx="17" cy="19" r="1"></circle>
+                            </svg>
+
+                            Review Cart
+                        </a>
+
+                    {% else %}
+                        <a
+                            class="error-action error-action--primary"
+                            href="{{ url_for('home_page') }}"
+                        >
+                            <svg
+                                class="error-action__icon"
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <path d="M4 11 12 4l8 7"></path>
+                                <path d="M6 10v10h12V10"></path>
+                            </svg>
+
+                            Return Home
+                        </a>
+                    {% endif %}
+
+                    {% if status == 429 and resolved_retry_url and retry_seconds > 0 %}
+                        <a
+                            class="error-action error-action--secondary"
+                            id="error-retry-link"
+                            href="{{ resolved_retry_url }}"
+                            aria-disabled="true"
+                            tabindex="-1"
+                        >
+                            <svg
+                                class="error-action__icon"
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <path d="M20 7v5h-5"></path>
+                                <path d="M19 12a7 7 0 1 0-2 5"></path>
+                            </svg>
+
+                            Try Again
+                        </a>
+                    {% endif %}
+                </div>
+
+                <div
+                    class="error-actions error-actions--secondary"
+                    aria-label="Other helpful destinations"
+                >
+                    {% if status in [400, 405, 408, 413, 422] %}
+                        <button
+                            class="error-action error-action--secondary"
+                            id="error-go-back"
+                            type="button"
+                        >
+                            <svg
+                                class="error-action__icon"
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <path d="M19 12H5M10 7l-5 5 5 5"></path>
+                            </svg>
+
+                            Go Back
+                        </button>
+                    {% endif %}
+
+                    {% if status in [403, 404, 500, 502, 503] %}
+                        <a
+                            class="error-action error-action--secondary"
+                            href="{{ url_for('menu_page') }}"
+                        >
+                            <svg
+                                class="error-action__icon"
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <path d="M5 4h14v16H5z"></path>
+                                <path d="M8 8h8M8 12h8M8 16h5"></path>
+                            </svg>
+
+                            Browse Menu
+                        </a>
+                    {% endif %}
+
+                    {% if is_customer and status in [409, 500, 502, 503] %}
+                        <a
+                            class="error-action error-action--secondary"
+                            href="{{ url_for('orders_page') }}"
+                        >
+                            <svg
+                                class="error-action__icon"
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <path d="M5 4h14v16H5z"></path>
+                                <path d="M8 8h8M8 12h8M8 16h5"></path>
+                            </svg>
+
+                            My Orders
+                        </a>
+                    {% endif %}
+
+                    {% if status in [403, 429, 500, 502, 503] or public_reference %}
+                        <a
+                            class="error-action error-action--outline"
+                            href="{{ url_for('contact_page') }}"
+                        >
+                            <svg
+                                class="error-action__icon"
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <path d="M4 5h16v12H8l-4 4V5Z"></path>
+                                <path d="M8 9h8M8 13h5"></path>
+                            </svg>
+
+                            Contact Support
+                        </a>
+                    {% endif %}
+
+                    {% if status == 404 %}
+                        <a
+                            class="error-action error-action--outline"
+                            href="{{ url_for('deals_page') }}"
+                        >
+                            View Deals
+                        </a>
+                    {% endif %}
+
+                    {% if status == 409 %}
+                        <a
+                            class="error-action error-action--outline"
+                            href="{{ url_for('locations_page') }}"
+                        >
+                            Locations
+                        </a>
+                    {% endif %}
+
+                    {% for action in custom_secondary[:3] %}
+                        {{ render_custom_action(action, "secondary") }}
+                    {% endfor %}
+                </div>
+
+                {% if status >= 500 or public_reference %}
+                    <p class="error-footnote">
+                        Technical details are kept in secure server logs rather than shown on this page.
+                        {% if public_reference %}
+                            If you need assistance,
+                            <a href="{{ url_for('contact_page') }}">
+                                contact support
+                            </a>
+                            and include the reference above.
+                        {% endif %}
+                    </p>
+                {% endif %}
+            </div>
+        </section>
+    </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    "use strict";
+
+    const root =
+        document.getElementById(
+            "error-page-root"
+        );
+
+    if (!root) {
+        return;
+    }
+
+    const elements = {
+        live:
+            document.getElementById(
+                "error-page-live"
+            ),
+
+        back:
+            document.getElementById(
+                "error-go-back"
+            ),
+
+        copyReference:
+            document.getElementById(
+                "error-copy-reference"
+            ),
+
+        reference:
+            document.getElementById(
+                "error-reference-value"
+            ),
+
+        countdown:
+            document.getElementById(
+                "error-retry-countdown"
+            ),
+
+        retryLink:
+            document.getElementById(
+                "error-retry-link"
+            )
+    };
+
+    function announce(message) {
+        if (
+            window.AppUI &&
+            typeof window.AppUI.announce ===
+                "function"
+        ) {
+            window.AppUI.announce(
+                message
+            );
+        }
+
+        if (!elements.live) {
+            return;
+        }
+
+        elements.live.textContent =
+            "";
+
+        window.setTimeout(
+            function () {
+                elements.live.textContent =
+                    String(
+                        message ||
+                        ""
+                    );
+            },
+            30
+        );
+    }
+
+    function toast(
+        message,
+        type
+    ) {
+        if (
+            window.AppUI &&
+            typeof window.AppUI.showToast ===
+                "function"
+        ) {
+            window.AppUI.showToast(
+                message,
+                type ||
+                "info"
+            );
+
+            return;
+        }
+
+        if (
+            typeof window.showToast ===
+                "function"
+        ) {
+            window.showToast(
+                message,
+                type ||
+                "info"
+            );
+        }
+    }
+
+    function safeHome() {
+        const home =
+            String(
+                root.dataset.homeUrl ||
+                "/"
+            );
+
+        window.location.assign(
+            home
+        );
+    }
+
+    function initializeBackAction() {
+        if (!elements.back) {
+            return;
+        }
+
+        elements.back.addEventListener(
+            "click",
+            function () {
+                let canUseHistory =
+                    false;
+
+                try {
+                    if (
+                        window.history.length >
+                            1 &&
+                        document.referrer
+                    ) {
+                        const referrer =
+                            new URL(
+                                document.referrer
+                            );
+
+                        canUseHistory =
+                            referrer.origin ===
+                            window.location.origin;
+                    }
+                } catch (error) {
+                    canUseHistory =
+                        false;
+                }
+
+                if (canUseHistory) {
+                    window.history.back();
+
+                    return;
+                }
+
+                safeHome();
+            }
+        );
+    }
+
+    async function copyReference() {
+        if (!elements.reference) {
+            return;
+        }
+
+        const value =
+            String(
+                elements.reference.textContent ||
+                ""
+            ).trim();
+
+        if (!value) {
+            return;
+        }
+
+        if (
+            !navigator.clipboard ||
+            typeof navigator.clipboard.writeText !==
+                "function"
+        ) {
+            toast(
+                "Copy is not available in this browser. You can select the reference manually.",
+                "info"
+            );
+
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(
+                value
+            );
+
+            toast(
+                "Reference copied.",
+                "success"
+            );
+
+            announce(
+                "Error reference copied."
+            );
+        } catch (error) {
+            toast(
+                "Copy was not available. You can select the reference manually.",
+                "info"
+            );
+        }
+    }
+
+    function initializeCopyReference() {
+        if (!elements.copyReference) {
+            return;
+        }
+
+        elements.copyReference.addEventListener(
+            "click",
+            copyReference
+        );
+    }
+
+    function formatSeconds(seconds) {
+        if (
+            seconds <
+            60
+        ) {
+            return (
+                seconds +
+                (
+                    seconds ===
+                        1
+                        ? " second"
+                        : " seconds"
+                )
+            );
+        }
+
+        const minutes =
+            Math.ceil(
+                seconds /
+                60
+            );
+
+        return (
+            minutes +
+            (
+                minutes ===
+                    1
+                    ? " minute"
+                    : " minutes"
+            )
+        );
+    }
+
+    function unlockRetry() {
+        if (!elements.retryLink) {
+            return;
+        }
+
+        elements.retryLink.removeAttribute(
+            "aria-disabled"
+        );
+
+        elements.retryLink.removeAttribute(
+            "tabindex"
+        );
+
+        if (elements.countdown) {
+            elements.countdown.textContent =
+                "the server-provided delay has elapsed";
+        }
+
+        announce(
+            "The displayed retry delay has elapsed. The server will still decide whether the next request is allowed."
+        );
+    }
+
+    function initializeRetryCountdown() {
+        if (
+            !elements.countdown
+        ) {
+            return;
+        }
+
+        let remaining =
+            Number(
+                root.dataset.retrySeconds ||
+                "0"
+            );
+
+        if (
+            !Number.isFinite(
+                remaining
+            ) ||
+            remaining <=
+                0
+        ) {
+            return;
+        }
+
+        remaining =
+            Math.min(
+                Math.floor(
+                    remaining
+                ),
+                86400
+            );
+
+        elements.countdown.textContent =
+            formatSeconds(
+                remaining
+            );
+
+        const timer =
+            window.setInterval(
+                function () {
+                    remaining -=
+                        1;
+
+                    if (
+                        remaining <=
+                        0
+                    ) {
+                        window.clearInterval(
+                            timer
+                        );
+
+                        unlockRetry();
+
+                        return;
+                    }
+
+                    elements.countdown.textContent =
+                        formatSeconds(
+                            remaining
+                        );
+                },
+                1000
+            );
+    }
+
+    function initializeErrorPage() {
+        initializeBackAction();
+        initializeCopyReference();
+        initializeRetryCountdown();
+    }
+
+    if (
+        document.readyState ===
+        "loading"
+    ) {
+        document.addEventListener(
+            "DOMContentLoaded",
+            initializeErrorPage,
+            {
+                once:
+                    true
+            }
+        );
+    } else {
+        initializeErrorPage();
+    }
+}());
+</script>
+{% endblock %}

@@ -1,0 +1,3641 @@
+{% extends "base.html" %}
+
+{# =========================================================
+   ONE REUSABLE PUBLIC OUTLET / LOCATION DETAIL TEMPLATE
+
+   CURRENT MAIN.PY SOURCE OF TRUTH
+   --------------------------------
+   Public route currently implemented:
+       GET /location/<location_id>
+       endpoint: location_detail_page
+       location = get_active_location(location_id)
+
+   IMPORTANT INTEGRATION NOTE:
+   The current route still renders "location_detail.html".
+   This requested file is intentionally named "location.html".
+   To use it, main.py must later change ONLY that template name to:
+       render_page("location.html", location=location)
+   The route/endpoint itself should remain location_detail_page.
+
+   Current public location document fields managed by main.py:
+       id
+       name
+       address
+       city
+       area
+       phone
+       latitude
+       longitude
+       opening_hours
+       delivery_enabled
+       pickup_enabled
+       dine_in_enabled
+       active
+       delivery_radius_km
+       delivery_areas
+       display_order
+       image_url
+
+   Current backend selection architecture:
+       POST /api/service-selection
+       endpoint: save_service_selection
+
+   Pickup / Dine-In:
+       backend validates the outlet and service flag.
+
+   Delivery:
+       the backend may use coordinates/city/area/service-area logic.
+       This page intentionally DOES NOT provide a "force this outlet for
+       Delivery" action because outlet-level delivery support is not the
+       same thing as address serviceability.
+
+   Current customer cart:
+       GET /api/cart
+       endpoint: get_cart_api
+       cart stores outlet_id + service_mode.
+       Adding items rejects outlet/service mismatch.
+
+   Current save_service_selection() does not migrate/reprice/reconcile
+   an existing cart. Therefore this template FAILS CLOSED for customer
+   carts: if a non-empty cart is tied to a different outlet/service,
+   location selection is NOT submitted. The customer is directed to
+   Review Cart or Keep Current Location. No item is silently cleared.
+
+   Current main.py does NOT implement:
+       - authoritative is_open/open_status calculation
+       - special/holiday hours management
+       - temporary closure management
+       - map-provider configuration
+       - customer-facing directions URL field
+       - a dedicated delivery-serviceability checker
+       - a location status polling endpoint
+
+   This template never invents those systems. It can safely render a
+   few optional future public fields if a backend later supplies them,
+   but current functionality remains correct without them.
+========================================================= #}
+
+{% set location_data = location|default({}, true) %}
+{% if location_data is not mapping %}
+    {% set location_data = {} %}
+{% endif %}
+
+{% set location_id = location_data.get("id", "")|default("", true)|string %}
+{% set location_name = location_data.get("name", "Location")|default("Location", true)|string %}
+{% set location_city = location_data.get("city", "")|default("", true)|string %}
+{% set location_area = location_data.get("area", "")|default("", true)|string %}
+{% set location_address = location_data.get("address", "")|default("", true)|string %}
+{% set location_phone = location_data.get("phone", "")|default("", true)|string %}
+{% set location_active = location_data.get("active", false) is sameas true %}
+
+{% set image_raw = location_data.get("image_url", "")|default("", true)|string|trim %}
+{% if (image_raw.startswith("/") and not image_raw.startswith("//")) or image_raw.startswith("https://") or image_raw.startswith("http://") %}
+    {% set location_image = image_raw %}
+{% else %}
+    {% set location_image = "" %}
+{% endif %}
+
+{% set opening_hours = location_data.get("opening_hours", {}) %}
+{% if opening_hours is not mapping %}
+    {% set opening_hours = {} %}
+{% endif %}
+
+{% set weekdays = [
+    ("monday", "Monday"),
+    ("tuesday", "Tuesday"),
+    ("wednesday", "Wednesday"),
+    ("thursday", "Thursday"),
+    ("friday", "Friday"),
+    ("saturday", "Saturday"),
+    ("sunday", "Sunday")
+] %}
+
+{% set services = {
+    "delivery": location_data.get("delivery_enabled", false) is sameas true,
+    "pickup": location_data.get("pickup_enabled", false) is sameas true,
+    "dine_in": location_data.get("dine_in_enabled", false) is sameas true
+} %}
+
+{% set service_ctx = session.get("service_selection") or {} %}
+{% if service_ctx is not mapping %}
+    {% set service_ctx = {} %}
+{% endif %}
+
+{% set current_outlet_id = service_ctx.get("outlet_id", "")|default("", true)|string %}
+{% set current_service_mode = service_ctx.get("service_mode", "")|default("", true)|string|lower %}
+{% set is_current_outlet = location_id and current_outlet_id == location_id %}
+
+{% set principal_data = principal|default({}, true) %}
+{% if principal_data is not mapping %}
+    {% set principal_data = {} %}
+{% endif %}
+{% set is_customer = principal_data.get("role", "") == "customer" %}
+
+{# Optional FUTURE backend-owned public state. Nothing here is inferred. #}
+{% set backend_open_status = location_data.get("open_status", "")|default("", true)|string|trim %}
+{% set backend_is_open = location_data.get("is_open", none) %}
+{% set temporary_closure = location_data.get("temporary_closure", {}) %}
+{% if temporary_closure is not mapping %}
+    {% set temporary_closure = {} %}
+{% endif %}
+{% set temporarily_closed =
+    location_data.get("temporarily_closed", false) is sameas true
+    or temporary_closure.get("active", false) is sameas true
+%}
+{% set closure_public_message =
+    temporary_closure.get("public_message", temporary_closure.get("message", ""))
+    |default("", true)|string|trim
+%}
+{% set reopen_display =
+    temporary_closure.get("reopen_display", "")
+    |default("", true)|string|trim
+%}
+
+{% set special_hours = location_data.get("special_hours", []) %}
+{% if special_hours is string or special_hours is not sequence %}
+    {% set special_hours = [] %}
+{% endif %}
+
+{% set description = location_data.get("description", "")|default("", true)|string|trim %}
+
+{% set directions_raw = location_data.get("directions_url", "")|default("", true)|string|trim %}
+{% if directions_raw.startswith("https://") or directions_raw.startswith("http://") %}
+    {% set directions_url = directions_raw %}
+{% else %}
+    {% set directions_url = "" %}
+{% endif %}
+
+{% set seo_data = location_data.get("seo", {}) %}
+{% if seo_data is not mapping %}
+    {% set seo_data = {} %}
+{% endif %}
+
+{% set seo_title = seo_data.get("title", "")|default("", true)|string|trim %}
+{% set seo_description = seo_data.get("description", "")|default("", true)|string|trim %}
+{% set seo_canonical = seo_data.get("canonical_url", "")|default("", true)|string|trim %}
+{% if not (seo_canonical.startswith("https://") or seo_canonical.startswith("http://")) %}
+    {% set seo_canonical = "" %}
+{% endif %}
+
+{% set location_place = namespace(parts=[]) %}
+{% if location_area %}
+    {% set location_place.parts = location_place.parts + [location_area] %}
+{% endif %}
+{% if location_city and location_city != location_area %}
+    {% set location_place.parts = location_place.parts + [location_city] %}
+{% endif %}
+
+{% macro service_label(mode) -%}
+    {%- if mode == "delivery" -%}
+        Delivery
+    {%- elif mode == "pickup" -%}
+        Pickup
+    {%- elif mode == "dine_in" -%}
+        Dine-In
+    {%- else -%}
+        {{- mode|replace("_", " ")|title -}}
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro service_icon(mode) -%}
+    {%- if mode == "delivery" -%}
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 7h11v9H3z"></path>
+            <path d="M14 10h4l3 3v3h-7z"></path>
+            <circle cx="7" cy="18" r="2"></circle>
+            <circle cx="18" cy="18" r="2"></circle>
+        </svg>
+    {%- elif mode == "pickup" -%}
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 9h14l-1 11H6L5 9Z"></path>
+            <path d="M8 9a4 4 0 0 1 8 0"></path>
+            <path d="M9 14h6"></path>
+        </svg>
+    {%- else -%}
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 4v7a3 3 0 0 0 3 3V4"></path>
+            <path d="M4 8h3"></path>
+            <path d="M7 14v6"></path>
+            <path d="M16 4v16"></path>
+            <path d="M13 4c0 4 1 6 3 6"></path>
+        </svg>
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro hours_display(schedule) -%}
+    {%- if schedule is string -%}
+        {{- schedule if schedule|trim else "Hours unavailable" -}}
+    {%- elif schedule is mapping -%}
+        {%- if schedule.get("closed", false) -%}
+            Closed
+        {%- elif schedule.get("open") and schedule.get("close") -%}
+            {{- schedule.get("open") }} – {{ schedule.get("close") -}}
+        {%- else -%}
+            Hours unavailable
+        {%- endif -%}
+    {%- else -%}
+        Hours unavailable
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro service_status_card(mode, enabled) -%}
+    <article class="location-service-card{{ ' is-available' if enabled else ' is-unavailable' }}">
+        <span class="location-service-card__icon" aria-hidden="true">
+            {{ service_icon(mode) }}
+        </span>
+
+        <div>
+            <h3>
+                {{ service_label(mode) }}
+            </h3>
+
+            <p class="location-service-card__state">
+                {% if enabled %}
+                    Available at this outlet
+                {% else %}
+                    Not available at this outlet
+                {% endif %}
+            </p>
+
+            {% if mode == "delivery" and enabled %}
+                <p class="location-service-card__note">
+                    Your delivery address still needs backend service-area validation during ordering.
+                </p>
+            {% endif %}
+        </div>
+    </article>
+{%- endmacro %}
+
+{% block title %}
+    {{ seo_title if seo_title else location_name ~ " | " ~ business_name|default("Restaurant", true) }}
+{% endblock %}
+
+{% block meta_description %}
+    {% if seo_description %}
+        {{ seo_description }}
+    {% elif location_place.parts %}
+        View {{ location_name }} in {{ location_place.parts|join(", ") }} with public address, services and opening hours.
+    {% else %}
+        View {{ location_name }} with public address, services and opening hours.
+    {% endif %}
+{% endblock %}
+
+{% block head %}
+    {{ super() }}
+
+    {% if seo_canonical %}
+        <link rel="canonical" href="{{ seo_canonical }}">
+    {% endif %}
+
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="{{ seo_title if seo_title else location_name }}">
+    <meta
+        property="og:description"
+        content="{% if seo_description %}{{ seo_description }}{% elif location_place.parts %}View {{ location_name }} in {{ location_place.parts|join(', ') }} with public address, services and opening hours.{% else %}View {{ location_name }} with public address, services and opening hours.{% endif %}"
+    >
+
+    {% if location_image %}
+        <meta property="og:image" content="{{ location_image }}">
+    {% endif %}
+{% endblock %}
+
+{% block styles %}
+<style>
+    .location-page {
+        --lp-primary: var(--primary-color, #b83222);
+        --lp-primary-hover: var(--primary-color-hover, #98281b);
+        --lp-primary-soft: var(--primary-color-soft, #fff0eb);
+        --lp-primary-contrast: var(--primary-contrast, #fff);
+
+        --lp-bg: var(--background-color, #fffaf4);
+        --lp-bg-soft: var(--background-subtle, #f8f2ea);
+        --lp-surface: var(--surface-color, #fff);
+        --lp-surface-muted: var(--surface-muted, #f5eee5);
+
+        --lp-text: var(--text-color, #201c19);
+        --lp-strong: var(--text-strong, #151210);
+        --lp-muted: var(--muted-text, #6f6760);
+        --lp-subtle: var(--subtle-text, #8c8279);
+
+        --lp-border: var(--border-color, #e7ded4);
+        --lp-border-strong: var(--border-strong, #d3c6b9);
+
+        --lp-success: var(--success-color, #247a4a);
+        --lp-success-soft: var(--success-soft, #eaf7ef);
+        --lp-warning: var(--warning-color, #9a6510);
+        --lp-warning-soft: var(--warning-soft, #fff5dc);
+        --lp-error: var(--error-color, #b42318);
+        --lp-error-soft: var(--error-soft, #fff0ee);
+        --lp-info: var(--info-color, #285ea8);
+        --lp-info-soft: var(--info-soft, #edf4ff);
+
+        --lp-shadow:
+            var(
+                --shadow-sm,
+                0 7px 20px rgba(31, 24, 19, .08)
+            );
+
+        --lp-shadow-lg:
+            var(
+                --shadow-md,
+                0 18px 42px rgba(31, 24, 19, .12)
+            );
+
+        --lp-transition:
+            var(
+                --transition-fast,
+                160ms ease
+            );
+
+        min-height: 72vh;
+
+        padding:
+            clamp(.8rem, 2.4vw, 1.4rem)
+            0
+            clamp(4rem, 7vw, 5.5rem);
+
+        color: var(--lp-text);
+    }
+
+    .location-page,
+    .location-page *,
+    .location-page *::before,
+    .location-page *::after {
+        box-sizing: border-box;
+    }
+
+    .location-page [hidden] {
+        display: none !important;
+    }
+
+    .location-page svg {
+        display: block;
+
+        fill: none;
+        stroke: currentColor;
+
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+
+    .location-shell {
+        width: min(100% - 2rem, 1180px);
+
+        margin-inline: auto;
+    }
+
+    /* =====================================================
+       BREADCRUMBS
+    ====================================================== */
+
+    .location-breadcrumbs {
+        margin-bottom: .62rem;
+    }
+
+    .location-breadcrumbs ol {
+        display: flex;
+        align-items: center;
+        gap: .3rem;
+        flex-wrap: wrap;
+
+        margin: 0;
+        padding: 0;
+
+        list-style: none;
+
+        color: var(--lp-muted);
+
+        font-size: .51rem;
+        line-height: 1.4;
+    }
+
+    .location-breadcrumbs a {
+        color: var(--lp-muted);
+
+        text-decoration: none;
+    }
+
+    .location-breadcrumbs a:hover {
+        color: var(--lp-primary);
+
+        text-decoration: underline;
+        text-underline-offset: .15em;
+    }
+
+    .location-breadcrumbs__sep {
+        color: var(--lp-subtle);
+    }
+
+    /* =====================================================
+       HERO
+    ====================================================== */
+
+    .location-hero {
+        overflow: hidden;
+
+        display: grid;
+        grid-template-columns:
+            minmax(0, 1.12fr)
+            minmax(300px, .88fr);
+
+        border: 1px solid var(--lp-border);
+        border-radius: 22px;
+
+        background: var(--lp-surface);
+
+        box-shadow: var(--lp-shadow-lg);
+    }
+
+    .location-hero__content {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+
+        min-width: 0;
+
+        padding:
+            clamp(1rem, 3.6vw, 1.7rem);
+    }
+
+    .location-eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: .38rem;
+
+        width: fit-content;
+
+        margin: 0 0 .4rem;
+
+        color: var(--lp-primary);
+
+        font-size: .57rem;
+        font-weight: 860;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+    }
+
+    .location-eyebrow::before {
+        content: "";
+
+        width: 22px;
+        height: 2px;
+
+        border-radius: 999px;
+
+        background: currentColor;
+    }
+
+    .location-hero h1 {
+        margin: 0;
+
+        color: var(--lp-strong);
+
+        font-size:
+            clamp(
+                1.8rem,
+                4.8vw,
+                3.15rem
+            );
+
+        font-weight: 930;
+        line-height: 1.02;
+        letter-spacing: -.05em;
+
+        overflow-wrap: anywhere;
+        text-wrap: balance;
+    }
+
+    .location-hero__place {
+        margin: .42rem 0 0;
+
+        color: var(--lp-muted);
+
+        font-size: .68rem;
+        font-weight: 720;
+        line-height: 1.45;
+    }
+
+    .location-hero__description {
+        max-width: 64ch;
+
+        margin: .55rem 0 0;
+
+        color: var(--lp-muted);
+
+        font-size: .6rem;
+        line-height: 1.55;
+
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+    }
+
+    .location-status-row {
+        display: flex;
+        align-items: center;
+        gap: .38rem;
+        flex-wrap: wrap;
+
+        margin-top: .7rem;
+    }
+
+    .location-status {
+        min-height: 30px;
+
+        display: inline-flex;
+        align-items: center;
+        gap: .27rem;
+
+        padding: .34rem .46rem;
+
+        border: 1px solid var(--lp-border);
+        border-radius: 999px;
+
+        background: var(--lp-bg-soft);
+        color: var(--lp-muted);
+
+        font-size: .48rem;
+        font-weight: 820;
+        line-height: 1;
+    }
+
+    .location-status__dot {
+        width: 7px;
+        height: 7px;
+
+        border-radius: 50%;
+
+        background: currentColor;
+    }
+
+    .location-status--success {
+        border-color: rgba(36, 122, 74, .24);
+
+        background: var(--lp-success-soft);
+        color: var(--lp-success);
+    }
+
+    .location-status--warning {
+        border-color: rgba(154, 101, 16, .25);
+
+        background: var(--lp-warning-soft);
+        color: var(--lp-warning);
+    }
+
+    .location-status--danger {
+        border-color: rgba(180, 35, 24, .24);
+
+        background: var(--lp-error-soft);
+        color: var(--lp-error);
+    }
+
+    .location-status--info {
+        border-color: rgba(40, 94, 168, .22);
+
+        background: var(--lp-info-soft);
+        color: var(--lp-info);
+    }
+
+    .location-status-note {
+        color: var(--lp-subtle);
+
+        font-size: .48rem;
+        line-height: 1.42;
+    }
+
+    .location-hero__actions {
+        display: flex;
+        align-items: center;
+        gap: .4rem;
+        flex-wrap: wrap;
+
+        margin-top: .82rem;
+    }
+
+    .location-btn {
+        min-height: 43px;
+
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: .34rem;
+
+        padding: .54rem .68rem;
+
+        border-radius: 10px;
+
+        font: inherit;
+        font-size: .54rem;
+        font-weight: 830;
+        line-height: 1;
+
+        text-decoration: none;
+
+        transition:
+            transform var(--lp-transition),
+            border-color var(--lp-transition),
+            background var(--lp-transition),
+            color var(--lp-transition),
+            opacity var(--lp-transition);
+    }
+
+    button.location-btn {
+        cursor: pointer;
+    }
+
+    .location-btn svg {
+        width: .76rem;
+        height: .76rem;
+    }
+
+    .location-btn--primary {
+        border: 1px solid var(--lp-primary);
+
+        background: var(--lp-primary);
+        color: var(--lp-primary-contrast);
+    }
+
+    .location-btn--primary:hover:not(:disabled) {
+        transform: translateY(-1px);
+
+        border-color: var(--lp-primary-hover);
+        background: var(--lp-primary-hover);
+    }
+
+    .location-btn--secondary {
+        border: 1px solid var(--lp-border);
+
+        background: var(--lp-bg);
+        color: var(--lp-text);
+    }
+
+    .location-btn--secondary:hover:not(:disabled) {
+        transform: translateY(-1px);
+
+        border-color: var(--lp-border-strong);
+        background: var(--lp-surface-muted);
+    }
+
+    .location-btn:disabled {
+        cursor: not-allowed;
+
+        opacity: .58;
+
+        transform: none !important;
+    }
+
+    .location-btn__spinner {
+        width: .72rem;
+        height: .72rem;
+
+        border: 2px solid rgba(255, 255, 255, .35);
+        border-top-color: currentColor;
+        border-radius: 50%;
+
+        animation:
+            location-spin
+            .85s
+            linear
+            infinite;
+    }
+
+    .location-btn--secondary
+    .location-btn__spinner {
+        border-color: rgba(32, 28, 25, .18);
+        border-top-color: currentColor;
+    }
+
+    @keyframes location-spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    .location-hero__media {
+        position: relative;
+
+        min-height: 310px;
+
+        display: grid;
+        place-items: center;
+
+        overflow: hidden;
+
+        border-left: 1px solid var(--lp-border);
+
+        background:
+            linear-gradient(
+                145deg,
+                var(--lp-primary-soft),
+                var(--lp-surface-muted)
+            );
+
+        color: var(--lp-primary);
+    }
+
+    .location-hero__media img {
+        width: 100%;
+        height: 100%;
+
+        object-fit: cover;
+    }
+
+    .location-hero__fallback {
+        display: grid;
+        place-items: center;
+        gap: .4rem;
+
+        padding: 1rem;
+
+        color: var(--lp-primary);
+
+        text-align: center;
+    }
+
+    .location-hero__fallback svg {
+        width: 2rem;
+        height: 2rem;
+    }
+
+    .location-hero__fallback span {
+        max-width: 20ch;
+
+        color: var(--lp-muted);
+
+        font-size: .53rem;
+        font-weight: 760;
+        line-height: 1.42;
+    }
+
+    /* =====================================================
+       NOTICES
+    ====================================================== */
+
+    .location-notice {
+        display: grid;
+        grid-template-columns:
+            auto
+            minmax(0, 1fr);
+
+        gap: .48rem;
+
+        margin-top: .68rem;
+        padding: .67rem .72rem;
+
+        border: 1px solid var(--lp-border);
+        border-radius: 12px;
+
+        background: var(--lp-bg-soft);
+
+        color: var(--lp-muted);
+
+        font-size: .53rem;
+        line-height: 1.48;
+    }
+
+    .location-notice--warning {
+        border-color: rgba(154, 101, 16, .28);
+
+        background: var(--lp-warning-soft);
+        color: var(--lp-warning);
+    }
+
+    .location-notice--error {
+        border-color: rgba(180, 35, 24, .26);
+
+        background: var(--lp-error-soft);
+        color: var(--lp-error);
+    }
+
+    .location-notice--success {
+        border-color: rgba(36, 122, 74, .25);
+
+        background: var(--lp-success-soft);
+        color: var(--lp-success);
+    }
+
+    .location-notice--info {
+        border-color: rgba(40, 94, 168, .22);
+
+        background: var(--lp-info-soft);
+        color: var(--lp-info);
+    }
+
+    .location-notice svg {
+        width: .82rem;
+        height: .82rem;
+
+        margin-top: .03rem;
+    }
+
+    .location-notice strong {
+        color: currentColor;
+
+        font-weight: 840;
+    }
+
+    .location-notice p {
+        margin: .1rem 0 0;
+
+        color: currentColor;
+
+        opacity: .9;
+    }
+
+    /* =====================================================
+       GRID
+    ====================================================== */
+
+    .location-content-grid {
+        display: grid;
+        grid-template-columns:
+            minmax(0, 1fr)
+            minmax(320px, .72fr);
+
+        gap: .72rem;
+        align-items: start;
+
+        margin-top: .72rem;
+    }
+
+    .location-stack {
+        display: grid;
+        gap: .72rem;
+    }
+
+    .location-panel {
+        overflow: hidden;
+
+        border: 1px solid var(--lp-border);
+        border-radius: 15px;
+
+        background: var(--lp-surface);
+
+        box-shadow: var(--lp-shadow);
+    }
+
+    .location-panel__head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: .7rem;
+
+        padding: .72rem .8rem;
+
+        border-bottom: 1px solid var(--lp-border);
+    }
+
+    .location-panel__head h2 {
+        margin: 0;
+
+        color: var(--lp-strong);
+
+        font-size: .72rem;
+        font-weight: 880;
+        line-height: 1.35;
+    }
+
+    .location-panel__head p {
+        margin: .14rem 0 0;
+
+        color: var(--lp-muted);
+
+        font-size: .5rem;
+        line-height: 1.45;
+    }
+
+    .location-panel__body {
+        padding: .78rem .8rem;
+    }
+
+    /* =====================================================
+       ADDRESS / CONTACT
+    ====================================================== */
+
+    .location-contact-list {
+        display: grid;
+        gap: .48rem;
+
+        margin: 0;
+        padding: 0;
+
+        list-style: none;
+    }
+
+    .location-contact-item {
+        display: grid;
+        grid-template-columns:
+            auto
+            minmax(0, 1fr);
+
+        gap: .45rem;
+        align-items: start;
+    }
+
+    .location-contact-icon {
+        width: 34px;
+        height: 34px;
+
+        display: grid;
+        place-items: center;
+
+        border-radius: 9px;
+
+        background: var(--lp-primary-soft);
+        color: var(--lp-primary);
+    }
+
+    .location-contact-icon svg {
+        width: .78rem;
+        height: .78rem;
+    }
+
+    .location-contact-copy {
+        min-width: 0;
+    }
+
+    .location-contact-label {
+        display: block;
+
+        color: var(--lp-subtle);
+
+        font-size: .46rem;
+        font-weight: 780;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+    }
+
+    .location-contact-value,
+    .location-contact-value address {
+        margin: .12rem 0 0;
+
+        color: var(--lp-text);
+
+        font-size: .56rem;
+        font-style: normal;
+        font-weight: 720;
+        line-height: 1.48;
+
+        overflow-wrap: anywhere;
+    }
+
+    .location-contact-value a {
+        color: var(--lp-primary);
+
+        font-weight: 800;
+
+        text-decoration: none;
+    }
+
+    .location-contact-value a:hover {
+        text-decoration: underline;
+        text-underline-offset: .15em;
+    }
+
+    /* =====================================================
+       SERVICES
+    ====================================================== */
+
+    .location-services-grid {
+        display: grid;
+        grid-template-columns:
+            repeat(
+                3,
+                minmax(0, 1fr)
+            );
+
+        gap: .48rem;
+    }
+
+    .location-service-card {
+        min-width: 0;
+
+        display: grid;
+        grid-template-columns:
+            auto
+            minmax(0, 1fr);
+
+        gap: .42rem;
+        align-items: start;
+
+        padding: .58rem;
+
+        border: 1px solid var(--lp-border);
+        border-radius: 11px;
+
+        background: var(--lp-bg-soft);
+    }
+
+    .location-service-card__icon {
+        width: 31px;
+        height: 31px;
+
+        display: grid;
+        place-items: center;
+
+        border-radius: 9px;
+
+        background: var(--lp-surface-muted);
+        color: var(--lp-muted);
+    }
+
+    .location-service-card__icon svg {
+        width: .72rem;
+        height: .72rem;
+    }
+
+    .location-service-card.is-available {
+        border-color: rgba(36, 122, 74, .2);
+
+        background: var(--lp-success-soft);
+    }
+
+    .location-service-card.is-available
+    .location-service-card__icon {
+        background: var(--lp-surface);
+        color: var(--lp-success);
+    }
+
+    .location-service-card.is-unavailable {
+        opacity: .78;
+    }
+
+    .location-service-card h3 {
+        margin: 0;
+
+        color: var(--lp-strong);
+
+        font-size: .56rem;
+        font-weight: 850;
+        line-height: 1.35;
+    }
+
+    .location-service-card__state {
+        margin: .1rem 0 0;
+
+        color: var(--lp-muted);
+
+        font-size: .48rem;
+        font-weight: 720;
+        line-height: 1.4;
+    }
+
+    .location-service-card__note {
+        margin: .18rem 0 0;
+
+        color: var(--lp-muted);
+
+        font-size: .45rem;
+        line-height: 1.42;
+    }
+
+    /* =====================================================
+       HOURS
+    ====================================================== */
+
+    .location-hours-details {
+        margin: 0;
+    }
+
+    .location-hours-details summary {
+        min-height: 42px;
+
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .5rem;
+
+        cursor: pointer;
+
+        color: var(--lp-text);
+
+        font-size: .54rem;
+        font-weight: 820;
+
+        list-style: none;
+    }
+
+    .location-hours-details summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .location-hours-summary-icon {
+        width: .74rem;
+        height: .74rem;
+
+        transition:
+            transform var(--lp-transition);
+    }
+
+    .location-hours-details[open]
+    .location-hours-summary-icon {
+        transform: rotate(180deg);
+    }
+
+    .location-hours-table {
+        width: 100%;
+
+        margin-top: .35rem;
+
+        border-collapse: collapse;
+
+        font-size: .52rem;
+    }
+
+    .location-hours-table th,
+    .location-hours-table td {
+        padding: .42rem 0;
+
+        border-bottom: 1px solid var(--lp-border);
+
+        text-align: left;
+        vertical-align: top;
+    }
+
+    .location-hours-table tr:last-child th,
+    .location-hours-table tr:last-child td {
+        border-bottom: 0;
+    }
+
+    .location-hours-table th {
+        width: 42%;
+
+        color: var(--lp-muted);
+
+        font-weight: 740;
+    }
+
+    .location-hours-table td {
+        color: var(--lp-text);
+
+        font-weight: 760;
+    }
+
+    .location-hours-empty {
+        margin: 0;
+
+        color: var(--lp-muted);
+
+        font-size: .53rem;
+        line-height: 1.48;
+    }
+
+    .location-special-hours {
+        display: grid;
+        gap: .38rem;
+
+        margin: .62rem 0 0;
+        padding: .58rem;
+
+        border: 1px solid var(--lp-border);
+        border-radius: 10px;
+
+        background: var(--lp-bg-soft);
+    }
+
+    .location-special-hours h3 {
+        margin: 0;
+
+        color: var(--lp-strong);
+
+        font-size: .55rem;
+        font-weight: 850;
+    }
+
+    .location-special-hours__item {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: .55rem;
+
+        color: var(--lp-muted);
+
+        font-size: .49rem;
+        line-height: 1.42;
+    }
+
+    .location-special-hours__item strong {
+        color: var(--lp-text);
+
+        font-weight: 780;
+    }
+
+    /* =====================================================
+       SELECT / ORDER
+    ====================================================== */
+
+    .location-order-panel {
+        position: sticky;
+        top: calc(var(--header-height, 76px) + .7rem);
+    }
+
+    .location-selection-current {
+        display: flex;
+        align-items: flex-start;
+        gap: .42rem;
+
+        margin-bottom: .62rem;
+        padding: .58rem;
+
+        border: 1px solid rgba(36, 122, 74, .22);
+        border-radius: 10px;
+
+        background: var(--lp-success-soft);
+        color: var(--lp-success);
+    }
+
+    .location-selection-current svg {
+        width: .78rem;
+        height: .78rem;
+
+        flex: 0 0 .78rem;
+
+        margin-top: .02rem;
+    }
+
+    .location-selection-current strong {
+        display: block;
+
+        font-size: .52rem;
+        font-weight: 850;
+    }
+
+    .location-selection-current p {
+        margin: .08rem 0 0;
+
+        font-size: .47rem;
+        line-height: 1.42;
+    }
+
+    .location-selection-copy {
+        margin: 0;
+
+        color: var(--lp-muted);
+
+        font-size: .53rem;
+        line-height: 1.5;
+    }
+
+    .location-selection-actions {
+        display: grid;
+        gap: .38rem;
+
+        margin-top: .62rem;
+    }
+
+    .location-selection-actions
+    .location-btn {
+        width: 100%;
+    }
+
+    .location-delivery-note {
+        display: grid;
+        grid-template-columns:
+            auto
+            minmax(0, 1fr);
+
+        gap: .38rem;
+
+        margin-top: .5rem;
+        padding: .52rem;
+
+        border: 1px solid var(--lp-border);
+        border-radius: 9px;
+
+        background: var(--lp-bg-soft);
+        color: var(--lp-muted);
+
+        font-size: .47rem;
+        line-height: 1.43;
+    }
+
+    .location-delivery-note svg {
+        width: .72rem;
+        height: .72rem;
+
+        margin-top: .02rem;
+
+        color: var(--lp-info);
+    }
+
+    /* =====================================================
+       ERROR / LIVE STATUS
+    ====================================================== */
+
+    .location-action-error {
+        margin-top: .5rem;
+        padding: .52rem .58rem;
+
+        border: 1px solid rgba(180, 35, 24, .25);
+        border-radius: 9px;
+
+        background: var(--lp-error-soft);
+        color: var(--lp-error);
+
+        font-size: .5rem;
+        font-weight: 720;
+        line-height: 1.45;
+    }
+
+    /* =====================================================
+       DIALOG
+    ====================================================== */
+
+    .location-dialog {
+        width: min(92vw, 520px);
+
+        padding: 0;
+
+        border: 1px solid var(--lp-border);
+        border-radius: 15px;
+
+        background: var(--lp-surface);
+        color: var(--lp-text);
+
+        box-shadow:
+            0 28px 80px rgba(0, 0, 0, .28);
+    }
+
+    .location-dialog::backdrop {
+        background: rgba(10, 8, 7, .58);
+    }
+
+    .location-dialog__head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: .55rem;
+
+        padding: .7rem .78rem;
+
+        border-bottom: 1px solid var(--lp-border);
+    }
+
+    .location-dialog__head h2 {
+        margin: 0;
+
+        color: var(--lp-strong);
+
+        font-size: .68rem;
+        font-weight: 880;
+        line-height: 1.35;
+    }
+
+    .location-dialog__close {
+        width: 36px;
+        height: 36px;
+
+        display: grid;
+        place-items: center;
+
+        flex: 0 0 36px;
+
+        padding: 0;
+
+        border: 1px solid var(--lp-border);
+        border-radius: 9px;
+
+        background: var(--lp-bg);
+        color: var(--lp-muted);
+
+        cursor: pointer;
+    }
+
+    .location-dialog__close svg {
+        width: .72rem;
+        height: .72rem;
+    }
+
+    .location-dialog__body {
+        padding: .78rem;
+    }
+
+    .location-dialog__body p {
+        margin: 0;
+
+        color: var(--lp-muted);
+
+        font-size: .55rem;
+        line-height: 1.52;
+    }
+
+    .location-dialog__actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: .38rem;
+        flex-wrap: wrap;
+
+        margin-top: .7rem;
+    }
+
+    /* =====================================================
+       BOTTOM LINKS
+    ====================================================== */
+
+    .location-bottom-links {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .5rem;
+        flex-wrap: wrap;
+
+        margin-top: .72rem;
+    }
+
+    .location-text-link {
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+
+        color: var(--lp-primary);
+
+        font-size: .53rem;
+        font-weight: 800;
+
+        text-decoration: none;
+    }
+
+    .location-text-link:hover {
+        text-decoration: underline;
+        text-underline-offset: .15em;
+    }
+
+    .location-text-link svg {
+        width: .72rem;
+        height: .72rem;
+    }
+
+    /* =====================================================
+       FOCUS / RESPONSIVE
+    ====================================================== */
+
+    .location-page a:focus-visible,
+    .location-page button:focus-visible,
+    .location-page summary:focus-visible {
+        outline:
+            3px solid
+            rgba(184, 50, 34, .24);
+
+        outline-offset: 2px;
+    }
+
+    @media (max-width: 900px) {
+        .location-hero {
+            grid-template-columns: 1fr;
+        }
+
+        .location-hero__media {
+            min-height: 240px;
+
+            border-top: 1px solid var(--lp-border);
+            border-left: 0;
+        }
+
+        .location-content-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .location-order-panel {
+            position: static;
+        }
+    }
+
+    @media (max-width: 680px) {
+        .location-shell {
+            width: min(100% - 1rem, 760px);
+        }
+
+        .location-services-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .location-hero__actions {
+            align-items: stretch;
+            flex-direction: column;
+        }
+
+        .location-hero__actions
+        .location-btn {
+            width: 100%;
+        }
+    }
+
+    @media (max-width: 460px) {
+        .location-page {
+            padding-top: .6rem;
+        }
+
+        .location-shell {
+            width: min(100% - .72rem, 760px);
+        }
+
+        .location-hero {
+            border-radius: 17px;
+        }
+
+        .location-hero__content {
+            padding: .82rem;
+        }
+
+        .location-hero__media {
+            min-height: 190px;
+        }
+
+        .location-panel__head,
+        .location-panel__body {
+            padding-right: .65rem;
+            padding-left: .65rem;
+        }
+
+        .location-dialog__actions {
+            align-items: stretch;
+            flex-direction: column-reverse;
+        }
+
+        .location-dialog__actions
+        .location-btn {
+            width: 100%;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .location-page *,
+        .location-page *::before,
+        .location-page *::after {
+            scroll-behavior: auto !important;
+
+            transition-duration: .01ms !important;
+            animation-iteration-count: 1 !important;
+        }
+
+        .location-btn__spinner {
+            animation-duration: 1.4s;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<section
+    class="location-page"
+    id="location-page-root"
+    data-location-id="{{ location_id }}"
+    data-location-name="{{ location_name }}"
+    data-current-outlet-id="{{ current_outlet_id }}"
+    data-current-service-mode="{{ current_service_mode }}"
+    data-service-url="{{ url_for('save_service_selection') }}"
+    data-cart-url="{{ url_for('get_cart_api') if is_customer else '' }}"
+    data-menu-url="{{ url_for('menu_page') }}"
+    data-customer="{{ 'true' if is_customer else 'false' }}"
+>
+    <span
+        class="visually-hidden"
+        id="location-live-region"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+    ></span>
+
+    <div class="location-shell">
+        <nav
+            class="location-breadcrumbs"
+            aria-label="Breadcrumb"
+        >
+            <ol>
+                <li>
+                    <a href="{{ url_for('home_page') }}">
+                        Home
+                    </a>
+                </li>
+
+                <li
+                    class="location-breadcrumbs__sep"
+                    aria-hidden="true"
+                >
+                    /
+                </li>
+
+                <li>
+                    <a href="{{ url_for('locations_page') }}">
+                        Locations
+                    </a>
+                </li>
+
+                <li
+                    class="location-breadcrumbs__sep"
+                    aria-hidden="true"
+                >
+                    /
+                </li>
+
+                <li aria-current="page">
+                    {{ location_name }}
+                </li>
+            </ol>
+        </nav>
+
+        <header class="location-hero">
+            <div class="location-hero__content">
+                <p class="location-eyebrow">
+                    Restaurant Outlet
+                </p>
+
+                <h1>
+                    {{ location_name }}
+                </h1>
+
+                {% if location_place.parts %}
+                    <p class="location-hero__place">
+                        {{ location_place.parts|join(", ") }}
+                    </p>
+                {% endif %}
+
+                {% if description %}
+                    <p class="location-hero__description">
+                        {{ description }}
+                    </p>
+                {% endif %}
+
+                <div
+                    class="location-status-row"
+                    aria-label="Outlet status"
+                >
+                    {% if temporarily_closed %}
+                        <span class="location-status location-status--danger">
+                            <span
+                                class="location-status__dot"
+                                aria-hidden="true"
+                            ></span>
+
+                            Temporarily Closed
+                        </span>
+
+                    {% elif backend_open_status %}
+                        <span
+                            class="location-status{% if backend_is_open is sameas true %} location-status--success{% elif backend_is_open is sameas false %} location-status--warning{% else %} location-status--info{% endif %}"
+                        >
+                            <span
+                                class="location-status__dot"
+                                aria-hidden="true"
+                            ></span>
+
+                            {{ backend_open_status }}
+                        </span>
+
+                    {% elif location_active %}
+                        <span class="location-status location-status--success">
+                            <span
+                                class="location-status__dot"
+                                aria-hidden="true"
+                            ></span>
+
+                            Active Outlet
+                        </span>
+
+                        <span class="location-status-note">
+                            Live open/closed status is not currently supplied by the backend.
+                        </span>
+
+                    {% else %}
+                        <span class="location-status location-status--warning">
+                            <span
+                                class="location-status__dot"
+                                aria-hidden="true"
+                            ></span>
+
+                            Availability Unavailable
+                        </span>
+                    {% endif %}
+
+                    {% if is_current_outlet %}
+                        <span
+                            class="location-status location-status--info"
+                            id="location-current-badge"
+                            aria-current="location"
+                        >
+                            <span
+                                class="location-status__dot"
+                                aria-hidden="true"
+                            ></span>
+
+                            Current Location
+                            {% if current_service_mode %}
+                                · {{ service_label(current_service_mode) }}
+                            {% endif %}
+                        </span>
+                    {% else %}
+                        <span
+                            class="location-status location-status--info"
+                            id="location-current-badge"
+                            aria-current="false"
+                            hidden
+                        >
+                            <span
+                                class="location-status__dot"
+                                aria-hidden="true"
+                            ></span>
+
+                            Current Location
+                        </span>
+                    {% endif %}
+                </div>
+
+                <div class="location-hero__actions">
+                    <a
+                        class="location-btn location-btn--primary"
+                        href="{{ url_for('menu_page') }}"
+                    >
+                        <svg
+                            aria-hidden="true"
+                            viewBox="0 0 24 24"
+                        >
+                            <path d="M5 4h14v16H5z"></path>
+                            <path d="M8 8h8M8 12h8M8 16h5"></path>
+                        </svg>
+
+                        View Menu
+                    </a>
+
+                    {% if location_phone %}
+                        <a
+                            class="location-btn location-btn--secondary"
+                            href="tel:{{ location_phone|replace(' ', '')|replace('-', '')|replace('(', '')|replace(')', '') }}"
+                            aria-label="Call {{ location_name }}"
+                        >
+                            <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.79.62 2.65a2 2 0 0 1-.45 2.11L8 9.73a16 16 0 0 0 6 6l1.25-1.25a2 2 0 0 1 2.11-.45c.86.29 1.75.5 2.65.62A2 2 0 0 1 22 16.92z"></path>
+                            </svg>
+
+                            Call Outlet
+                        </a>
+                    {% endif %}
+
+                    {% if directions_url %}
+                        <a
+                            class="location-btn location-btn--secondary"
+                            href="{{ directions_url }}"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label="Get Directions to {{ location_name }} (opens in a new tab)"
+                        >
+                            <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <path d="m12 3 9 9-9 9-9-9 9-9Z"></path>
+                                <path d="M8 12h7M13 9l3 3-3 3"></path>
+                            </svg>
+
+                            Get Directions
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="location-hero__media">
+                {% if location_image %}
+                    <img
+                        id="location-hero-image"
+                        src="{{ location_image }}"
+                        alt="{{ location_name }} outlet"
+                        width="720"
+                        height="480"
+                        loading="eager"
+                        decoding="async"
+                        fetchpriority="high"
+                    >
+                {% endif %}
+
+                <div
+                    class="location-hero__fallback"
+                    id="location-hero-fallback"
+                    {% if location_image %}hidden{% endif %}
+                >
+                    <svg
+                        aria-hidden="true"
+                        viewBox="0 0 24 24"
+                    >
+                        <path d="M12 21s6-5.3 6-11a6 6 0 1 0-12 0c0 5.7 6 11 6 11Z"></path>
+                        <circle cx="12" cy="10" r="2"></circle>
+                    </svg>
+
+                    <span>
+                        Outlet photo is not available.
+                    </span>
+                </div>
+            </div>
+        </header>
+
+        {% if temporarily_closed %}
+            <section
+                class="location-notice location-notice--warning"
+                aria-label="Temporary closure notice"
+            >
+                <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                >
+                    <path d="M12 3 2.8 20h18.4L12 3Z"></path>
+                    <path d="M12 9v5M12 17h.01"></path>
+                </svg>
+
+                <div>
+                    <strong>
+                        This outlet is temporarily closed.
+                    </strong>
+
+                    {% if closure_public_message %}
+                        <p>
+                            {{ closure_public_message }}
+                        </p>
+                    {% endif %}
+
+                    {% if reopen_display %}
+                        <p>
+                            Reopens: {{ reopen_display }}
+                        </p>
+                    {% endif %}
+                </div>
+            </section>
+        {% endif %}
+
+        <div
+            class="location-notice location-notice--error"
+            id="location-action-error"
+            role="alert"
+            hidden
+        >
+            <svg
+                aria-hidden="true"
+                viewBox="0 0 24 24"
+            >
+                <circle cx="12" cy="12" r="9"></circle>
+                <path d="M12 8v5M12 16.5h.01"></path>
+            </svg>
+
+            <div>
+                <strong id="location-action-error-title">
+                    We couldn't update your location.
+                </strong>
+
+                <p id="location-action-error-message">
+                    Please try again.
+                </p>
+            </div>
+        </div>
+
+        <div class="location-content-grid">
+            <div class="location-stack">
+                <section
+                    class="location-panel"
+                    aria-labelledby="location-contact-title"
+                >
+                    <header class="location-panel__head">
+                        <div>
+                            <h2 id="location-contact-title">
+                                Address &amp; Contact
+                            </h2>
+
+                            <p>
+                                Public outlet information.
+                            </p>
+                        </div>
+                    </header>
+
+                    <div class="location-panel__body">
+                        <ul class="location-contact-list">
+                            {% if location_address %}
+                                <li class="location-contact-item">
+                                    <span
+                                        class="location-contact-icon"
+                                        aria-hidden="true"
+                                    >
+                                        <svg viewBox="0 0 24 24">
+                                            <path d="M12 21s6-5.3 6-11a6 6 0 1 0-12 0c0 5.7 6 11 6 11Z"></path>
+                                            <circle cx="12" cy="10" r="2"></circle>
+                                        </svg>
+                                    </span>
+
+                                    <div class="location-contact-copy">
+                                        <span class="location-contact-label">
+                                            Address
+                                        </span>
+
+                                        <div class="location-contact-value">
+                                            <address>
+                                                {{ location_address }}
+
+                                                {% if location_area or location_city %}
+                                                    <br>
+
+                                                    {% if location_area %}
+                                                        {{ location_area }}
+                                                    {% endif %}
+
+                                                    {% if location_area and location_city %}
+                                                        ,
+                                                    {% endif %}
+
+                                                    {% if location_city %}
+                                                        {{ location_city }}
+                                                    {% endif %}
+                                                {% endif %}
+                                            </address>
+                                        </div>
+                                    </div>
+                                </li>
+                            {% endif %}
+
+                            {% if location_phone %}
+                                <li class="location-contact-item">
+                                    <span
+                                        class="location-contact-icon"
+                                        aria-hidden="true"
+                                    >
+                                        <svg viewBox="0 0 24 24">
+                                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.79.62 2.65a2 2 0 0 1-.45 2.11L8 9.73a16 16 0 0 0 6 6l1.25-1.25a2 2 0 0 1 2.11-.45c.86.29 1.75.5 2.65.62A2 2 0 0 1 22 16.92z"></path>
+                                        </svg>
+                                    </span>
+
+                                    <div class="location-contact-copy">
+                                        <span class="location-contact-label">
+                                            Public Phone
+                                        </span>
+
+                                        <div class="location-contact-value">
+                                            <a
+                                                href="tel:{{ location_phone|replace(' ', '')|replace('-', '')|replace('(', '')|replace(')', '') }}"
+                                                aria-label="Call {{ location_name }} at {{ location_phone }}"
+                                            >
+                                                {{ location_phone }}
+                                            </a>
+                                        </div>
+                                    </div>
+                                </li>
+                            {% endif %}
+
+                            {% if directions_url %}
+                                <li class="location-contact-item">
+                                    <span
+                                        class="location-contact-icon"
+                                        aria-hidden="true"
+                                    >
+                                        <svg viewBox="0 0 24 24">
+                                            <path d="m12 3 9 9-9 9-9-9 9-9Z"></path>
+                                            <path d="M8 12h7M13 9l3 3-3 3"></path>
+                                        </svg>
+                                    </span>
+
+                                    <div class="location-contact-copy">
+                                        <span class="location-contact-label">
+                                            Directions
+                                        </span>
+
+                                        <div class="location-contact-value">
+                                            <a
+                                                href="{{ directions_url }}"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                aria-label="Get Directions to {{ location_name }} (opens in a new tab)"
+                                            >
+                                                Get Directions
+                                            </a>
+                                        </div>
+                                    </div>
+                                </li>
+                            {% endif %}
+                        </ul>
+                    </div>
+                </section>
+
+                <section
+                    class="location-panel"
+                    aria-labelledby="location-services-title"
+                >
+                    <header class="location-panel__head">
+                        <div>
+                            <h2 id="location-services-title">
+                                Services at This Outlet
+                            </h2>
+
+                            <p>
+                                Service availability comes from the backend outlet configuration.
+                            </p>
+                        </div>
+                    </header>
+
+                    <div class="location-panel__body">
+                        <div class="location-services-grid">
+                            {{ service_status_card("delivery", services.delivery) }}
+                            {{ service_status_card("pickup", services.pickup) }}
+                            {{ service_status_card("dine_in", services.dine_in) }}
+                        </div>
+                    </div>
+                </section>
+
+                <section
+                    class="location-panel"
+                    aria-labelledby="location-hours-title"
+                >
+                    <header class="location-panel__head">
+                        <div>
+                            <h2 id="location-hours-title">
+                                Opening Hours
+                            </h2>
+
+                            <p>
+                                Weekly hours are displayed exactly from the outlet record. Browser time is not used to decide whether the outlet is open.
+                            </p>
+                        </div>
+                    </header>
+
+                    <div class="location-panel__body">
+                        {% if opening_hours %}
+                            <details class="location-hours-details" open>
+                                <summary>
+                                    Weekly Hours
+
+                                    <svg
+                                        class="location-hours-summary-icon"
+                                        aria-hidden="true"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path d="m6 9 6 6 6-6"></path>
+                                    </svg>
+                                </summary>
+
+                                <table class="location-hours-table">
+                                    <tbody>
+                                        {% for day_key, day_label in weekdays %}
+                                            <tr>
+                                                <th scope="row">
+                                                    {{ day_label }}
+                                                </th>
+
+                                                <td>
+                                                    {% if day_key in opening_hours %}
+                                                        {{ hours_display(opening_hours.get(day_key)) }}
+                                                    {% else %}
+                                                        Hours unavailable
+                                                    {% endif %}
+                                                </td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </details>
+                        {% else %}
+                            <p class="location-hours-empty">
+                                Hours unavailable.
+                            </p>
+                        {% endif %}
+
+                        {% if special_hours %}
+                            <section
+                                class="location-special-hours"
+                                aria-labelledby="location-special-hours-title"
+                            >
+                                <h3 id="location-special-hours-title">
+                                    Special Hours
+                                </h3>
+
+                                {% for special in special_hours %}
+                                    {% if special is mapping %}
+                                        {% set special_label = special.get("label", special.get("date", ""))|default("", true)|string %}
+                                        {% set special_closed = special.get("closed", false) is sameas true %}
+                                        {% set special_hours_text = special.get("hours", "")|default("", true)|string %}
+
+                                        {% if special_label %}
+                                            <div class="location-special-hours__item">
+                                                <strong>
+                                                    {{ special_label }}
+                                                </strong>
+
+                                                <span>
+                                                    {% if special_closed %}
+                                                        Closed
+                                                    {% elif special_hours_text %}
+                                                        {{ special_hours_text }}
+                                                    {% else %}
+                                                        Hours unavailable
+                                                    {% endif %}
+                                                </span>
+                                            </div>
+                                        {% endif %}
+                                    {% endif %}
+                                {% endfor %}
+                            </section>
+                        {% endif %}
+                    </div>
+                </section>
+            </div>
+
+            <aside
+                class="location-panel location-order-panel"
+                aria-labelledby="location-order-title"
+            >
+                <header class="location-panel__head">
+                    <div>
+                        <h2 id="location-order-title">
+                            Order from This Location
+                        </h2>
+
+                        <p>
+                            Pickup and Dine-In selection is confirmed by the backend before this page marks it current.
+                        </p>
+                    </div>
+                </header>
+
+                <div class="location-panel__body">
+                    <div
+                        class="location-selection-current"
+                        id="location-selection-current"
+                        {% if not is_current_outlet %}hidden{% endif %}
+                    >
+                        <svg
+                            aria-hidden="true"
+                            viewBox="0 0 24 24"
+                        >
+                            <circle cx="12" cy="12" r="9"></circle>
+                            <path d="m8 12 2.6 2.6L16.5 9"></path>
+                        </svg>
+
+                        <div>
+                            <strong id="location-selection-current-title">
+                                Current Location
+                            </strong>
+
+                            <p id="location-selection-current-copy">
+                                {% if current_service_mode %}
+                                    Selected for {{ service_label(current_service_mode) }}.
+                                {% else %}
+                                    This outlet is selected.
+                                {% endif %}
+                            </p>
+                        </div>
+                    </div>
+
+                    <p class="location-selection-copy">
+                        Choose a supported service below.
+                        The page never clears or reprices your cart in the browser.
+                    </p>
+
+                    <div class="location-selection-actions">
+                        {% if services.pickup %}
+                            <button
+                                class="location-btn location-btn--secondary"
+                                type="button"
+                                data-select-service="pickup"
+                                {% if is_current_outlet and current_service_mode == "pickup" %}disabled{% endif %}
+                            >
+                                <span
+                                    class="location-btn__spinner"
+                                    data-selection-spinner
+                                    aria-hidden="true"
+                                    hidden
+                                ></span>
+
+                                <svg
+                                    data-selection-icon
+                                    aria-hidden="true"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path d="M5 9h14l-1 11H6L5 9Z"></path>
+                                    <path d="M8 9a4 4 0 0 1 8 0"></path>
+                                </svg>
+
+                                <span data-selection-label>
+                                    {% if is_current_outlet and current_service_mode == "pickup" %}
+                                        Current Pickup Location
+                                    {% else %}
+                                        Choose this location for Pickup
+                                    {% endif %}
+                                </span>
+                            </button>
+                        {% endif %}
+
+                        {% if services.dine_in %}
+                            <button
+                                class="location-btn location-btn--secondary"
+                                type="button"
+                                data-select-service="dine_in"
+                                {% if is_current_outlet and current_service_mode == "dine_in" %}disabled{% endif %}
+                            >
+                                <span
+                                    class="location-btn__spinner"
+                                    data-selection-spinner
+                                    aria-hidden="true"
+                                    hidden
+                                ></span>
+
+                                <svg
+                                    data-selection-icon
+                                    aria-hidden="true"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path d="M4 4v7a3 3 0 0 0 3 3V4"></path>
+                                    <path d="M4 8h3"></path>
+                                    <path d="M7 14v6"></path>
+                                    <path d="M16 4v16"></path>
+                                    <path d="M13 4c0 4 1 6 3 6"></path>
+                                </svg>
+
+                                <span data-selection-label>
+                                    {% if is_current_outlet and current_service_mode == "dine_in" %}
+                                        Current Dine-In Location
+                                    {% else %}
+                                        Choose this location for Dine-In
+                                    {% endif %}
+                                </span>
+                            </button>
+                        {% endif %}
+
+                        <a
+                            class="location-btn location-btn--primary"
+                            href="{{ url_for('menu_page') }}"
+                        >
+                            <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <path d="M5 4h14v16H5z"></path>
+                                <path d="M8 8h8M8 12h8M8 16h5"></path>
+                            </svg>
+
+                            View Menu
+                        </a>
+                    </div>
+
+                    {% if services.delivery %}
+                        <div class="location-delivery-note">
+                            <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <circle cx="12" cy="12" r="9"></circle>
+                                <path d="M12 11v6M12 7h.01"></path>
+                            </svg>
+
+                            <span>
+                                Delivery is enabled at this outlet, but that does not mean every address is serviceable.
+                                Delivery outlet assignment and address eligibility remain backend-authoritative during the delivery workflow.
+                            </span>
+                        </div>
+                    {% endif %}
+
+                    {% if not services.pickup and not services.dine_in %}
+                        <div class="location-delivery-note">
+                            <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <circle cx="12" cy="12" r="9"></circle>
+                                <path d="M12 11v6M12 7h.01"></path>
+                            </svg>
+
+                            <span>
+                                This page does not currently have a direct selectable Pickup or Dine-In service for this outlet.
+                            </span>
+                        </div>
+                    {% endif %}
+
+                    <p
+                        class="location-action-error"
+                        id="location-selection-error"
+                        role="alert"
+                        hidden
+                    ></p>
+                </div>
+            </aside>
+        </div>
+
+        <div class="location-bottom-links">
+            <a
+                class="location-text-link"
+                href="{{ url_for('locations_page') }}"
+            >
+                <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                >
+                    <path d="M19 12H5M10 7l-5 5 5 5"></path>
+                </svg>
+
+                Back to All Locations
+            </a>
+
+            <a
+                class="location-text-link"
+                href="{{ url_for('contact_page') }}"
+            >
+                Contact Support
+
+                <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                >
+                    <path d="M5 12h14M14 7l5 5-5 5"></path>
+                </svg>
+            </a>
+        </div>
+    </div>
+
+    {% if is_customer %}
+        <dialog
+            class="location-dialog"
+            id="location-cart-conflict-dialog"
+            aria-labelledby="location-cart-conflict-title"
+            aria-describedby="location-cart-conflict-message"
+        >
+            <header class="location-dialog__head">
+                <h2 id="location-cart-conflict-title">
+                    Review Your Cart Before Changing Location
+                </h2>
+
+                <button
+                    class="location-dialog__close"
+                    id="location-dialog-close"
+                    type="button"
+                    aria-label="Keep current location and close"
+                >
+                    <svg
+                        aria-hidden="true"
+                        viewBox="0 0 24 24"
+                    >
+                        <path d="M18 6 6 18M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </header>
+
+            <div class="location-dialog__body">
+                <p id="location-cart-conflict-message">
+                    Your current cart is tied to a different outlet or service.
+                    This page will not silently clear, migrate or reprice those items.
+                </p>
+
+                <div class="location-dialog__actions">
+                    <button
+                        class="location-btn location-btn--secondary"
+                        id="location-dialog-keep"
+                        type="button"
+                    >
+                        Keep Current Location
+                    </button>
+
+                    <a
+                        class="location-btn location-btn--primary"
+                        href="{{ url_for('cart_page') }}"
+                    >
+                        Review Cart
+                    </a>
+                </div>
+            </div>
+        </dialog>
+    {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    "use strict";
+
+    const root =
+        document.getElementById(
+            "location-page-root"
+        );
+
+    if (!root) {
+        return;
+    }
+
+    const elements = {
+        currentBadge:
+            document.getElementById(
+                "location-current-badge"
+            ),
+
+        currentBox:
+            document.getElementById(
+                "location-selection-current"
+            ),
+
+        currentCopy:
+            document.getElementById(
+                "location-selection-current-copy"
+            ),
+
+        actionError:
+            document.getElementById(
+                "location-action-error"
+            ),
+
+        actionErrorTitle:
+            document.getElementById(
+                "location-action-error-title"
+            ),
+
+        actionErrorMessage:
+            document.getElementById(
+                "location-action-error-message"
+            ),
+
+        selectionError:
+            document.getElementById(
+                "location-selection-error"
+            ),
+
+        dialog:
+            document.getElementById(
+                "location-cart-conflict-dialog"
+            ),
+
+        dialogMessage:
+            document.getElementById(
+                "location-cart-conflict-message"
+            ),
+
+        dialogClose:
+            document.getElementById(
+                "location-dialog-close"
+            ),
+
+        dialogKeep:
+            document.getElementById(
+                "location-dialog-keep"
+            ),
+
+        image:
+            document.getElementById(
+                "location-hero-image"
+            ),
+
+        imageFallback:
+            document.getElementById(
+                "location-hero-fallback"
+            ),
+
+        live:
+            document.getElementById(
+                "location-live-region"
+            )
+    };
+
+    const state = {
+        selecting:
+            false,
+
+        activeButton:
+            null,
+
+        previousFocus:
+            null,
+
+        currentOutletId:
+            String(
+                root.dataset.currentOutletId ||
+                ""
+            ),
+
+        currentServiceMode:
+            String(
+                root.dataset.currentServiceMode ||
+                ""
+            )
+    };
+
+    function announce(message) {
+        if (
+            window.AppUI &&
+            typeof window.AppUI.announce ===
+                "function"
+        ) {
+            window.AppUI.announce(
+                message
+            );
+        }
+
+        if (!elements.live) {
+            return;
+        }
+
+        elements.live.textContent =
+            "";
+
+        window.setTimeout(
+            function () {
+                elements.live.textContent =
+                    String(
+                        message ||
+                        ""
+                    );
+            },
+            30
+        );
+    }
+
+    function toast(
+        message,
+        type
+    ) {
+        if (
+            window.AppUI &&
+            typeof window.AppUI.showToast ===
+                "function"
+        ) {
+            window.AppUI.showToast(
+                message,
+                type ||
+                "info"
+            );
+
+            return;
+        }
+
+        if (
+            typeof window.showToast ===
+                "function"
+        ) {
+            window.showToast(
+                message,
+                type ||
+                "info"
+            );
+        }
+    }
+
+    async function csrfFetch(
+        url,
+        options
+    ) {
+        if (
+            window.AppUI &&
+            typeof window.AppUI.csrfFetch ===
+                "function"
+        ) {
+            return window.AppUI.csrfFetch(
+                url,
+                options ||
+                {}
+            );
+        }
+
+        throw new Error(
+            "CSRF helper unavailable"
+        );
+    }
+
+    async function parseJson(
+        response
+    ) {
+        try {
+            return await response.json();
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function safeSameOriginPath(
+        value
+    ) {
+        const text =
+            String(
+                value ||
+                ""
+            ).trim();
+
+        if (
+            !text ||
+            !text.startsWith("/") ||
+            text.startsWith("//")
+        ) {
+            return "";
+        }
+
+        return text;
+    }
+
+    function serviceLabel(
+        mode
+    ) {
+        if (
+            mode ===
+            "pickup"
+        ) {
+            return "Pickup";
+        }
+
+        if (
+            mode ===
+            "dine_in"
+        ) {
+            return "Dine-In";
+        }
+
+        if (
+            mode ===
+            "delivery"
+        ) {
+            return "Delivery";
+        }
+
+        return "Service";
+    }
+
+    function locationName() {
+        return String(
+            root.dataset.locationName ||
+            "this location"
+        );
+    }
+
+    function locationId() {
+        return String(
+            root.dataset.locationId ||
+            ""
+        ).trim();
+    }
+
+    function isCustomer() {
+        return root.dataset.customer ===
+            "true";
+    }
+
+    function setSelectionError(
+        message
+    ) {
+        if (!elements.selectionError) {
+            return;
+        }
+
+        const text =
+            String(
+                message ||
+                ""
+            );
+
+        elements.selectionError.textContent =
+            text;
+
+        elements.selectionError.hidden =
+            !text;
+    }
+
+    function showActionError(
+        title,
+        message
+    ) {
+        if (!elements.actionError) {
+            return;
+        }
+
+        if (elements.actionErrorTitle) {
+            elements.actionErrorTitle.textContent =
+                String(
+                    title ||
+                    "We couldn't update your location."
+                );
+        }
+
+        if (elements.actionErrorMessage) {
+            elements.actionErrorMessage.textContent =
+                String(
+                    message ||
+                    "Please try again."
+                );
+        }
+
+        elements.actionError.hidden =
+            false;
+    }
+
+    function clearActionError() {
+        if (elements.actionError) {
+            elements.actionError.hidden =
+                true;
+        }
+    }
+
+    function setButtonLoading(
+        button,
+        loading,
+        mode
+    ) {
+        if (!button) {
+            return;
+        }
+
+        const spinner =
+            button.querySelector(
+                "[data-selection-spinner]"
+            );
+
+        const icon =
+            button.querySelector(
+                "[data-selection-icon]"
+            );
+
+        const label =
+            button.querySelector(
+                "[data-selection-label]"
+            );
+
+        button.disabled =
+            Boolean(
+                loading
+            );
+
+        button.setAttribute(
+            "aria-busy",
+            loading
+                ? "true"
+                : "false"
+        );
+
+        if (spinner) {
+            spinner.hidden =
+                !loading;
+        }
+
+        if (icon) {
+            icon.hidden =
+                Boolean(
+                    loading
+                );
+        }
+
+        if (label) {
+            label.textContent =
+                loading
+                    ? "Saving..."
+                    : (
+                        state.currentOutletId ===
+                            locationId() &&
+                        state.currentServiceMode ===
+                            mode
+                            ? "Current " +
+                              serviceLabel(
+                                  mode
+                              ) +
+                              " Location"
+                            : "Choose this location for " +
+                              serviceLabel(
+                                  mode
+                              )
+                    );
+        }
+
+        if (
+            !loading &&
+            state.currentOutletId ===
+                locationId() &&
+            state.currentServiceMode ===
+                mode
+        ) {
+            button.disabled =
+                true;
+        }
+    }
+
+    function syncSelectionButtons() {
+        document.querySelectorAll(
+            "[data-select-service]"
+        ).forEach(
+            function (button) {
+                const mode =
+                    String(
+                        button.dataset.selectService ||
+                        ""
+                    );
+
+                setButtonLoading(
+                    button,
+                    false,
+                    mode
+                );
+            }
+        );
+    }
+
+    function updateCurrentSelection(
+        outletId,
+        mode
+    ) {
+        state.currentOutletId =
+            String(
+                outletId ||
+                ""
+            );
+
+        state.currentServiceMode =
+            String(
+                mode ||
+                ""
+            );
+
+        root.dataset.currentOutletId =
+            state.currentOutletId;
+
+        root.dataset.currentServiceMode =
+            state.currentServiceMode;
+
+        const currentHere =
+            state.currentOutletId ===
+            locationId();
+
+        if (elements.currentBadge) {
+            elements.currentBadge.hidden =
+                !currentHere;
+
+            elements.currentBadge.setAttribute(
+                "aria-current",
+                currentHere
+                    ? "location"
+                    : "false"
+            );
+
+            if (currentHere) {
+                restoreCurrentBadgeMarkup();
+            }
+        }
+
+        if (elements.currentBox) {
+            elements.currentBox.hidden =
+                !currentHere;
+        }
+
+        if (
+            currentHere &&
+            elements.currentCopy
+        ) {
+            elements.currentCopy.textContent =
+                "Selected for " +
+                serviceLabel(
+                    state.currentServiceMode
+                ) +
+                ".";
+        }
+
+        syncSelectionButtons();
+    }
+
+    function restoreCurrentBadgeMarkup() {
+        if (!elements.currentBadge) {
+            return;
+        }
+
+        const dot =
+            document.createElement(
+                "span"
+            );
+
+        dot.className =
+            "location-status__dot";
+
+        dot.setAttribute(
+            "aria-hidden",
+            "true"
+        );
+
+        const text =
+            document.createTextNode(
+                "Current Location · " +
+                serviceLabel(
+                    state.currentServiceMode
+                )
+            );
+
+        elements.currentBadge.replaceChildren(
+            dot,
+            text
+        );
+    }
+
+    function applyConfirmedSelection(
+        outletId,
+        mode
+    ) {
+        updateCurrentSelection(
+            outletId,
+            mode
+        );
+
+        restoreCurrentBadgeMarkup();
+    }
+
+    function cartHasItems(
+        cart
+    ) {
+        return Boolean(
+            cart &&
+            Array.isArray(
+                cart.items
+            ) &&
+            cart.items.length >
+                0
+        );
+    }
+
+    function cartConflicts(
+        cart,
+        targetOutletId,
+        targetMode
+    ) {
+        if (
+            !cartHasItems(
+                cart
+            )
+        ) {
+            return false;
+        }
+
+        const cartOutlet =
+            String(
+                cart.outlet_id ||
+                ""
+            );
+
+        const cartMode =
+            String(
+                cart.service_mode ||
+                ""
+            );
+
+        /*
+         * Fail closed when a non-empty cart lacks authoritative context.
+         */
+        if (
+            !cartOutlet ||
+            !cartMode
+        ) {
+            return true;
+        }
+
+        return (
+            cartOutlet !==
+                targetOutletId ||
+            cartMode !==
+                targetMode
+        );
+    }
+
+    function cartUrl() {
+        return safeSameOriginPath(
+            root.dataset.cartUrl
+        );
+    }
+
+    function serviceUrl() {
+        return safeSameOriginPath(
+            root.dataset.serviceUrl
+        );
+    }
+
+    async function fetchCustomerCart() {
+        if (!isCustomer()) {
+            return {
+                checked:
+                    false,
+
+                cart:
+                    null
+            };
+        }
+
+        const url =
+            cartUrl();
+
+        if (!url) {
+            throw new Error(
+                "Cart validation endpoint unavailable"
+            );
+        }
+
+        const response =
+            await fetch(
+                url,
+                {
+                    method:
+                        "GET",
+
+                    credentials:
+                        "same-origin",
+
+                    headers: {
+                        Accept:
+                            "application/json"
+                    },
+
+                    cache:
+                        "no-store"
+                }
+            );
+
+        const payload =
+            await parseJson(
+                response
+            );
+
+        if (
+            response.status ===
+            401
+        ) {
+            throw new Error(
+                "Your session has expired. Please sign in again before changing the outlet."
+            );
+        }
+
+        if (
+            response.status ===
+            403
+        ) {
+            throw new Error(
+                "Your account cannot validate the current cart for this location change."
+            );
+        }
+
+        if (
+            !response.ok ||
+            !payload ||
+            payload.success !==
+                true ||
+            !payload.data ||
+            typeof payload.data !==
+                "object"
+        ) {
+            throw new Error(
+                "We couldn't safely check your current cart. Your location was not changed."
+            );
+        }
+
+        return {
+            checked:
+                true,
+
+            cart:
+                payload.data
+        };
+    }
+
+    function openCartConflictDialog(
+        targetMode
+    ) {
+        const message =
+            "Your current cart is tied to a different outlet or service. " +
+            "Changing to " +
+            serviceLabel(
+                targetMode
+            ) +
+            " at " +
+            locationName() +
+            " is blocked until you review the cart. " +
+            "No item has been cleared, migrated or repriced.";
+
+        if (elements.dialogMessage) {
+            elements.dialogMessage.textContent =
+                message;
+        }
+
+        if (
+            !elements.dialog ||
+            typeof elements.dialog.showModal !==
+                "function"
+        ) {
+            toast(
+                "Review your cart before changing this location.",
+                "warning"
+            );
+
+            announce(
+                "Location change blocked because the current cart uses a different outlet or service."
+            );
+
+            return;
+        }
+
+        state.previousFocus =
+            document.activeElement instanceof
+            HTMLElement
+                ? document.activeElement
+                : null;
+
+        elements.dialog.showModal();
+
+        if (elements.dialogKeep) {
+            elements.dialogKeep.focus();
+        }
+    }
+
+    function closeCartConflictDialog() {
+        if (
+            elements.dialog &&
+            elements.dialog.open
+        ) {
+            elements.dialog.close();
+        }
+
+        const previous =
+            state.previousFocus;
+
+        state.previousFocus =
+            null;
+
+        if (
+            previous &&
+            previous.isConnected &&
+            typeof previous.focus ===
+                "function"
+        ) {
+            previous.focus();
+        }
+    }
+
+    function selectionErrorMessage(
+        response,
+        payload
+    ) {
+        const code =
+            payload &&
+            payload.error &&
+            payload.error.code
+                ? String(
+                    payload.error.code
+                )
+                : "";
+
+        if (
+            response.status ===
+            429
+        ) {
+            return "Too many location-selection requests. Please wait and try again.";
+        }
+
+        if (
+            response.status ===
+            409
+        ) {
+            if (
+                code ===
+                    "OUTLET_UNAVAILABLE" ||
+                code ===
+                    "SERVICE_UNAVAILABLE_AT_OUTLET"
+            ) {
+                return "This outlet is not available for that service right now.";
+            }
+
+            return "The outlet or service context changed. Please review your current cart or refresh the page.";
+        }
+
+        if (
+            response.status ===
+            404
+        ) {
+            return "This outlet is no longer available.";
+        }
+
+        if (
+            response.status >=
+            500
+        ) {
+            return "We couldn't save the location right now. Please try again later.";
+        }
+
+        if (
+            payload &&
+            payload.error &&
+            typeof payload.error.message ===
+                "string" &&
+            payload.error.message
+        ) {
+            return payload.error.message;
+        }
+
+        return "We couldn't save this location selection.";
+    }
+
+    async function submitSelection(
+        button,
+        mode
+    ) {
+        const outletId =
+            locationId();
+
+        const url =
+            serviceUrl();
+
+        if (
+            !outletId ||
+            !url ||
+            state.selecting
+        ) {
+            return;
+        }
+
+        if (
+            mode !==
+                "pickup" &&
+            mode !==
+                "dine_in"
+        ) {
+            setSelectionError(
+                "This page only selects Pickup or Dine-In directly. Delivery address serviceability must be resolved by the backend delivery workflow."
+            );
+
+            return;
+        }
+
+        if (
+            navigator.onLine ===
+            false
+        ) {
+            const message =
+                "You're offline. The current location was not changed.";
+
+            setSelectionError(
+                message
+            );
+
+            toast(
+                message,
+                "warning"
+            );
+
+            return;
+        }
+
+        state.selecting =
+            true;
+
+        state.activeButton =
+            button;
+
+        clearActionError();
+
+        setSelectionError(
+            ""
+        );
+
+        setButtonLoading(
+            button,
+            true,
+            mode
+        );
+
+        try {
+            /*
+             * Customer carts are checked BEFORE session mutation.
+             * There is no current backend cart-reconciliation endpoint,
+             * so a conflicting non-empty cart blocks this change.
+             */
+            if (isCustomer()) {
+                const result =
+                    await fetchCustomerCart();
+
+                if (
+                    result.checked &&
+                    cartConflicts(
+                        result.cart,
+                        outletId,
+                        mode
+                    )
+                ) {
+                    openCartConflictDialog(
+                        mode
+                    );
+
+                    return;
+                }
+            }
+
+            const response =
+                await csrfFetch(
+                    url,
+                    {
+                        method:
+                            "POST",
+
+                        credentials:
+                            "same-origin",
+
+                        headers: {
+                            Accept:
+                                "application/json",
+
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body:
+                            JSON.stringify(
+                                {
+                                    service_mode:
+                                        mode,
+
+                                    outlet_id:
+                                        outletId
+                                }
+                            )
+                    }
+                );
+
+            const payload =
+                await parseJson(
+                    response
+                );
+
+            if (
+                !response.ok ||
+                !payload ||
+                payload.success !==
+                    true ||
+                !payload.data ||
+                typeof payload.data !==
+                    "object"
+            ) {
+                const message =
+                    selectionErrorMessage(
+                        response,
+                        payload
+                    );
+
+                setSelectionError(
+                    message
+                );
+
+                showActionError(
+                    "Location selection was not changed",
+                    message
+                );
+
+                toast(
+                    message,
+                    response.status ===
+                        429
+                        ? "warning"
+                        : "error"
+                );
+
+                return;
+            }
+
+            const confirmedOutlet =
+                String(
+                    payload.data.outlet_id ||
+                    ""
+                );
+
+            const confirmedMode =
+                String(
+                    payload.data.service_mode ||
+                    ""
+                );
+
+            if (
+                confirmedOutlet !==
+                    outletId ||
+                confirmedMode !==
+                    mode
+            ) {
+                const message =
+                    "The server returned a different outlet or service context, so this page did not mark the selection as current.";
+
+                setSelectionError(
+                    message
+                );
+
+                showActionError(
+                    "Selection confirmation mismatch",
+                    message
+                );
+
+                return;
+            }
+
+            applyConfirmedSelection(
+                confirmedOutlet,
+                confirmedMode
+            );
+
+            clearActionError();
+
+            toast(
+                locationName() +
+                " selected for " +
+                serviceLabel(
+                    confirmedMode
+                ) +
+                ".",
+                "success"
+            );
+
+            announce(
+                locationName() +
+                " selected for " +
+                serviceLabel(
+                    confirmedMode
+                ) +
+                "."
+            );
+        } catch (error) {
+            const message =
+                error &&
+                typeof error.message ===
+                    "string" &&
+                error.message
+                    ? error.message
+                    : "We couldn't safely change the location. Your previous selection remains unchanged.";
+
+            setSelectionError(
+                message
+            );
+
+            showActionError(
+                "Location selection was not changed",
+                message
+            );
+
+            toast(
+                message,
+                "error"
+            );
+        } finally {
+            state.selecting =
+                false;
+
+            state.activeButton =
+                null;
+
+            setButtonLoading(
+                button,
+                false,
+                mode
+            );
+        }
+    }
+
+    function initializeSelectionActions() {
+        document.querySelectorAll(
+            "[data-select-service]"
+        ).forEach(
+            function (button) {
+                button.addEventListener(
+                    "click",
+                    function () {
+                        const mode =
+                            String(
+                                button.dataset.selectService ||
+                                ""
+                            );
+
+                        submitSelection(
+                            button,
+                            mode
+                        );
+                    }
+                );
+            }
+        );
+
+        syncSelectionButtons();
+    }
+
+    function initializeConflictDialog() {
+        if (!elements.dialog) {
+            return;
+        }
+
+        if (elements.dialogClose) {
+            elements.dialogClose.addEventListener(
+                "click",
+                closeCartConflictDialog
+            );
+        }
+
+        if (elements.dialogKeep) {
+            elements.dialogKeep.addEventListener(
+                "click",
+                closeCartConflictDialog
+            );
+        }
+
+        elements.dialog.addEventListener(
+            "cancel",
+            function (event) {
+                event.preventDefault();
+
+                closeCartConflictDialog();
+            }
+        );
+
+        elements.dialog.addEventListener(
+            "click",
+            function (event) {
+                if (
+                    event.target ===
+                    elements.dialog
+                ) {
+                    closeCartConflictDialog();
+                }
+            }
+        );
+    }
+
+    function initializeImageFallback() {
+        if (
+            !elements.image ||
+            !elements.imageFallback
+        ) {
+            return;
+        }
+
+        function showFallback() {
+            elements.image.hidden =
+                true;
+
+            elements.imageFallback.hidden =
+                false;
+        }
+
+        elements.image.addEventListener(
+            "error",
+            showFallback,
+            {
+                once:
+                    true
+            }
+        );
+
+        if (
+            elements.image.complete &&
+            elements.image.naturalWidth ===
+                0
+        ) {
+            showFallback();
+        }
+    }
+
+    function initializeNetworkStatus() {
+        window.addEventListener(
+            "offline",
+            function () {
+                announce(
+                    "You are offline. Location changes require a connection."
+                );
+
+                toast(
+                    "You're offline. Existing outlet information remains available to browse.",
+                    "warning"
+                );
+            }
+        );
+
+        window.addEventListener(
+            "online",
+            function () {
+                toast(
+                    "Connection restored.",
+                    "info"
+                );
+            }
+        );
+    }
+
+    function initializeLocationPage() {
+        initializeSelectionActions();
+        initializeConflictDialog();
+        initializeImageFallback();
+        initializeNetworkStatus();
+
+        /*
+         * Intentionally absent:
+         * - automatic geolocation
+         * - browser-derived open/closed calculation
+         * - map-provider construction
+         * - status polling
+         * - browser-storage selection authority
+         * - cart clearing/repricing/migration
+         */
+    }
+
+    if (
+        document.readyState ===
+        "loading"
+    ) {
+        document.addEventListener(
+            "DOMContentLoaded",
+            initializeLocationPage,
+            {
+                once:
+                    true
+            }
+        );
+    } else {
+        initializeLocationPage();
+    }
+}());
+</script>
+{% endblock %}

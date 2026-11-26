@@ -1,0 +1,5199 @@
+{% extends "base.html" %}
+
+{% set supplied_auth_config = auth_config|default({}, true) %}
+{% set supplied_firebase_config = firebase_web_config|default(supplied_auth_config.get('firebase', {}), true) %}
+{% set supplied_provider_config = auth_providers|default(supplied_auth_config.get('providers', {}), true) %}
+
+{% block title %}Create Account | {{ business_name|default('Restaurant', true) }}{% endblock %}
+{% block meta_description %}Create your customer account securely to manage restaurant orders and delivery preferences.{% endblock %}
+
+{% block head %}
+<meta name="robots" content="noindex,nofollow">
+{% endblock %}
+
+{% block styles %}
+<style>
+    .signup-page {
+        --sp-primary: var(--primary-color, #b83222);
+        --sp-primary-hover: var(--primary-color-hover, #98281b);
+        --sp-primary-soft: var(--primary-color-soft, #fff0eb);
+        --sp-contrast: var(--primary-contrast, #ffffff);
+        --sp-bg: var(--background-color, #fffaf4);
+        --sp-bg-soft: var(--background-subtle, #f8f2ea);
+        --sp-surface: var(--surface-color, #ffffff);
+        --sp-surface-2: var(--surface-muted, #f5eee5);
+        --sp-text: var(--text-color, #201c19);
+        --sp-strong: var(--text-strong, #151210);
+        --sp-muted: var(--muted-text, #6f6760);
+        --sp-subtle: var(--subtle-text, #8c8279);
+        --sp-border: var(--border-color, #e7ded4);
+        --sp-border-strong: var(--border-strong, #d3c6b9);
+        --sp-success: var(--success-color, #247a4a);
+        --sp-success-soft: var(--success-soft, #eaf7ef);
+        --sp-warning: var(--warning-color, #9a6510);
+        --sp-warning-soft: var(--warning-soft, #fff5dc);
+        --sp-error: var(--error-color, #b42318);
+        --sp-error-soft: var(--error-soft, #fff0ee);
+        --sp-info: var(--info-color, #285ea8);
+        --sp-info-soft: var(--info-soft, #edf4ff);
+        --sp-radius: var(--radius-lg, 18px);
+        --sp-radius-xl: var(--radius-xl, 26px);
+        --sp-shadow: var(--shadow-md, 0 16px 36px rgba(31, 24, 19, .12));
+        --sp-transition: var(--transition-fast, 160ms ease);
+    }
+
+    .signup-page,
+    .signup-page *,
+    .signup-page *::before,
+    .signup-page *::after { box-sizing: border-box; }
+
+    .signup-page [hidden] { display: none !important; }
+
+    .signup-page svg {
+        display: block;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+
+    .signup-page {
+        min-height: clamp(720px, calc(100vh - var(--header-height, 106px)), 1100px);
+        padding-block: clamp(1.25rem, 3.5vw, 3rem) clamp(4rem, 8vw, 6rem);
+        background:
+            radial-gradient(circle at 8% 10%, color-mix(in srgb, var(--sp-primary) 7%, transparent), transparent 28rem),
+            radial-gradient(circle at 92% 38%, color-mix(in srgb, var(--accent-color, #d99b35) 8%, transparent), transparent 25rem);
+    }
+
+    .signup-shell {
+        width: min(100% - 2rem, 1180px);
+        margin-inline: auto;
+    }
+
+    .signup-layout {
+        display: grid;
+        grid-template-columns: minmax(280px, .67fr) minmax(560px, 1.13fr);
+        gap: clamp(1.4rem, 4vw, 4.6rem);
+        align-items: start;
+    }
+
+    .signup-intro {
+        position: sticky;
+        top: calc(var(--header-height, 106px) + 1.1rem);
+        max-width: 500px;
+        padding: .45rem .15rem;
+    }
+
+    .signup-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: .42rem;
+        margin: 0 0 .72rem;
+        color: var(--sp-primary);
+        font-size: .69rem;
+        font-weight: 850;
+        letter-spacing: .09em;
+        text-transform: uppercase;
+    }
+
+    .signup-kicker::before {
+        content: "";
+        width: 24px;
+        height: 2px;
+        border-radius: 999px;
+        background: currentColor;
+    }
+
+    .signup-title {
+        max-width: 12ch;
+        margin: 0;
+        color: var(--sp-strong);
+        font-size: clamp(2rem, 4.7vw, 3.8rem);
+        line-height: .99;
+        letter-spacing: -.052em;
+        text-wrap: balance;
+    }
+
+    .signup-lead {
+        max-width: 47ch;
+        margin: 1rem 0 0;
+        color: var(--sp-muted);
+        font-size: clamp(.82rem, 1.5vw, .96rem);
+        line-height: 1.7;
+    }
+
+    .signup-trust-grid {
+        display: grid;
+        gap: .55rem;
+        margin-top: 1.2rem;
+    }
+
+    .signup-trust-item {
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr);
+        gap: .58rem;
+        align-items: start;
+        padding: .7rem;
+        border: 1px solid var(--sp-border);
+        border-radius: 13px;
+        background: color-mix(in srgb, var(--sp-surface) 87%, transparent);
+    }
+
+    .signup-trust-icon {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        border-radius: 10px;
+        background: var(--sp-primary-soft);
+        color: var(--sp-primary);
+    }
+
+    .signup-trust-icon svg { width: 1rem; height: 1rem; }
+    .signup-trust-item strong { display: block; color: var(--sp-text); font-size: .69rem; }
+    .signup-trust-item p { margin: .08rem 0 0; color: var(--sp-muted); font-size: .61rem; line-height: 1.48; }
+
+    .signup-progress-card {
+        margin-top: .95rem;
+        padding: .8rem;
+        border: 1px solid var(--sp-border);
+        border-radius: 13px;
+        background: var(--sp-surface);
+        box-shadow: var(--shadow-sm, 0 6px 18px rgba(31, 24, 19, .08));
+    }
+
+    .signup-progress-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .6rem;
+        color: var(--sp-text);
+        font-size: .63rem;
+        font-weight: 810;
+    }
+
+    .signup-progress-top strong { color: var(--sp-primary); }
+
+    .signup-progress-track {
+        height: 7px;
+        overflow: hidden;
+        margin-top: .48rem;
+        border-radius: 999px;
+        background: var(--sp-surface-2);
+    }
+
+    .signup-progress-bar {
+        width: 0;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--sp-primary), var(--accent-color, #d99b35));
+        transition: width .22s ease;
+    }
+
+    .signup-progress-card p { margin: .45rem 0 0; color: var(--sp-subtle); font-size: .56rem; line-height: 1.42; }
+
+    .signup-card {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid var(--sp-border);
+        border-radius: var(--sp-radius-xl);
+        background: var(--sp-surface);
+        box-shadow: var(--sp-shadow);
+    }
+
+    .signup-card::before {
+        content: "";
+        position: absolute;
+        inset: 0 0 auto;
+        height: 4px;
+        background: linear-gradient(90deg, var(--sp-primary), var(--accent-color, #d99b35));
+    }
+
+    .signup-card-inner { padding: clamp(1rem, 3vw, 1.6rem); }
+
+    .signup-card-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .signup-card-title { margin: 0; color: var(--sp-strong); font-size: clamp(1.3rem, 2.5vw, 1.7rem); letter-spacing: -.025em; }
+    .signup-card-copy { max-width: 56ch; margin: .34rem 0 0; color: var(--sp-muted); font-size: .71rem; line-height: 1.55; }
+
+    .signup-security-pill {
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        padding: .34rem .48rem;
+        border: 1px solid color-mix(in srgb, var(--sp-success) 24%, var(--sp-border));
+        border-radius: 999px;
+        background: var(--sp-success-soft);
+        color: var(--sp-success);
+        font-size: .55rem;
+        font-weight: 820;
+        white-space: nowrap;
+    }
+
+    .signup-security-pill svg { width: .8rem; height: .8rem; }
+
+    .signup-banner {
+        display: flex;
+        align-items: flex-start;
+        gap: .55rem;
+        margin-bottom: .76rem;
+        padding: .7rem .74rem;
+        border: 1px solid var(--sp-border);
+        border-radius: 11px;
+        font-size: .65rem;
+        line-height: 1.5;
+    }
+
+    .signup-banner svg { width: 1rem; height: 1rem; flex: 0 0 1rem; margin-top: .04rem; }
+    .signup-banner strong { display: block; margin-bottom: .06rem; color: currentColor; font-size: .68rem; }
+    .signup-banner a { color: inherit; font-weight: 820; }
+    .signup-banner.is-warning { border-color: color-mix(in srgb, var(--sp-warning) 28%, var(--sp-border)); background: var(--sp-warning-soft); color: var(--sp-warning); }
+    .signup-banner.is-error { border-color: color-mix(in srgb, var(--sp-error) 28%, var(--sp-border)); background: var(--sp-error-soft); color: var(--sp-error); }
+    .signup-banner.is-info { border-color: color-mix(in srgb, var(--sp-info) 28%, var(--sp-border)); background: var(--sp-info-soft); color: var(--sp-info); }
+
+    .signup-social-mode {
+        display: grid;
+        grid-template-columns: 36px minmax(0, 1fr) auto;
+        gap: .6rem;
+        align-items: center;
+    }
+
+    .signup-social-avatar {
+        width: 36px;
+        height: 36px;
+        display: grid;
+        place-items: center;
+        border-radius: 11px;
+        background: color-mix(in srgb, var(--sp-info) 12%, var(--sp-surface));
+        color: var(--sp-info);
+        font-weight: 900;
+    }
+
+    .signup-social-mode p { margin: 0; font-size: .6rem; line-height: 1.42; }
+
+    .signup-social-exit {
+        min-height: 34px;
+        padding: .35rem .55rem;
+        border: 1px solid currentColor;
+        border-radius: 9px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        font-size: .57rem;
+        font-weight: 790;
+        cursor: pointer;
+    }
+
+    .signup-social-section { margin-bottom: 1rem; }
+    .signup-social-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .58rem; }
+
+    .signup-social-button {
+        min-height: 48px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: .5rem;
+        padding: .65rem .75rem;
+        border: 1px solid var(--sp-border);
+        border-radius: 12px;
+        background: var(--sp-bg);
+        color: var(--sp-text);
+        font: inherit;
+        font-size: .67rem;
+        font-weight: 820;
+        cursor: pointer;
+        transition: transform var(--sp-transition), border-color var(--sp-transition), background var(--sp-transition), opacity var(--sp-transition);
+    }
+
+    .signup-social-button:hover:not(:disabled) { border-color: var(--sp-border-strong); background: var(--sp-surface-2); transform: translateY(-1px); }
+    .signup-social-button:disabled { cursor: not-allowed; opacity: .58; transform: none; }
+
+    .signup-provider-mark {
+        width: 22px;
+        height: 22px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--sp-border);
+        border-radius: 7px;
+        background: var(--sp-surface);
+        color: var(--sp-strong);
+        font-size: .72rem;
+        font-weight: 900;
+    }
+
+    .signup-provider-mark.facebook { color: #1877f2; }
+
+    .signup-divider {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        gap: .65rem;
+        align-items: center;
+        margin: 1rem 0;
+        color: var(--sp-subtle);
+        font-size: .56rem;
+        font-weight: 820;
+        letter-spacing: .09em;
+        text-transform: uppercase;
+    }
+
+    .signup-divider::before,
+    .signup-divider::after { content: ""; height: 1px; background: var(--sp-border); }
+
+    .signup-form { display: grid; gap: .9rem; }
+
+    .signup-section {
+        min-width: 0;
+        margin: 0;
+        padding: .82rem;
+        border: 1px solid var(--sp-border);
+        border-radius: var(--sp-radius);
+        background: color-mix(in srgb, var(--sp-bg) 78%, var(--sp-surface));
+    }
+
+    .signup-section legend { width: 100%; padding: 0 .18rem; }
+    .signup-section-title { display: flex; align-items: center; gap: .5rem; color: var(--sp-strong); font-size: .74rem; font-weight: 870; }
+
+    .signup-section-number {
+        width: 24px;
+        height: 24px;
+        display: inline-grid;
+        place-items: center;
+        border-radius: 8px;
+        background: var(--sp-primary-soft);
+        color: var(--sp-primary);
+        font-size: .58rem;
+        font-weight: 900;
+    }
+
+    .signup-section-copy { display: block; margin: .18rem 0 0 2rem; color: var(--sp-subtle); font-size: .56rem; font-weight: 500; line-height: 1.45; }
+    .signup-fields { display: grid; gap: .68rem; margin-top: .65rem; }
+    .signup-fields.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .signup-field { min-width: 0; display: grid; align-content: start; gap: .29rem; }
+    .signup-field.full { grid-column: 1 / -1; }
+    .signup-field-top { display: flex; align-items: baseline; justify-content: space-between; gap: .55rem; }
+    .signup-label { color: var(--sp-text); font-size: .65rem; font-weight: 820; }
+    .signup-required, .signup-optional { color: var(--sp-subtle); font-size: .52rem; font-weight: 720; }
+    .signup-required { color: var(--sp-primary); }
+    .signup-input-wrap { position: relative; }
+
+    .signup-input-icon {
+        position: absolute;
+        top: 50%;
+        left: .72rem;
+        width: .95rem;
+        height: .95rem;
+        color: var(--sp-subtle);
+        transform: translateY(-50%);
+        pointer-events: none;
+    }
+
+    .signup-input,
+    .signup-textarea {
+        width: 100%;
+        border: 1px solid var(--sp-border);
+        border-radius: 11px;
+        outline: 0;
+        background: var(--sp-bg);
+        color: var(--sp-text);
+        font: inherit;
+        font-size: .72rem;
+        line-height: 1.4;
+        transition: border-color var(--sp-transition), box-shadow var(--sp-transition), background var(--sp-transition);
+    }
+
+    .signup-input { min-height: 46px; padding: .66rem .75rem .66rem 2.28rem; }
+    .signup-input.has-toggle { padding-right: 3.15rem; }
+    .signup-textarea { min-height: 94px; resize: vertical; padding: .72rem .78rem; }
+    .signup-input:hover, .signup-textarea:hover { border-color: var(--sp-border-strong); }
+    .signup-input:focus, .signup-textarea:focus { border-color: var(--sp-primary); background: var(--sp-surface); box-shadow: 0 0 0 4px color-mix(in srgb, var(--sp-primary) 12%, transparent); }
+    .signup-input[aria-invalid="true"], .signup-textarea[aria-invalid="true"] { border-color: var(--sp-error); box-shadow: 0 0 0 3px color-mix(in srgb, var(--sp-error) 10%, transparent); }
+    .signup-input[readonly] { background: var(--sp-surface-2); color: var(--sp-muted); }
+    .signup-input:disabled, .signup-textarea:disabled { cursor: not-allowed; opacity: .64; }
+
+    .signup-password-toggle {
+        position: absolute;
+        top: 50%;
+        right: .4rem;
+        width: 37px;
+        height: 37px;
+        display: grid;
+        place-items: center;
+        border: 0;
+        border-radius: 9px;
+        background: transparent;
+        color: var(--sp-muted);
+        transform: translateY(-50%);
+        cursor: pointer;
+    }
+
+    .signup-password-toggle:hover { background: var(--sp-surface-2); color: var(--sp-primary); }
+    .signup-password-toggle svg { width: .96rem; height: .96rem; }
+    .signup-hint, .signup-error-text, .signup-success-text { margin: 0; font-size: .55rem; line-height: 1.42; }
+    .signup-hint { color: var(--sp-subtle); }
+    .signup-error-text { color: var(--sp-error); font-weight: 690; }
+    .signup-success-text { color: var(--sp-success); font-weight: 690; }
+
+    .signup-password-meter { display: grid; gap: .34rem; margin-top: .1rem; }
+    .signup-password-meter-head { display: flex; justify-content: space-between; gap: .5rem; color: var(--sp-subtle); font-size: .54rem; }
+    .signup-password-meter-head strong { color: var(--sp-muted); }
+    .signup-password-bars { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+    .signup-password-bars span { height: 4px; border-radius: 999px; background: var(--sp-border); }
+    .signup-password-bars[data-level="1"] span:nth-child(1),
+    .signup-password-bars[data-level="2"] span:nth-child(-n+2),
+    .signup-password-bars[data-level="3"] span:nth-child(-n+3) { background: var(--sp-primary); }
+    .signup-password-rules { display: flex; gap: .28rem .52rem; flex-wrap: wrap; margin: 0; padding: 0; list-style: none; }
+    .signup-password-rules li { display: inline-flex; align-items: center; gap: .25rem; color: var(--sp-subtle); font-size: .53rem; }
+    .signup-password-rules li::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .6; }
+    .signup-password-rules li.is-met { color: var(--sp-success); font-weight: 720; }
+    .signup-caps { display: inline-flex; align-items: center; gap: .28rem; color: var(--sp-warning); font-size: .55rem; font-weight: 720; }
+    .signup-caps::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+    .signup-location-panel {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: .62rem;
+        align-items: center;
+        margin-top: .68rem;
+        padding: .68rem;
+        border: 1px dashed var(--sp-border-strong);
+        border-radius: 12px;
+        background: var(--sp-surface);
+    }
+
+    .signup-location-copy strong { display: block; color: var(--sp-text); font-size: .65rem; }
+    .signup-location-copy p { margin: .1rem 0 0; color: var(--sp-subtle); font-size: .55rem; line-height: 1.44; }
+    .signup-location-actions { display: flex; gap: .4rem; flex-wrap: wrap; justify-content: flex-end; }
+
+    .signup-location-button {
+        min-height: 38px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: .38rem;
+        padding: .44rem .6rem;
+        border: 1px solid var(--sp-border);
+        border-radius: 10px;
+        background: var(--sp-bg);
+        color: var(--sp-text);
+        font: inherit;
+        font-size: .57rem;
+        font-weight: 790;
+        cursor: pointer;
+    }
+
+    .signup-location-button:hover:not(:disabled) { border-color: var(--sp-primary); color: var(--sp-primary); }
+    .signup-location-button:disabled { cursor: not-allowed; opacity: .6; }
+    .signup-location-button svg { width: .84rem; height: .84rem; }
+    .signup-location-status { grid-column: 1 / -1; margin: 0; color: var(--sp-subtle); font-size: .55rem; line-height: 1.44; }
+    .signup-location-status.is-success { color: var(--sp-success); }
+    .signup-location-status.is-warning { color: var(--sp-warning); }
+
+    .signup-consent {
+        display: grid;
+        grid-template-columns: 20px minmax(0, 1fr);
+        gap: .52rem;
+        align-items: start;
+        padding: .66rem;
+        border: 1px solid var(--sp-border);
+        border-radius: 11px;
+        background: var(--sp-surface);
+    }
+
+    .signup-consent input { width: 18px; height: 18px; margin: .08rem 0 0; accent-color: var(--sp-primary); }
+    .signup-consent label { color: var(--sp-text); font-size: .63rem; font-weight: 730; line-height: 1.45; }
+    .signup-consent small { display: block; margin-top: .14rem; color: var(--sp-subtle); font-size: .54rem; font-weight: 500; line-height: 1.45; }
+
+    .signup-submit-row { display: grid; gap: .52rem; }
+    .signup-legal { margin: .05rem 0 0; color: var(--sp-subtle); font-size: .55rem; line-height: 1.5; text-align: center; }
+    .signup-legal a { color: var(--sp-primary); font-weight: 780; text-decoration: none; }
+    .signup-legal a:hover { text-decoration: underline; }
+
+    .signup-submit {
+        width: 100%;
+        min-height: 50px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: .55rem;
+        border: 1px solid var(--sp-primary);
+        border-radius: 12px;
+        background: var(--sp-primary);
+        color: var(--sp-contrast);
+        box-shadow: 0 10px 22px color-mix(in srgb, var(--sp-primary) 20%, transparent);
+        font: inherit;
+        font-size: .73rem;
+        font-weight: 870;
+        cursor: pointer;
+        transition: transform var(--sp-transition), background var(--sp-transition), opacity var(--sp-transition);
+    }
+
+    .signup-submit:hover:not(:disabled) { background: var(--sp-primary-hover); transform: translateY(-1px); }
+    .signup-submit:disabled { cursor: not-allowed; opacity: .58; transform: none; }
+
+    .signup-spinner {
+        width: .92rem;
+        height: .92rem;
+        border: 2px solid color-mix(in srgb, currentColor 30%, transparent);
+        border-top-color: currentColor;
+        border-radius: 50%;
+        animation: signup-spin .82s linear infinite;
+    }
+
+    @keyframes signup-spin { to { transform: rotate(360deg); } }
+
+    .signup-existing { margin: .1rem 0 0; color: var(--sp-muted); font-size: .62rem; text-align: center; }
+    .signup-existing a { color: var(--sp-primary); font-weight: 840; text-decoration: none; }
+    .signup-existing a:hover { text-decoration: underline; }
+
+    .signup-success-state {
+        display: grid;
+        justify-items: center;
+        gap: .78rem;
+        padding: clamp(1.1rem, 4vw, 2rem) .4rem;
+        text-align: center;
+    }
+
+    .signup-success-icon {
+        width: 74px;
+        height: 74px;
+        display: grid;
+        place-items: center;
+        border: 1px solid color-mix(in srgb, var(--sp-success) 26%, var(--sp-border));
+        border-radius: 24px;
+        background: var(--sp-success-soft);
+        color: var(--sp-success);
+    }
+
+    .signup-success-icon svg { width: 2rem; height: 2rem; }
+    .signup-success-state h2 { margin: 0; color: var(--sp-strong); font-size: 1.35rem; letter-spacing: -.025em; }
+    .signup-success-state p { max-width: 52ch; margin: 0; color: var(--sp-muted); font-size: .69rem; line-height: 1.56; }
+    .signup-success-email { max-width: min(100%, 420px); padding: .46rem .66rem; overflow-wrap: anywhere; border: 1px solid var(--sp-border); border-radius: 10px; background: var(--sp-bg); color: var(--sp-text); font-size: .64rem; font-weight: 780; }
+    .signup-success-actions { width: min(100%, 420px); display: grid; gap: .48rem; }
+    .signup-success-actions .btn { width: 100%; justify-content: center; }
+
+    .signup-resend {
+        min-height: 42px;
+        border: 1px solid var(--sp-border);
+        border-radius: 11px;
+        background: var(--sp-bg);
+        color: var(--sp-text);
+        font: inherit;
+        font-size: .63rem;
+        font-weight: 800;
+        cursor: pointer;
+    }
+
+    .signup-resend:hover:not(:disabled) { border-color: var(--sp-primary); color: var(--sp-primary); }
+    .signup-resend:disabled { cursor: not-allowed; opacity: .58; }
+    .signup-success-note { color: var(--sp-subtle) !important; font-size: .57rem !important; }
+
+    .signup-page button:focus-visible,
+    .signup-page a:focus-visible,
+    .signup-page input:focus-visible,
+    .signup-page textarea:focus-visible { outline: 3px solid color-mix(in srgb, var(--sp-primary) 24%, transparent); outline-offset: 2px; }
+
+    .signup-input:-webkit-autofill,
+    .signup-input:-webkit-autofill:hover,
+    .signup-input:-webkit-autofill:focus,
+    .signup-textarea:-webkit-autofill,
+    .signup-textarea:-webkit-autofill:hover,
+    .signup-textarea:-webkit-autofill:focus {
+        -webkit-text-fill-color: var(--sp-text);
+        caret-color: var(--sp-text);
+        box-shadow: 0 0 0 1000px var(--sp-bg) inset;
+        transition: background-color 9999s ease-out 0s;
+    }
+
+    @media (max-width: 1020px) {
+        .signup-layout { grid-template-columns: minmax(250px, .6fr) minmax(500px, 1fr); gap: 1.5rem; }
+    }
+
+    @media (max-width: 880px) {
+        .signup-shell { width: min(100% - 1.4rem, 760px); }
+        .signup-layout { grid-template-columns: 1fr; }
+        .signup-intro { position: static; max-width: none; padding: 0 .15rem; }
+        .signup-title { max-width: 16ch; font-size: clamp(1.9rem, 7vw, 2.8rem); }
+        .signup-trust-grid, .signup-progress-card { display: none; }
+    }
+
+    @media (max-width: 640px) {
+        .signup-page { padding-top: .9rem; }
+        .signup-shell { width: min(100% - 1rem, 760px); }
+        .signup-card { border-radius: 18px; }
+        .signup-card-inner { padding: .9rem; }
+        .signup-card-header { display: grid; gap: .6rem; }
+        .signup-security-pill { justify-self: start; }
+        .signup-social-grid, .signup-fields.two { grid-template-columns: 1fr; }
+        .signup-location-panel { grid-template-columns: 1fr; }
+        .signup-location-actions { justify-content: stretch; }
+        .signup-location-button { flex: 1; }
+        .signup-social-mode { grid-template-columns: 36px minmax(0, 1fr); }
+        .signup-social-exit { grid-column: 1 / -1; width: 100%; }
+    }
+
+    @media (max-width: 420px) {
+        .signup-card-inner { padding: .78rem; }
+        .signup-section { padding: .72rem; border-radius: 14px; }
+        .signup-input { min-height: 49px; font-size: .78rem; }
+        .signup-textarea { font-size: .78rem; }
+        .signup-submit, .signup-social-button { min-height: 50px; }
+        .signup-section-copy { margin-left: 0; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .signup-page *, .signup-page *::before, .signup-page *::after {
+            scroll-behavior: auto !important;
+            transition-duration: .01ms !important;
+            animation-iteration-count: 1 !important;
+        }
+        .signup-spinner { animation-duration: 1.5s; }
+    }
+
+
+    /* =====================================================================
+       MR. ITALIANO — SIGNUP / ACCOUNT CREATION — CINEMATIC LUXURY LAYER
+       =====================================================================
+       Visual language carried from the provided restaurant reference:
+       - deep matte black / espresso / charcoal foundation
+       - controlled cheese-gold highlights
+       - warm ivory / flour-white form surface for the required white touch
+       - subtle copper / tomato accents only where feedback needs them
+       - tactile 3D depth instead of flat SaaS panels
+       - low-frequency ambient motion, glare and parallax
+       - premium desktop density with careful 110–115% browser zoom behavior
+       - responsive mobile stack with touch-safe controls
+       - existing Firebase / Flask / Jinja behavior remains untouched
+       ===================================================================== */
+
+    .signup-page {
+        --lux-black-000: #020201;
+        --lux-black-010: #050504;
+        --lux-black-020: #080706;
+        --lux-black-030: #0c0a08;
+        --lux-black-040: #120f0c;
+        --lux-black-050: #18130f;
+        --lux-black-060: #211a14;
+        --lux-black-070: #2a2119;
+
+        --lux-gold-050: #fff8df;
+        --lux-gold-100: #ffedb4;
+        --lux-gold-200: #f8da82;
+        --lux-gold-300: #edc35c;
+        --lux-gold-400: #daa13a;
+        --lux-gold-500: #b9771b;
+        --lux-gold-600: #86500d;
+        --lux-gold-700: #5d3508;
+
+        --lux-cream-000: #fffdf8;
+        --lux-cream-010: #fff9ef;
+        --lux-cream-020: #fbf1e3;
+        --lux-cream-030: #f4e5d1;
+        --lux-cream-040: #ead6bd;
+
+        --lux-ink-900: #19120d;
+        --lux-ink-800: #251b14;
+        --lux-ink-700: #3a2e25;
+        --lux-ink-600: #5f5146;
+        --lux-ink-500: #7c6e63;
+
+        --lux-ivory: #fff9ef;
+        --lux-ivory-soft: #f4e7d5;
+        --lux-muted: #b4a89c;
+        --lux-subtle: #81776e;
+        --lux-silver: #d9d4cc;
+        --lux-silver-soft: rgba(217, 212, 204, .08);
+
+        --lux-success: #8fbea0;
+        --lux-success-deep: #315f43;
+        --lux-warning: #e5b65f;
+        --lux-danger: #e47e70;
+        --lux-info: #91abc7;
+
+        --lux-border: rgba(239, 198, 99, .15);
+        --lux-border-strong: rgba(255, 220, 142, .29);
+        --lux-line-white: rgba(255, 255, 255, .075);
+        --lux-line-dark: rgba(61, 40, 24, .13);
+
+        --lux-gold-gradient:
+            linear-gradient(
+                135deg,
+                #fff0b8 0%,
+                #f4d47c 27%,
+                #dfab45 59%,
+                #b57418 83%,
+                #89510f 100%
+            );
+
+        --lux-gold-gradient-soft:
+            linear-gradient(
+                135deg,
+                rgba(255, 239, 180, .16) 0%,
+                rgba(218, 161, 58, .085) 58%,
+                rgba(133, 77, 13, .02) 100%
+            );
+
+        --lux-dark-gradient:
+            linear-gradient(
+                145deg,
+                #19140f 0%,
+                #0d0b09 52%,
+                #050504 100%
+            );
+
+        --lux-cream-gradient:
+            linear-gradient(
+                145deg,
+                #fffdf8 0%,
+                #fff8ed 41%,
+                #f7ead8 100%
+            );
+
+        --lux-sheen:
+            linear-gradient(
+                112deg,
+                transparent 0%,
+                rgba(255, 255, 255, .03) 36%,
+                rgba(255, 235, 179, .18) 49%,
+                rgba(255, 255, 255, .025) 61%,
+                transparent 100%
+            );
+
+        --lux-shadow-1:
+            0 12px 28px rgba(0, 0, 0, .19);
+
+        --lux-shadow-2:
+            0 24px 60px rgba(0, 0, 0, .30);
+
+        --lux-shadow-3:
+            0 42px 104px rgba(0, 0, 0, .43);
+
+        --lux-cream-shadow:
+            0 6px 0 rgba(101, 72, 47, .08),
+            0 25px 65px rgba(0, 0, 0, .29),
+            inset 0 1px 0 rgba(255, 255, 255, .98);
+
+        --lux-ease:
+            cubic-bezier(.2, .72, .2, 1);
+
+        --lux-ease-out:
+            cubic-bezier(.16, 1, .3, 1);
+
+        --lux-spring:
+            cubic-bezier(.18, .86, .23, 1.16);
+
+        --lux-pointer-x: 72%;
+        --lux-pointer-y: 10%;
+        --lux-page-scroll: 0px;
+
+        position: relative;
+        isolation: isolate;
+        overflow: clip;
+
+        min-height:
+            max(
+                760px,
+                calc(100vh - var(--header-height, 106px))
+            );
+
+        padding-block:
+            clamp(1.15rem, 2.8vw, 2.25rem)
+            clamp(4.2rem, 7vw, 6.4rem);
+
+        color:
+            var(--lux-ivory);
+
+        background:
+            radial-gradient(
+                circle at
+                var(--lux-pointer-x)
+                var(--lux-pointer-y),
+                rgba(232, 190, 83, .078),
+                transparent 31rem
+            ),
+            radial-gradient(
+                ellipse at 87% 13%,
+                rgba(188, 117, 31, .10),
+                transparent 29rem
+            ),
+            radial-gradient(
+                circle at 5% 52%,
+                rgba(239, 211, 151, .033),
+                transparent 35rem
+            ),
+            linear-gradient(
+                180deg,
+                #080706 0%,
+                #040403 47%,
+                #090705 100%
+            );
+    }
+
+    .signup-page::before {
+        content: "";
+        position: absolute;
+        z-index: -4;
+        inset: 0;
+        pointer-events: none;
+
+        background-image:
+            linear-gradient(
+                rgba(255,255,255,.012) 1px,
+                transparent 1px
+            ),
+            linear-gradient(
+                90deg,
+                rgba(255,255,255,.010) 1px,
+                transparent 1px
+            );
+
+        background-size:
+            48px 48px;
+
+        mask-image:
+            linear-gradient(
+                180deg,
+                #000 0%,
+                rgba(0,0,0,.55) 42%,
+                transparent 88%
+            );
+
+        opacity: .72;
+    }
+
+    .signup-page::after {
+        content: "";
+        position: absolute;
+        z-index: -3;
+        top: -13rem;
+        right: -11rem;
+        width: 38rem;
+        height: 38rem;
+        border-radius: 50%;
+        pointer-events: none;
+
+        border:
+            1px solid
+            rgba(239, 198, 99, .075);
+
+        box-shadow:
+            0 0 0 52px rgba(239, 198, 99, .015),
+            0 0 0 104px rgba(239, 198, 99, .008),
+            0 0 0 156px rgba(255, 255, 255, .004);
+
+        transform:
+            rotateX(66deg)
+            rotateZ(-6deg)
+            translate3d(
+                calc(var(--lux-page-scroll) * -.055),
+                calc(var(--lux-page-scroll) * .025),
+                0
+            );
+
+        animation:
+            signup-lux-orbit
+            16s
+            ease-in-out
+            infinite
+            alternate;
+    }
+
+    @keyframes signup-lux-orbit {
+        from {
+            opacity: .68;
+        }
+
+        to {
+            opacity: 1;
+        }
+    }
+
+    .signup-shell {
+        width:
+            min(
+                calc(100% - 2rem),
+                1240px
+            );
+
+        margin-inline: auto;
+        position: relative;
+        z-index: 2;
+    }
+
+    .signup-shell::before {
+        content: "";
+        position: absolute;
+        z-index: -1;
+        top: 8%;
+        left: -9%;
+        width: 18rem;
+        height: 18rem;
+        border-radius: 50%;
+        background: rgba(233, 189, 82, .034);
+        filter: blur(48px);
+        pointer-events: none;
+        animation: signup-lux-glow 8s ease-in-out infinite;
+    }
+
+    @keyframes signup-lux-glow {
+        0%,
+        100% {
+            transform: scale(.92);
+            opacity: .45;
+        }
+
+        50% {
+            transform: scale(1.08);
+            opacity: .82;
+        }
+    }
+
+    .signup-layout {
+        display: grid;
+        grid-template-columns:
+            minmax(290px, .72fr)
+            minmax(540px, 1.28fr);
+
+        gap:
+            clamp(1.45rem, 4.2vw, 4.8rem);
+
+        align-items: start;
+        perspective: 1600px;
+    }
+
+    /* =====================================================================
+       LEFT STORY / TRUST RAIL
+       ===================================================================== */
+
+    .signup-intro {
+        position: sticky;
+        top:
+            calc(
+                var(--header-height, 106px)
+                + 1rem
+            );
+
+        max-width: 520px;
+        padding:
+            clamp(.35rem, 1vw, .8rem)
+            .15rem
+            1.25rem;
+
+        transform:
+            translate3d(
+                0,
+                calc(var(--lux-page-scroll) * -.012),
+                0
+            );
+
+        transform-style: preserve-3d;
+    }
+
+    .signup-intro::before {
+        content: "";
+        position: absolute;
+        z-index: -1;
+        top: 2.4rem;
+        left: -1.35rem;
+        width: 2px;
+        height: min(74%, 31rem);
+        border-radius: 999px;
+
+        background:
+            linear-gradient(
+                180deg,
+                transparent,
+                rgba(255, 235, 180, .18) 12%,
+                rgba(218, 161, 58, .58) 48%,
+                rgba(255, 255, 255, .10) 77%,
+                transparent
+            );
+
+        box-shadow:
+            0 0 22px rgba(218, 161, 58, .08);
+    }
+
+    .signup-kicker {
+        min-height: 28px;
+        display: inline-flex;
+        align-items: center;
+        gap: .48rem;
+        margin: 0 0 .75rem;
+        padding: .28rem .6rem;
+
+        border:
+            1px solid
+            rgba(239, 198, 99, .16);
+
+        border-radius: 999px;
+
+        background:
+            rgba(255,255,255,.018);
+
+        color:
+            var(--lux-gold-200);
+
+        font-size: .60rem;
+        font-weight: 900;
+        letter-spacing: .14em;
+        text-transform: uppercase;
+
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.025),
+            0 10px 24px rgba(0,0,0,.13);
+
+        backdrop-filter:
+            blur(10px);
+    }
+
+    .signup-kicker::before {
+        width: 19px;
+        height: 1px;
+        border-radius: 999px;
+
+        background:
+            linear-gradient(
+                90deg,
+                var(--lux-gold-100),
+                var(--lux-gold-400)
+            );
+
+        box-shadow:
+            0 0 10px rgba(238, 193, 82, .24);
+    }
+
+    .signup-title {
+        max-width: 10.5ch;
+        margin: 0;
+
+        color:
+            var(--lux-ivory);
+
+        font-size:
+            clamp(
+                2.85rem,
+                5.25vw,
+                5rem
+            );
+
+        font-weight: 950;
+        line-height: .90;
+        letter-spacing: -.071em;
+        text-wrap: balance;
+
+        text-shadow:
+            0 28px 65px rgba(0,0,0,.38);
+
+        background:
+            linear-gradient(
+                110deg,
+                #fffdf8 0%,
+                #fff8ec 42%,
+                #f2cd72 77%,
+                #d79d34 100%
+            );
+
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+    }
+
+    .signup-lead {
+        max-width: 47ch;
+        margin: 1rem 0 0;
+
+        color:
+            var(--lux-muted);
+
+        font-size:
+            clamp(.75rem, 1vw, .86rem);
+
+        line-height: 1.74;
+    }
+
+    .signup-trust-grid {
+        display: grid;
+        gap: .58rem;
+        margin-top: 1.2rem;
+        perspective: 1100px;
+    }
+
+    .signup-trust-item {
+        --signup-tilt-x: 0deg;
+        --signup-tilt-y: 0deg;
+        --signup-lift: 0px;
+
+        position: relative;
+        overflow: hidden;
+        isolation: isolate;
+
+        display: grid;
+        grid-template-columns:
+            38px
+            minmax(0,1fr);
+
+        gap: .68rem;
+        align-items: start;
+
+        padding: .76rem .78rem;
+
+        border:
+            1px solid
+            rgba(239, 198, 99, .105);
+
+        border-radius: 13px;
+
+        background:
+            radial-gradient(
+                circle at var(--signup-light-x, 88%) var(--signup-light-y, 9%),
+                rgba(255, 228, 153, .055),
+                transparent 9rem
+            ),
+            linear-gradient(
+                145deg,
+                rgba(255,255,255,.031),
+                rgba(255,255,255,.009)
+            ),
+            rgba(13, 11, 8, .83);
+
+        color:
+            var(--lux-ivory);
+
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.025),
+            0 13px 28px rgba(0,0,0,.16);
+
+        transform:
+            perspective(950px)
+            rotateX(var(--signup-tilt-x))
+            rotateY(var(--signup-tilt-y))
+            translateY(var(--signup-lift));
+
+        transform-style: preserve-3d;
+
+        transition:
+            transform 220ms var(--lux-ease),
+            border-color 180ms ease,
+            box-shadow 220ms ease,
+            background 220ms ease;
+    }
+
+    .signup-trust-item::after {
+        content: "";
+        position: absolute;
+        z-index: -1;
+        top: 0;
+        right: 16%;
+        left: 16%;
+        height: 1px;
+        background:
+            linear-gradient(
+                90deg,
+                transparent,
+                rgba(255,255,255,.12),
+                rgba(239,198,99,.32),
+                rgba(255,255,255,.12),
+                transparent
+            );
+        opacity: .45;
+    }
+
+    .signup-trust-item:hover {
+        --signup-lift: -4px;
+
+        border-color:
+            rgba(255, 226, 158, .22);
+
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.036),
+            0 20px 38px rgba(0,0,0,.22);
+    }
+
+    .signup-trust-icon {
+        width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+
+        border:
+            1px solid
+            rgba(255, 227, 158, .20);
+
+        border-radius: 11px;
+
+        background:
+            linear-gradient(
+                145deg,
+                rgba(226, 178, 69, .13),
+                rgba(226, 178, 69, .025)
+            );
+
+        color:
+            var(--lux-gold-200);
+
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.04),
+            0 10px 18px rgba(0,0,0,.17);
+
+        transform:
+            translateZ(22px);
+    }
+
+    .signup-trust-icon svg {
+        width: 1rem;
+        height: 1rem;
+    }
+
+    .signup-trust-item strong {
+        display: block;
+        color: var(--lux-ivory);
+        font-size: .70rem;
+        font-weight: 860;
+        letter-spacing: -.012em;
+    }
+
+    .signup-trust-item p {
+        margin: .10rem 0 0;
+        color: var(--lux-muted);
+        font-size: .58rem;
+        line-height: 1.52;
+    }
+
+    .signup-progress-card {
+        position: relative;
+        overflow: hidden;
+        margin-top: .95rem;
+        padding: .82rem;
+
+        border:
+            1px solid
+            rgba(239, 198, 99, .12);
+
+        border-radius: 13px;
+
+        background:
+            linear-gradient(
+                145deg,
+                rgba(255,255,255,.028),
+                rgba(255,255,255,.007)
+            ),
+            #0e0c09;
+
+        color:
+            var(--lux-ivory);
+
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.025),
+            0 14px 28px rgba(0,0,0,.18);
+    }
+
+    .signup-progress-card::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        right: 14%;
+        left: 14%;
+        height: 1px;
+        background:
+            linear-gradient(
+                90deg,
+                transparent,
+                rgba(255,255,255,.11),
+                rgba(239,198,99,.30),
+                rgba(255,255,255,.11),
+                transparent
+            );
+        opacity: .42;
+    }
+
+    .signup-progress-top {
+        color: var(--lux-muted);
+        font-size: .60rem;
+        font-weight: 780;
+    }
+
+    .signup-progress-top strong {
+        color: var(--lux-gold-200);
+        font-size: .64rem;
+    }
+
+    .signup-progress-track {
+        position: relative;
+        height: 7px;
+        overflow: hidden;
+        margin-top: .5rem;
+
+        border:
+            1px solid
+            rgba(255,255,255,.035);
+
+        border-radius: 999px;
+
+        background:
+            #221a12;
+
+        box-shadow:
+            inset 0 1px 3px rgba(0,0,0,.36);
+    }
+
+    .signup-progress-bar {
+        position: relative;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--lux-gold-gradient);
+
+        box-shadow:
+            0 0 14px rgba(231, 185, 73, .21);
+
+        transition:
+            width 320ms var(--lux-ease-out);
+    }
+
+    .signup-progress-bar::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: -40%;
+        width: 34%;
+        background:
+            linear-gradient(
+                90deg,
+                transparent,
+                rgba(255,255,255,.55),
+                transparent
+            );
+        animation:
+            signup-progress-shine
+            3.6s
+            ease-in-out
+            infinite;
+    }
+
+    @keyframes signup-progress-shine {
+        0%,
+        54% {
+            transform: translateX(0);
+            opacity: 0;
+        }
+
+        62% {
+            opacity: .72;
+        }
+
+        86%,
+        100% {
+            transform: translateX(430%);
+            opacity: 0;
+        }
+    }
+
+    .signup-progress-card p {
+        margin: .45rem 0 0;
+        color: var(--lux-subtle);
+        font-size: .53rem;
+        line-height: 1.45;
+    }
+
+    /* =====================================================================
+       CREAM / WHITE SIGNUP SURFACE — REFERENCE IMAGE WHITE TOUCH
+       ===================================================================== */
+
+    .signup-card {
+        --signup-card-rx: 0deg;
+        --signup-card-ry: 0deg;
+        --signup-card-x: 78%;
+        --signup-card-y: 8%;
+
+        --sp-bg: #fbf1e3;
+        --sp-bg-soft: #f4e6d2;
+        --sp-surface: #fffdf8;
+        --sp-surface-2: #f2e2cb;
+        --sp-text: #41342a;
+        --sp-strong: #1c1510;
+        --sp-muted: #716357;
+        --sp-subtle: #97897d;
+        --sp-border: #e5d1b8;
+        --sp-border-strong: #ccb596;
+        --sp-primary: #b97c1d;
+        --sp-primary-hover: #9c6313;
+        --sp-primary-soft: #f5e4b9;
+        --sp-contrast: #1a1008;
+        --sp-success: #39714f;
+        --sp-success-soft: #e7f1e9;
+        --sp-warning: #946315;
+        --sp-warning-soft: #fff2d7;
+        --sp-error: #aa382d;
+        --sp-error-soft: #fae7e3;
+        --sp-info: #3b638b;
+        --sp-info-soft: #e9f0f7;
+
+        position: relative;
+        overflow: hidden;
+        isolation: isolate;
+
+        border:
+            1px solid
+            rgba(255, 246, 229, .92);
+
+        border-radius:
+            clamp(20px, 2.35vw, 30px);
+
+        background:
+            radial-gradient(
+                circle at
+                var(--signup-card-x)
+                var(--signup-card-y),
+                rgba(255, 255, 255, .98),
+                transparent 22rem
+            ),
+            var(--lux-cream-gradient);
+
+        color:
+            var(--sp-text);
+
+        box-shadow:
+            var(--lux-cream-shadow);
+
+        transform:
+            perspective(1400px)
+            rotateX(var(--signup-card-rx))
+            rotateY(var(--signup-card-ry));
+
+        transform-style: preserve-3d;
+
+        transition:
+            transform 280ms var(--lux-ease),
+            box-shadow 280ms var(--lux-ease),
+            border-color 200ms ease;
+
+        will-change: transform;
+    }
+
+    .signup-card:hover {
+        border-color:
+            rgba(255, 255, 255, 1);
+
+        box-shadow:
+            0 7px 0 rgba(107, 74, 46, .07),
+            0 35px 90px rgba(0, 0, 0, .36),
+            inset 0 1px 0 rgba(255,255,255,1);
+    }
+
+    .signup-card::before {
+        content: "";
+        position: absolute;
+        z-index: 4;
+        top: 0;
+        right: 0;
+        left: 0;
+        height: 4px;
+
+        background:
+            linear-gradient(
+                90deg,
+                #6a3d0a 0%,
+                #d39d34 20%,
+                #ffe39a 49%,
+                #d39d34 76%,
+                #6a3d0a 100%
+            );
+
+        box-shadow:
+            0 1px 0 rgba(255,255,255,.48);
+    }
+
+    .signup-card::after {
+        content: "";
+        position: absolute;
+        z-index: 1;
+        top: -38%;
+        left: -28%;
+        width: 44%;
+        height: 180%;
+        pointer-events: none;
+
+        background:
+            linear-gradient(
+                90deg,
+                transparent,
+                rgba(255,255,255,.33),
+                transparent
+            );
+
+        transform:
+            rotate(14deg)
+            translateX(-240%);
+
+        animation:
+            signup-card-sheen
+            11s
+            var(--lux-ease-out)
+            infinite;
+    }
+
+    @keyframes signup-card-sheen {
+        0%,
+        78% {
+            transform:
+                rotate(14deg)
+                translateX(-240%);
+            opacity: 0;
+        }
+
+        83% {
+            opacity: .46;
+        }
+
+        94%,
+        100% {
+            transform:
+                rotate(14deg)
+                translateX(520%);
+            opacity: 0;
+        }
+    }
+
+    .signup-card-inner {
+        position: relative;
+        z-index: 2;
+        padding:
+            clamp(1rem, 2.7vw, 1.55rem);
+    }
+
+    .signup-card-header {
+        position: relative;
+        align-items: flex-start;
+        margin-bottom: 1rem;
+        padding-bottom: .9rem;
+
+        border-bottom:
+            1px solid
+            rgba(101, 72, 47, .12);
+    }
+
+    .signup-card-header::after {
+        content: "";
+        position: absolute;
+        right: 53%;
+        bottom: -1px;
+        left: 0;
+        height: 1px;
+
+        background:
+            linear-gradient(
+                90deg,
+                #c99028,
+                rgba(195, 146, 58, .20),
+                transparent
+            );
+    }
+
+    .signup-card-title {
+        color: var(--sp-strong);
+        font-size:
+            clamp(
+                1.55rem,
+                2.8vw,
+                2.15rem
+            );
+        font-weight: 930;
+        line-height: 1;
+        letter-spacing: -.045em;
+    }
+
+    .signup-card-copy {
+        max-width: 58ch;
+        margin: .4rem 0 0;
+        color: var(--sp-muted);
+        font-size: .69rem;
+        line-height: 1.58;
+    }
+
+    .signup-security-pill {
+        min-height: 31px;
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        gap: .32rem;
+        padding: .34rem .52rem;
+
+        border:
+            1px solid
+            rgba(70, 112, 78, .22);
+
+        border-radius: 999px;
+
+        background:
+            linear-gradient(
+                145deg,
+                #eef6ef,
+                #e2eee5
+            );
+
+        color:
+            #356144;
+
+        font-size: .55rem;
+        font-weight: 850;
+        white-space: nowrap;
+
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.82),
+            0 4px 10px rgba(63, 101, 69, .08);
+    }
+
+    .signup-security-pill svg {
+        width: .82rem;
+        height: .82rem;
+    }
+
+    /* =====================================================================
+       ALERTS / SOCIAL MODE
+       ===================================================================== */
+
+    .signup-banner {
+        position: relative;
+        overflow: hidden;
+        margin-bottom: .78rem;
+        padding: .72rem .76rem;
+        border-radius: 11px;
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.64),
+            0 5px 13px rgba(92, 62, 39, .06);
+    }
+
+    .signup-banner::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: 3px;
+        background: currentColor;
+        opacity: .7;
+    }
+
+    .signup-banner.is-warning {
+        border-color: #e8c982;
+        background: #fff2d8;
+        color: #8f6218;
+    }
+
+    .signup-banner.is-error {
+        border-color: #e4b2ab;
+        background: #fae9e6;
+        color: #9e3c32;
+    }
+
+    .signup-banner.is-info {
+        border-color: #b8c8d8;
+        background: #edf3f8;
+        color: #416786;
+    }
+
+    .signup-social-section {
+        margin-bottom: 1rem;
+    }
+
+    .signup-social-grid {
+        gap: .62rem;
+    }
+
+    .signup-social-button {
+        position: relative;
+        overflow: hidden;
+        min-height: 48px;
+        padding: .64rem .75rem;
+
+        border:
+            1px solid
+            #d6c2a5;
+
+        border-radius: 11px;
+
+        background:
+            linear-gradient(
+                145deg,
+                #fffdf8,
+                #f6ead8
+            );
+
+        color:
+            #30251d;
+
+        box-shadow:
+            0 3px 0 rgba(114, 80, 49, .08),
+            0 10px 20px rgba(87, 56, 31, .075),
+            inset 0 1px 0 rgba(255,255,255,.95);
+
+        transition:
+            transform 180ms var(--lux-ease),
+            border-color 180ms ease,
+            background 180ms ease,
+            box-shadow 180ms ease,
+            opacity 180ms ease;
+    }
+
+    .signup-social-button::before {
+        content: "";
+        position: absolute;
+        top: -90%;
+        bottom: -90%;
+        left: -33%;
+        width: 24%;
+        pointer-events: none;
+
+        background:
+            linear-gradient(
+                90deg,
+                transparent,
+                rgba(255,255,255,.82),
+                transparent
+            );
+
+        transform:
+            rotate(14deg)
+            translateX(-170%);
+
+        transition:
+            transform 650ms var(--lux-ease-out);
+    }
+
+    .signup-social-button:hover:not(:disabled) {
+        transform: translateY(-3px);
+        border-color: #c4933b;
+        background: #fffdf9;
+        box-shadow:
+            0 5px 0 rgba(114,80,49,.08),
+            0 16px 27px rgba(87,56,31,.11),
+            inset 0 1px 0 #fff;
+    }
+
+    .signup-social-button:hover:not(:disabled)::before {
+        transform:
+            rotate(14deg)
+            translateX(620%);
+    }
+
+    .signup-provider-mark {
+        width: 24px;
+        height: 24px;
+        border-color: #d7c2a6;
+        border-radius: 7px;
+        background: #fff;
+        color: #2d231c;
+        box-shadow: 0 3px 8px rgba(78,52,31,.07);
+    }
+
+    .signup-provider-mark.facebook {
+        color: #1877f2;
+    }
+
+    .signup-divider {
+        margin: 1rem 0;
+        color: #9d8d80;
+        font-size: .54rem;
+        font-weight: 840;
+        letter-spacing: .12em;
+    }
+
+    .signup-divider::before,
+    .signup-divider::after {
+        background:
+            linear-gradient(
+                90deg,
+                transparent,
+                #d8c2a5
+            );
+    }
+
+    .signup-divider::after {
+        background:
+            linear-gradient(
+                90deg,
+                #d8c2a5,
+                transparent
+            );
+    }
+
+    /* =====================================================================
+       FORM SECTION CARDS
+       ===================================================================== */
+
+    .signup-form {
+        gap: .94rem;
+        perspective: 1200px;
+    }
+
+    .signup-section {
+        --signup-section-rx: 0deg;
+        --signup-section-ry: 0deg;
+        --signup-section-lift: 0px;
+        --signup-section-light-x: 88%;
+        --signup-section-light-y: 8%;
+
+        position: relative;
+        overflow: hidden;
+        isolation: isolate;
+
+        margin: 0;
+        padding: .86rem;
+
+        border:
+            1px solid
+            #dfccb1;
+
+        border-radius: 15px;
+
+        background:
+            radial-gradient(
+                circle at
+                var(--signup-section-light-x)
+                var(--signup-section-light-y),
+                rgba(255,255,255,.95),
+                transparent 13rem
+            ),
+            linear-gradient(
+                145deg,
+                #fffaf1,
+                #f7ead8
+            );
+
+        box-shadow:
+            0 3px 0 rgba(112, 81, 54, .07),
+            0 12px 25px rgba(92, 60, 33, .075),
+            inset 0 1px 0 rgba(255,255,255,.96);
+
+        transform:
+            perspective(1050px)
+            rotateX(var(--signup-section-rx))
+            rotateY(var(--signup-section-ry))
+            translateY(var(--signup-section-lift));
+
+        transform-style: preserve-3d;
+
+        transition:
+            transform 230ms var(--lux-ease),
+            border-color 190ms ease,
+            box-shadow 230ms ease,
+            background 230ms ease;
+    }
+
+    .signup-section::before {
+        content: "";
+        position: absolute;
+        z-index: -1;
+        top: 0;
+        right: 17%;
+        left: 17%;
+        height: 1px;
+
+        background:
+            linear-gradient(
+                90deg,
+                transparent,
+                rgba(111,76,42,.08),
+                rgba(197,146,47,.24),
+                rgba(111,76,42,.08),
+                transparent
+            );
+    }
+
+    .signup-section:hover,
+    .signup-section:focus-within {
+        --signup-section-lift: -3px;
+
+        border-color:
+            #d4b982;
+
+        box-shadow:
+            0 5px 0 rgba(112,81,54,.065),
+            0 19px 34px rgba(92,60,33,.11),
+            inset 0 1px 0 rgba(255,255,255,1);
+    }
+
+    .signup-section.is-lux-revealed {
+        opacity: 1;
+        transform:
+            perspective(1050px)
+            rotateX(var(--signup-section-rx))
+            rotateY(var(--signup-section-ry))
+            translateY(var(--signup-section-lift));
+    }
+
+    .signup-section.is-lux-pending {
+        opacity: 0;
+        transform:
+            perspective(1050px)
+            translateY(16px)
+            scale(.992);
+    }
+
+    .signup-section legend {
+        width: 100%;
+        padding: 0 .18rem;
+    }
+
+    .signup-section-title {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        color: #2c2119;
+        font-size: .74rem;
+        font-weight: 900;
+        letter-spacing: -.012em;
+    }
+
+    .signup-section-number {
+        width: 26px;
+        height: 26px;
+        display: inline-grid;
+        place-items: center;
+        border-radius: 8px;
+
+        border:
+            1px solid
+            #c9912e;
+
+        background:
+            var(--lux-gold-gradient);
+
+        color:
+            #1c1208;
+
+        font-size: .58rem;
+        font-weight: 950;
+
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.45),
+            0 3px 0 #8d560f,
+            0 8px 13px rgba(107,67,17,.14);
+    }
+
+    .signup-section-copy {
+        display: block;
+        margin: .2rem 0 0 2.1rem;
+        color: #8d7d70;
+        font-size: .54rem;
+        font-weight: 520;
+        line-height: 1.47;
+    }
+
+    .signup-fields {
+        gap: .72rem;
+        margin-top: .68rem;
+    }
+
+    .signup-field {
+        position: relative;
+        min-width: 0;
+    }
+
+    .signup-field.is-lux-active {
+        z-index: 3;
+    }
+
+    .signup-field-top {
+        gap: .55rem;
+    }
+
+    .signup-label {
+        color: #3d3026;
+        font-size: .64rem;
+        font-weight: 850;
+    }
+
+    .signup-required {
+        color: #a66a17;
+        font-size: .51rem;
+        font-weight: 760;
+    }
+
+    .signup-optional {
+        color: #9b8b7e;
+        font-size: .51rem;
+        font-weight: 720;
+    }
+
+    .signup-input-wrap {
+        position: relative;
+        perspective: 800px;
+    }
+
+    .signup-input-wrap::after {
+        content: "";
+        position: absolute;
+        z-index: -1;
+        right: 6%;
+        bottom: -6px;
+        left: 6%;
+        height: 9px;
+        border-radius: 50%;
+        background: rgba(82, 52, 27, .10);
+        filter: blur(7px);
+        opacity: 0;
+        transform: scaleX(.9);
+        transition:
+            opacity 180ms ease,
+            transform 180ms ease;
+    }
+
+    .signup-field.is-lux-active .signup-input-wrap::after {
+        opacity: .72;
+        transform: scaleX(1);
+    }
+
+    .signup-input-icon {
+        left: .72rem;
+        width: .96rem;
+        height: .96rem;
+        color: #a58d73;
+        transition:
+            color 180ms ease,
+            transform 180ms var(--lux-ease);
+    }
+
+    .signup-field.is-lux-active .signup-input-icon {
+        color: #b7781b;
+        transform:
+            translateY(-50%)
+            translateZ(14px)
+            scale(1.05);
+    }
+
+    .signup-input,
+    .signup-textarea {
+        border:
+            1px solid
+            #d9c3a7;
+
+        border-radius: 10px;
+
+        background:
+            linear-gradient(
+                180deg,
+                #fffdf9,
+                #fbf3e8
+            );
+
+        color:
+            #382b22;
+
+        caret-color:
+            #b97b1c;
+
+        box-shadow:
+            inset 0 1px 2px rgba(101, 70, 44, .045),
+            0 2px 0 rgba(124, 86, 50, .045);
+
+        transition:
+            border-color 180ms ease,
+            box-shadow 180ms ease,
+            background 180ms ease,
+            transform 180ms var(--lux-ease);
+    }
+
+    .signup-input {
+        min-height: 46px;
+        padding:
+            .66rem
+            .75rem
+            .66rem
+            2.28rem;
+    }
+
+    .signup-input.has-toggle {
+        padding-right: 3.15rem;
+    }
+
+    .signup-textarea {
+        min-height: 96px;
+        resize: vertical;
+        padding: .72rem .78rem;
+        line-height: 1.52;
+    }
+
+    .signup-input:hover,
+    .signup-textarea:hover {
+        border-color: #c8a979;
+        background: #fffefa;
+    }
+
+    .signup-input:focus,
+    .signup-textarea:focus {
+        border-color: #bd8327;
+        background: #fffefa;
+
+        box-shadow:
+            0 0 0 4px rgba(198, 142, 49, .11),
+            0 7px 16px rgba(98, 66, 37, .08),
+            inset 0 1px 1px rgba(101,70,44,.025);
+
+        transform: translateY(-1px);
+    }
+
+    .signup-input[aria-invalid="true"],
+    .signup-textarea[aria-invalid="true"] {
+        border-color: #b9574c;
+
+        box-shadow:
+            0 0 0 4px rgba(180, 74, 62, .08);
+    }
+
+    .signup-input[readonly] {
+        background: #f0e2cf;
+        color: #847466;
+    }
+
+    .signup-input:disabled,
+    .signup-textarea:disabled {
+        cursor: not-allowed;
+        opacity: .64;
+        filter: saturate(.7);
+    }
+
+    .signup-input::placeholder,
+    .signup-textarea::placeholder {
+        color: #aa9b8f;
+        opacity: 1;
+    }
+
+    .signup-password-toggle {
+        right: .38rem;
+        width: 37px;
+        height: 37px;
+        border:
+            1px solid
+            transparent;
+        border-radius: 9px;
+        background: transparent;
+        color: #8c7b6e;
+
+        transition:
+            transform 170ms var(--lux-ease),
+            background 170ms ease,
+            border-color 170ms ease,
+            color 170ms ease;
+    }
+
+    .signup-password-toggle:hover {
+        transform:
+            translateY(-50%)
+            translateZ(8px);
+
+        border-color: #dcc7aa;
+        background: #f3e4d0;
+        color: #a56b17;
+    }
+
+    .signup-password-toggle:active {
+        transform:
+            translateY(-50%)
+            scale(.94);
+    }
+
+    .signup-hint,
+    .signup-error-text,
+    .signup-success-text {
+        font-size: .54rem;
+        line-height: 1.44;
+    }
+
+    .signup-hint {
+        color: #9b8b7e;
+    }
+
+    .signup-error-text {
+        color: #ad463c;
+        font-weight: 720;
+    }
+
+    .signup-success-text {
+        color: #3f7553;
+        font-weight: 720;
+    }
+
+    /* =====================================================================
+       PASSWORD METER
+       ===================================================================== */
+
+    .signup-password-meter {
+        gap: .36rem;
+        margin-top: .12rem;
+    }
+
+    .signup-password-meter-head {
+        color: #9b8b7e;
+        font-size: .53rem;
+    }
+
+    .signup-password-meter-head strong {
+        color: #7b6a5c;
+    }
+
+    .signup-password-bars {
+        gap: 4px;
+    }
+
+    .signup-password-bars span {
+        height: 4px;
+        border-radius: 999px;
+        background: #dbc8ad;
+        box-shadow: inset 0 1px 1px rgba(78, 52, 31, .05);
+    }
+
+    .signup-password-bars[data-level="1"] span:nth-child(1) {
+        background:
+            linear-gradient(
+                90deg,
+                #c36d35,
+                #d7933b
+            );
+    }
+
+    .signup-password-bars[data-level="2"] span:nth-child(-n+2) {
+        background:
+            linear-gradient(
+                90deg,
+                #d79231,
+                #e7b74f
+            );
+    }
+
+    .signup-password-bars[data-level="3"] span:nth-child(-n+3) {
+        background:
+            linear-gradient(
+                90deg,
+                #c68a28,
+                #eed077
+            );
+
+        box-shadow:
+            0 0 9px rgba(213, 159, 59, .15);
+    }
+
+    .signup-password-rules {
+        gap: .3rem .55rem;
+    }
+
+    .signup-password-rules li {
+        color: #9c8b7e;
+        font-size: .52rem;
+    }
+
+    .signup-password-rules li::before {
+        width: 6px;
+        height: 6px;
+        background: currentColor;
+        opacity: .48;
+    }
+
+    .signup-password-rules li.is-met {
+        color: #49795b;
+        font-weight: 760;
+    }
+
+    .signup-password-rules li.is-met::before {
+        box-shadow: 0 0 0 3px rgba(73, 121, 91, .08);
+        opacity: 1;
+    }
+
+    .signup-caps {
+        color: #936315;
+        font-size: .54rem;
+        font-weight: 740;
+    }
+
+    /* =====================================================================
+       LOCATION PANEL
+       ===================================================================== */
+
+    .signup-location-panel {
+        position: relative;
+        overflow: hidden;
+        gap: .64rem;
+        margin-top: .7rem;
+        padding: .72rem;
+
+        border:
+            1px dashed
+            #cfb58e;
+
+        border-radius: 12px;
+
+        background:
+            radial-gradient(
+                circle at 88% 8%,
+                rgba(219, 163, 58, .10),
+                transparent 12rem
+            ),
+            #fff9f0;
+
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.9);
+    }
+
+    .signup-location-panel::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        right: 18%;
+        left: 18%;
+        height: 1px;
+        background:
+            linear-gradient(
+                90deg,
+                transparent,
+                rgba(193,141,45,.26),
+                transparent
+            );
+    }
+
+    .signup-location-copy strong {
+        color: #3d3026;
+        font-size: .65rem;
+        font-weight: 850;
+    }
+
+    .signup-location-copy p {
+        color: #958478;
+        font-size: .54rem;
+        line-height: 1.46;
+    }
+
+    .signup-location-button {
+        position: relative;
+        overflow: hidden;
+        min-height: 38px;
+        padding: .44rem .62rem;
+
+        border:
+            1px solid
+            #d5bd9d;
+
+        border-radius: 9px;
+
+        background:
+            #fffdf8;
+
+        color:
+            #403228;
+
+        box-shadow:
+            0 2px 0 rgba(103, 71, 44, .06);
+
+        transition:
+            transform 170ms var(--lux-ease),
+            border-color 170ms ease,
+            background 170ms ease,
+            color 170ms ease,
+            box-shadow 170ms ease;
+    }
+
+    .signup-location-button:hover:not(:disabled) {
+        transform: translateY(-2px);
+        border-color: #c3913c;
+        background: #fffefa;
+        color: #9b6314;
+        box-shadow:
+            0 4px 0 rgba(103,71,44,.06),
+            0 10px 16px rgba(83,54,30,.08);
+    }
+
+    .signup-location-status {
+        color: #99887b;
+        font-size: .54rem;
+    }
+
+    .signup-location-status.is-success {
+        color: #467558;
+    }
+
+    .signup-location-status.is-warning {
+        color: #936315;
+    }
+
+    /* =====================================================================
+       CONSENT
+       ===================================================================== */
+
+    .signup-consent {
+        position: relative;
+        overflow: hidden;
+        grid-template-columns:
+            22px
+            minmax(0,1fr);
+        gap: .55rem;
+        padding: .7rem;
+
+        border:
+            1px solid
+            #dec9ae;
+
+        border-radius: 11px;
+
+        background:
+            #fffaf2;
+
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.95);
+
+        transition:
+            transform 170ms var(--lux-ease),
+            border-color 170ms ease,
+            background 170ms ease;
+    }
+
+    .signup-consent:hover {
+        transform: translateY(-1px);
+        border-color: #cfad77;
+        background: #fffdf9;
+    }
+
+    .signup-consent input {
+        width: 18px;
+        height: 18px;
+        margin: .08rem 0 0;
+        accent-color: #b97b1c;
+    }
+
+    .signup-consent label {
+        color: #44362b;
+        font-size: .62rem;
+        font-weight: 760;
+        line-height: 1.46;
+    }
+
+    .signup-consent small {
+        color: #97867a;
+        font-size: .53rem;
+        font-weight: 520;
+    }
+
+    /* =====================================================================
+       LEGAL + PRIMARY ACTION
+       ===================================================================== */
+
+    .signup-submit-row {
+        gap: .56rem;
+        padding-top: .1rem;
+    }
+
+    .signup-legal {
+        color: #948377;
+        font-size: .54rem;
+        line-height: 1.54;
+    }
+
+    .signup-legal a {
+        color: #9e6818;
+        font-weight: 820;
+        text-decoration-thickness: 1px;
+        text-underline-offset: 2px;
+    }
+
+    .signup-submit {
+        position: relative;
+        overflow: hidden;
+        isolation: isolate;
+
+        width: 100%;
+        min-height: 52px;
+
+        border:
+            1px solid
+            rgba(255, 235, 181, .62);
+
+        border-radius: 11px;
+
+        background:
+            var(--lux-gold-gradient);
+
+        color:
+            #1b1107;
+
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.44),
+            0 5px 0 #7d4a0d,
+            0 16px 29px rgba(95,57,12,.21);
+
+        font-size: .72rem;
+        font-weight: 930;
+        letter-spacing: .005em;
+        text-shadow: 0 1px 0 rgba(255,255,255,.25);
+
+        transform:
+            translateY(0)
+            translateZ(18px);
+
+        transition:
+            transform 180ms var(--lux-ease),
+            filter 180ms ease,
+            box-shadow 180ms ease,
+            opacity 180ms ease;
+    }
+
+    .signup-submit::before {
+        content: "";
+        position: absolute;
+        z-index: -1;
+        top: -100%;
+        bottom: -100%;
+        left: -34%;
+        width: 25%;
+        pointer-events: none;
+
+        background:
+            linear-gradient(
+                90deg,
+                transparent,
+                rgba(255,255,255,.64),
+                transparent
+            );
+
+        transform:
+            rotate(15deg)
+            translateX(-180%);
+
+        transition:
+            transform 680ms var(--lux-ease-out);
+    }
+
+    .signup-submit:hover:not(:disabled) {
+        transform:
+            translateY(-4px)
+            translateZ(22px);
+
+        filter:
+            saturate(1.05)
+            brightness(1.03);
+
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.50),
+            0 8px 0 #7d4a0d,
+            0 23px 36px rgba(95,57,12,.27);
+    }
+
+    .signup-submit:hover:not(:disabled)::before {
+        transform:
+            rotate(15deg)
+            translateX(650%);
+    }
+
+    .signup-submit:active:not(:disabled) {
+        transform:
+            translateY(2px)
+            translateZ(8px);
+
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.38),
+            0 2px 0 #7d4a0d,
+            0 8px 14px rgba(95,57,12,.17);
+    }
+
+    .signup-submit:disabled {
+        opacity: .56;
+        cursor: not-allowed;
+        transform: none;
+        filter: saturate(.65);
+    }
+
+    .signup-spinner {
+        width: .92rem;
+        height: .92rem;
+        border: 2px solid rgba(43, 26, 10, .22);
+        border-top-color: #2b1a0a;
+        border-radius: 50%;
+    }
+
+    .signup-existing {
+        margin: .14rem 0 0;
+        color: #7f6f62;
+        font-size: .60rem;
+    }
+
+    .signup-existing a {
+        color: #9f6615;
+        font-weight: 870;
+    }
+
+    /* =====================================================================
+       SUCCESS STATE
+       ===================================================================== */
+
+    .signup-success-state {
+        position: relative;
+        justify-items: center;
+        gap: .8rem;
+        padding:
+            clamp(1.35rem, 4vw, 2.25rem)
+            .5rem;
+        text-align: center;
+    }
+
+    .signup-success-state::before {
+        content: "";
+        position: absolute;
+        z-index: -1;
+        top: 9%;
+        left: 50%;
+        width: 15rem;
+        height: 15rem;
+        border-radius: 50%;
+        background: rgba(171, 125, 47, .06);
+        filter: blur(28px);
+        transform: translateX(-50%);
+    }
+
+    .signup-success-icon {
+        width: 78px;
+        height: 78px;
+        display: grid;
+        place-items: center;
+
+        border:
+            1px solid
+            rgba(68, 113, 81, .27);
+
+        border-radius: 24px;
+
+        background:
+            linear-gradient(
+                145deg,
+                #eef6ef,
+                #dfece2
+            );
+
+        color:
+            #3c6f4d;
+
+        box-shadow:
+            0 5px 0 rgba(59, 104, 72, .08),
+            0 18px 33px rgba(77, 106, 83, .12),
+            inset 0 1px 0 rgba(255,255,255,.9);
+
+        animation:
+            signup-success-float
+            4.2s
+            ease-in-out
+            infinite;
+    }
+
+    @keyframes signup-success-float {
+        0%,
+        100% {
+            transform: translateY(0) rotate(-1deg);
+        }
+
+        50% {
+            transform: translateY(-6px) rotate(1deg);
+        }
+    }
+
+    .signup-success-state h2 {
+        color: #211810;
+        font-size: 1.55rem;
+        font-weight: 930;
+        letter-spacing: -.04em;
+    }
+
+    .signup-success-state p {
+        color: #77685c;
+        font-size: .68rem;
+        line-height: 1.58;
+    }
+
+    .signup-success-email {
+        max-width: min(100%, 430px);
+        padding: .5rem .68rem;
+
+        border:
+            1px solid
+            #dac4a8;
+
+        border-radius: 10px;
+
+        background:
+            #fffaf2;
+
+        color:
+            #403128;
+
+        font-size: .64rem;
+        font-weight: 800;
+        box-shadow: inset 0 1px 0 #fff;
+    }
+
+    .signup-success-actions {
+        width: min(100%, 430px);
+        gap: .5rem;
+    }
+
+    .signup-success-actions .btn-primary {
+        border-color: #c38826;
+        background: var(--lux-gold-gradient);
+        color: #1b1107;
+        box-shadow:
+            0 4px 0 #7f4b0e,
+            0 12px 22px rgba(91,55,13,.15);
+    }
+
+    .signup-success-actions .btn-primary:hover {
+        color: #1b1107;
+        transform: translateY(-2px);
+    }
+
+    .signup-success-actions .btn-outline {
+        border-color: #cfb794;
+        background: #fffdf8;
+        color: #3c2d23;
+    }
+
+    .signup-resend {
+        min-height: 43px;
+        border: 1px solid #d5bd9d;
+        border-radius: 10px;
+        background: #fffaf2;
+        color: #403128;
+        font-size: .61rem;
+        font-weight: 830;
+        box-shadow: 0 2px 0 rgba(103,71,44,.05);
+    }
+
+    .signup-resend:hover:not(:disabled) {
+        border-color: #bd8730;
+        color: #9c6313;
+        background: #fffdf8;
+        transform: translateY(-1px);
+    }
+
+    .signup-success-note {
+        color: #9a897c !important;
+        font-size: .55rem !important;
+    }
+
+    /* =====================================================================
+       FOCUS / ACCESSIBILITY / AUTOFILL
+       ===================================================================== */
+
+    .signup-page button:focus-visible,
+    .signup-page a:focus-visible,
+    .signup-page input:focus-visible,
+    .signup-page textarea:focus-visible {
+        outline:
+            3px solid
+            rgba(210, 157, 54, .30);
+
+        outline-offset: 3px;
+    }
+
+    .signup-input:-webkit-autofill,
+    .signup-input:-webkit-autofill:hover,
+    .signup-input:-webkit-autofill:focus,
+    .signup-textarea:-webkit-autofill,
+    .signup-textarea:-webkit-autofill:hover,
+    .signup-textarea:-webkit-autofill:focus {
+        -webkit-text-fill-color: #382b22;
+        caret-color: #b97b1c;
+
+        box-shadow:
+            0 0 0 1000px
+            #fffaf2
+            inset;
+
+        transition:
+            background-color
+            9999s
+            ease-out
+            0s;
+    }
+
+    /* =====================================================================
+       MICRO-RIPPLE / DECORATIVE ELEMENTS ADDED BY ENHANCEMENT SCRIPT
+       ===================================================================== */
+
+    .signup-lux-ripple {
+        position: absolute;
+        z-index: 8;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        pointer-events: none;
+        background: rgba(255,255,255,.38);
+        transform: translate(-50%, -50%) scale(0);
+        animation: signup-lux-ripple 620ms var(--lux-ease-out) forwards;
+    }
+
+    @keyframes signup-lux-ripple {
+        0% {
+            opacity: .65;
+            transform:
+                translate(-50%, -50%)
+                scale(0);
+        }
+
+        100% {
+            opacity: 0;
+            transform:
+                translate(-50%, -50%)
+                scale(18);
+        }
+    }
+
+    .signup-lux-scroll-progress {
+        position: fixed;
+        z-index: calc(var(--z-header, 100) + 2);
+        top: 0;
+        left: 0;
+        width: 0;
+        height: 2px;
+        pointer-events: none;
+
+        background:
+            linear-gradient(
+                90deg,
+                #f8dc8b,
+                #d99f35,
+                #fff0b8
+            );
+
+        box-shadow:
+            0 0 11px rgba(222, 170, 61, .30);
+
+        transition:
+            width 80ms linear;
+    }
+
+    .signup-page.is-lux-ready .signup-card {
+        animation:
+            signup-card-entry
+            760ms
+            var(--lux-ease-out)
+            both;
+    }
+
+    .signup-page.is-lux-ready .signup-intro {
+        animation:
+            signup-intro-entry
+            720ms
+            var(--lux-ease-out)
+            both;
+    }
+
+    @keyframes signup-card-entry {
+        from {
+            opacity: 0;
+            transform:
+                perspective(1400px)
+                translateY(24px)
+                rotateX(2deg)
+                scale(.988);
+        }
+
+        to {
+            opacity: 1;
+        }
+    }
+
+    @keyframes signup-intro-entry {
+        from {
+            opacity: 0;
+            transform:
+                translateY(18px);
+        }
+
+        to {
+            opacity: 1;
+        }
+    }
+
+    /* =====================================================================
+       BASE THEME INTEROP
+       The signup experience intentionally keeps its cinematic dark shell
+       and cream form even when the global theme preference is light.
+       ===================================================================== */
+
+    html[data-theme="light"] .signup-page,
+    html[data-theme="dark"] .signup-page {
+        color: var(--lux-ivory);
+    }
+
+    html[data-theme="light"] .signup-card,
+    html[data-theme="dark"] .signup-card {
+        color: var(--sp-text);
+    }
+
+    /* =====================================================================
+       110–115% DESKTOP ZOOM / MID-WIDTH REFINEMENT
+       ===================================================================== */
+
+    @media (max-width: 1180px) {
+        .signup-shell {
+            width:
+                min(
+                    calc(100% - 1.6rem),
+                    1120px
+                );
+        }
+
+        .signup-layout {
+            grid-template-columns:
+                minmax(275px, .68fr)
+                minmax(510px, 1.25fr);
+
+            gap:
+                clamp(1.25rem, 3.2vw, 3.25rem);
+        }
+
+        .signup-title {
+            font-size:
+                clamp(
+                    2.65rem,
+                    5vw,
+                    4.45rem
+                );
+        }
+
+        .signup-card-inner {
+            padding: 1.15rem;
+        }
+    }
+
+    @media (max-width: 1040px) {
+        .signup-layout {
+            grid-template-columns:
+                minmax(250px, .62fr)
+                minmax(480px, 1.16fr);
+
+            gap: 1.35rem;
+        }
+
+        .signup-intro {
+            top:
+                calc(
+                    var(--header-height, 100px)
+                    + .8rem
+                );
+        }
+
+        .signup-title {
+            font-size:
+                clamp(
+                    2.45rem,
+                    5vw,
+                    3.9rem
+                );
+        }
+
+        .signup-lead {
+            font-size: .74rem;
+        }
+
+        .signup-trust-item {
+            padding: .68rem;
+        }
+
+        .signup-trust-item p {
+            font-size: .54rem;
+        }
+    }
+
+    /* =====================================================================
+       TABLET
+       ===================================================================== */
+
+    @media (max-width: 900px) {
+        .signup-page {
+            padding-top: 1rem;
+        }
+
+        .signup-shell {
+            width:
+                min(
+                    calc(100% - 1.2rem),
+                    780px
+                );
+        }
+
+        .signup-layout {
+            grid-template-columns: 1fr;
+            gap: 1rem;
+        }
+
+        .signup-intro {
+            position: relative;
+            top: auto;
+            max-width: none;
+            padding: .2rem .15rem .5rem;
+            transform: none !important;
+        }
+
+        .signup-intro::before {
+            top: auto;
+            right: 0;
+            bottom: -.15rem;
+            left: 0;
+            width: 55%;
+            height: 1px;
+
+            background:
+                linear-gradient(
+                    90deg,
+                    rgba(231, 186, 76, .8),
+                    rgba(255,255,255,.10),
+                    transparent
+                );
+        }
+
+        .signup-title {
+            max-width: 15ch;
+            font-size:
+                clamp(
+                    2.35rem,
+                    8vw,
+                    3.45rem
+                );
+        }
+
+        .signup-lead {
+            max-width: 68ch;
+        }
+
+        .signup-trust-grid {
+            grid-template-columns:
+                repeat(3, minmax(0,1fr));
+
+            gap: .5rem;
+        }
+
+        .signup-trust-item {
+            grid-template-columns: 34px minmax(0,1fr);
+            gap: .5rem;
+            min-height: 88px;
+        }
+
+        .signup-trust-icon {
+            width: 34px;
+            height: 34px;
+        }
+
+        .signup-progress-card {
+            display: block;
+        }
+
+        .signup-card {
+            transform: none !important;
+        }
+    }
+
+    @media (max-width: 760px) {
+        .signup-trust-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .signup-trust-item {
+            min-height: 0;
+        }
+
+        .signup-progress-card {
+            display: none;
+        }
+
+        .signup-card-header {
+            display: grid;
+            gap: .6rem;
+        }
+
+        .signup-security-pill {
+            justify-self: start;
+        }
+
+        .signup-section {
+            transform: none !important;
+        }
+    }
+
+    /* =====================================================================
+       MOBILE
+       ===================================================================== */
+
+    @media (max-width: 640px) {
+        .signup-page {
+            min-height: auto;
+            padding-top: .8rem;
+            padding-bottom:
+                calc(
+                    4.5rem
+                    + env(safe-area-inset-bottom, 0px)
+                );
+        }
+
+        .signup-page::after {
+            top: -8rem;
+            right: -13rem;
+            width: 28rem;
+            height: 28rem;
+        }
+
+        .signup-shell {
+            width:
+                min(
+                    calc(100% - .8rem),
+                    760px
+                );
+        }
+
+        .signup-kicker {
+            min-height: 26px;
+            font-size: .55rem;
+        }
+
+        .signup-title {
+            max-width: 13ch;
+            font-size:
+                clamp(
+                    2.25rem,
+                    12vw,
+                    3rem
+                );
+        }
+
+        .signup-lead {
+            font-size: .72rem;
+            line-height: 1.62;
+        }
+
+        .signup-card {
+            border-radius: 19px;
+        }
+
+        .signup-card-inner {
+            padding: .88rem;
+        }
+
+        .signup-card-title {
+            font-size: 1.45rem;
+        }
+
+        .signup-social-grid,
+        .signup-fields.two {
+            grid-template-columns: 1fr;
+        }
+
+        .signup-section {
+            padding: .76rem;
+            border-radius: 13px;
+        }
+
+        .signup-section-copy {
+            margin-left: 0;
+            padding-left: 2.1rem;
+        }
+
+        .signup-location-panel {
+            grid-template-columns: 1fr;
+        }
+
+        .signup-location-actions {
+            justify-content: stretch;
+        }
+
+        .signup-location-button {
+            flex: 1;
+        }
+
+        .signup-social-mode {
+            grid-template-columns:
+                36px
+                minmax(0,1fr);
+        }
+
+        .signup-social-exit {
+            grid-column: 1 / -1;
+            width: 100%;
+        }
+
+        .signup-submit {
+            min-height: 52px;
+        }
+    }
+
+    @media (max-width: 460px) {
+        .signup-page::before {
+            background-size: 40px 40px;
+        }
+
+        .signup-shell {
+            width:
+                min(
+                    calc(100% - .55rem),
+                    760px
+                );
+        }
+
+        .signup-intro {
+            padding-inline: .2rem;
+        }
+
+        .signup-kicker {
+            margin-bottom: .6rem;
+        }
+
+        .signup-title {
+            font-size:
+                clamp(
+                    2.15rem,
+                    13.5vw,
+                    2.8rem
+                );
+        }
+
+        .signup-card-inner {
+            padding: .76rem;
+        }
+
+        .signup-card-title {
+            font-size: 1.35rem;
+        }
+
+        .signup-card-copy {
+            font-size: .65rem;
+        }
+
+        .signup-section {
+            padding: .68rem;
+        }
+
+        .signup-section-title {
+            font-size: .70rem;
+        }
+
+        .signup-section-copy {
+            padding-left: 1.95rem;
+            font-size: .52rem;
+        }
+
+        .signup-section-number {
+            width: 24px;
+            height: 24px;
+        }
+
+        .signup-input {
+            min-height: 49px;
+            font-size: .76rem;
+        }
+
+        .signup-textarea {
+            min-height: 100px;
+            font-size: .76rem;
+        }
+
+        .signup-submit,
+        .signup-social-button {
+            min-height: 51px;
+        }
+
+        .signup-legal {
+            font-size: .52rem;
+        }
+    }
+
+    /* =====================================================================
+       COARSE POINTER / TOUCH
+       ===================================================================== */
+
+    @media (pointer: coarse) {
+        .signup-trust-item,
+        .signup-section,
+        .signup-card {
+            transform: none !important;
+        }
+
+        .signup-submit:hover:not(:disabled),
+        .signup-social-button:hover:not(:disabled),
+        .signup-location-button:hover:not(:disabled) {
+            transform: none;
+        }
+
+        .signup-password-toggle {
+            width: 40px;
+            height: 40px;
+        }
+    }
+
+    /* =====================================================================
+       REDUCED MOTION
+       ===================================================================== */
+
+    @media (prefers-reduced-motion: reduce) {
+        .signup-page,
+        .signup-page *,
+        .signup-page *::before,
+        .signup-page *::after {
+            scroll-behavior: auto !important;
+            transition-duration: .01ms !important;
+            animation-duration: .01ms !important;
+            animation-iteration-count: 1 !important;
+        }
+
+        .signup-card,
+        .signup-intro,
+        .signup-trust-item,
+        .signup-section {
+            transform: none !important;
+        }
+
+        .signup-lux-scroll-progress {
+            transition: none !important;
+        }
+    }
+
+</style>
+{% endblock %}
+
+{% block content %}
+<main
+    class="signup-page"
+    id="signup-root"
+    data-signup-url="{{ url_for('signup_page') }}"
+    data-session-url="{{ url_for('create_auth_session') }}"
+    data-profile-api-url="{{ url_for('complete_customer_profile') }}"
+    data-profile-get-url="{{ url_for('profile_api_get') }}"
+    data-verification-url="{{ url_for('send_email_verification_api') }}"
+    data-logout-url="{{ url_for('logout_api') }}"
+    data-profile-page-url="{{ url_for('profile_page') }}"
+    data-login-url="{{ url_for('login_page') }}"
+    data-menu-url="{{ url_for('menu_page') }}"
+    data-checkout-url="{{ url_for('checkout_page') }}"
+    data-locations-url="{{ url_for('locations_api') }}"
+>
+    <span class="visually-hidden" id="signup-live" role="status" aria-live="polite" aria-atomic="true"></span>
+
+    <script type="application/json" id="signup-firebase-config">{{ supplied_firebase_config|tojson }}</script>
+    <script type="application/json" id="signup-provider-config">{{ supplied_provider_config|tojson }}</script>
+
+    <div class="signup-shell">
+        <div class="signup-layout">
+            <aside class="signup-intro" aria-labelledby="signup-page-title">
+                <p class="signup-kicker">Customer account</p>
+                <h1 class="signup-title" id="signup-page-title">Create your account.</h1>
+                <p class="signup-lead">
+                    Save your customer profile, manage future orders and keep delivery details ready.
+                    Firebase handles identity; trusted roles and protected access remain controlled by Flask.
+                </p>
+
+                <div class="signup-trust-grid" aria-label="Account security overview">
+                    <div class="signup-trust-item">
+                        <span class="signup-trust-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><path d="M6 10V8a6 6 0 0 1 12 0v2"></path><rect x="4" y="10" width="16" height="11" rx="2"></rect><path d="M12 14v3"></path></svg>
+                        </span>
+                        <div><strong>Customer-only public signup</strong><p>No browser role selector, staff checkbox or admin registration path.</p></div>
+                    </div>
+                    <div class="signup-trust-item">
+                        <span class="signup-trust-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><path d="M4 6h16v12H4z"></path><path d="m5 7 7 6 7-6"></path></svg>
+                        </span>
+                        <div><strong>Email verification ready</strong><p>Verification stays separate from profile data and promotional consent.</p></div>
+                    </div>
+                    <div class="signup-trust-item">
+                        <span class="signup-trust-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><path d="M12 21s7-5.1 7-11a7 7 0 1 0-14 0c0 5.9 7 11 7 11Z"></path><circle cx="12" cy="10" r="2.2"></circle></svg>
+                        </span>
+                        <div><strong>Location stays optional</strong><p>Browser permission is requested only after you choose to use it.</p></div>
+                    </div>
+                </div>
+
+                <div class="signup-progress-card" aria-label="Form completion">
+                    <div class="signup-progress-top"><span>Profile setup</span><strong id="signup-progress-value">0%</strong></div>
+                    <div class="signup-progress-track" aria-hidden="true"><div class="signup-progress-bar" id="signup-progress-bar"></div></div>
+                    <p>Progress is convenience-only. Firebase and Flask remain authoritative.</p>
+                </div>
+            </aside>
+
+            <section class="signup-card" aria-labelledby="signup-card-title">
+                <div class="signup-card-inner">
+                    <header class="signup-card-header">
+                        <div>
+                            <h2 class="signup-card-title" id="signup-card-title">Create Account</h2>
+                            <p class="signup-card-copy">Start with account details, then add contact and delivery preferences.</p>
+                        </div>
+                        <span class="signup-security-pill">
+                            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.8 2.8 8 7 10 4.2-2 7-5.2 7-10V6l-7-3Z"></path><path d="m9 12 2 2 4-4"></path></svg>
+                            Customer only
+                        </span>
+                    </header>
+
+                    <noscript><div class="signup-banner is-warning">JavaScript is required because Firebase Authentication runs in the browser before Flask creates the trusted application session.</div></noscript>
+
+                    <div class="signup-banner is-warning" id="signup-config-note" hidden>
+                        <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5M12 16.5h.01"></path></svg>
+                        <div><strong>Account creation is temporarily unavailable</strong>Browser-safe Firebase configuration is not available on this page. Please try again later or <a href="{{ url_for('support_page') }}">contact support</a>.</div>
+                    </div>
+
+                    <div class="signup-banner is-warning" id="signup-offline-note" hidden>
+                        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 3l18 18"></path><path d="M8.5 8.5A8.7 8.7 0 0 1 12 7.8c3.1 0 5.9 1.6 7.5 4"></path><path d="M12 18h.01"></path></svg>
+                        <div><strong>You're offline</strong>Your form stays here. Reconnect before creating or completing the account.</div>
+                    </div>
+
+                    <div class="signup-banner is-error" id="signup-error" role="alert" tabindex="-1" hidden>
+                        <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.5v6M12 17h.01"></path></svg>
+                        <div>
+                            <strong id="signup-error-title">We couldn't create your account</strong>
+                            <span id="signup-error-message">Please review the form and try again.</span>
+                            <div id="signup-error-action" hidden><a href="{{ url_for('login_page') }}">Sign in instead</a></div>
+                        </div>
+                    </div>
+
+                    <div class="signup-banner is-info signup-social-mode" id="signup-social-mode" hidden>
+                        <span class="signup-social-avatar" id="signup-social-avatar" aria-hidden="true">S</span>
+                        <div><strong id="signup-social-title">Social account connected</strong><p id="signup-social-copy">Complete the customer profile below. No password is required for this provider flow.</p></div>
+                        <button class="signup-social-exit" id="signup-social-exit" type="button">Use another method</button>
+                    </div>
+
+                    <div id="signup-form-state">
+                        <section class="signup-social-section" id="signup-social-section" aria-label="Social account options" hidden>
+                            <div class="signup-social-grid">
+                                <button class="signup-social-button" id="signup-google" type="button" hidden><span class="signup-provider-mark" aria-hidden="true">G</span><span data-provider-label>Continue with Google</span></button>
+                                <button class="signup-social-button" id="signup-facebook" type="button" hidden><span class="signup-provider-mark facebook" aria-hidden="true">f</span><span data-provider-label>Continue with Facebook</span></button>
+                            </div>
+                            <div class="signup-divider" aria-hidden="true">or use email</div>
+                        </section>
+
+                        <form class="signup-form" id="signup-form" novalidate>
+                            <fieldset class="signup-section">
+                                <legend>
+                                    <span class="signup-section-title"><span class="signup-section-number">1</span>Account Details</span>
+                                    <span class="signup-section-copy">Your email is the Firebase identity. Passwords are never written to Firestore.</span>
+                                </legend>
+
+                                <div class="signup-fields two">
+                                    <div class="signup-field full">
+                                        <div class="signup-field-top"><label class="signup-label" for="signup-full-name">Full Name</label><span class="signup-required">Required</span></div>
+                                        <div class="signup-input-wrap">
+                                            <svg class="signup-input-icon" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"></circle><path d="M4.5 21a7.5 7.5 0 0 1 15 0"></path></svg>
+                                            <input class="signup-input" id="signup-full-name" name="full_name" type="text" autocomplete="name" maxlength="120" required aria-describedby="signup-full-name-hint signup-full-name-error">
+                                        </div>
+                                        <p class="signup-hint" id="signup-full-name-hint">Use the name you want attached to your customer profile.</p>
+                                        <p class="signup-error-text" id="signup-full-name-error" hidden></p>
+                                    </div>
+
+                                    <div class="signup-field full">
+                                        <div class="signup-field-top"><label class="signup-label" for="signup-email">Email Address</label><span class="signup-required">Required</span></div>
+                                        <div class="signup-input-wrap">
+                                            <svg class="signup-input-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M4 6h16v12H4z"></path><path d="m5 7 7 6 7-6"></path></svg>
+                                            <input class="signup-input" id="signup-email" name="email" type="email" inputmode="email" autocomplete="email" autocapitalize="none" spellcheck="false" maxlength="254" required aria-describedby="signup-email-hint signup-email-error">
+                                        </div>
+                                        <p class="signup-hint" id="signup-email-hint">Flask trusts the verified Firebase token identity, not a separate browser email claim.</p>
+                                        <p class="signup-error-text" id="signup-email-error" hidden></p>
+                                    </div>
+
+                                    <div class="signup-field" id="signup-password-field">
+                                        <div class="signup-field-top"><label class="signup-label" for="signup-password">Password</label><span class="signup-required">Required</span></div>
+                                        <div class="signup-input-wrap">
+                                            <svg class="signup-input-icon" aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="2"></rect><path d="M8 10V8a4 4 0 0 1 8 0v2"></path></svg>
+                                            <input class="signup-input has-toggle" id="signup-password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required aria-describedby="signup-password-hint signup-password-rules signup-password-error signup-caps-hint">
+                                            <button class="signup-password-toggle" id="signup-password-toggle" type="button" aria-label="Show password" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 12s3.4-6 9-6 9 6 9 6-3.4 6-9 6-9-6-9-6Z"></path><circle cx="12" cy="12" r="2.5"></circle></svg></button>
+                                        </div>
+                                        <p class="signup-hint" id="signup-password-hint">Current backend password policy: 8–128 characters, at least one letter and one number.</p>
+                                        <div class="signup-password-meter" aria-hidden="true">
+                                            <div class="signup-password-meter-head"><span>Password requirements</span><strong id="signup-password-strength">Not entered</strong></div>
+                                            <div class="signup-password-bars" id="signup-password-bars" data-level="0"><span></span><span></span><span></span></div>
+                                        </div>
+                                        <ul class="signup-password-rules" id="signup-password-rules"><li id="signup-rule-length">8–128 characters</li><li id="signup-rule-letter">At least one letter</li><li id="signup-rule-number">At least one number</li></ul>
+                                        <span class="signup-caps" id="signup-caps-hint" hidden>Caps Lock is on</span>
+                                        <p class="signup-error-text" id="signup-password-error" hidden></p>
+                                    </div>
+
+                                    <div class="signup-field" id="signup-confirm-field">
+                                        <div class="signup-field-top"><label class="signup-label" for="signup-confirm-password">Confirm Password</label><span class="signup-required">Required</span></div>
+                                        <div class="signup-input-wrap">
+                                            <svg class="signup-input-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12 10 17 19 8"></path></svg>
+                                            <input class="signup-input has-toggle" id="signup-confirm-password" name="confirm_password" type="password" autocomplete="new-password" maxlength="128" required aria-describedby="signup-confirm-hint signup-confirm-error signup-confirm-success">
+                                            <button class="signup-password-toggle" id="signup-confirm-toggle" type="button" aria-label="Show confirmed password" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 12s3.4-6 9-6 9 6 9 6-3.4 6-9 6-9-6-9-6Z"></path><circle cx="12" cy="12" r="2.5"></circle></svg></button>
+                                        </div>
+                                        <p class="signup-hint" id="signup-confirm-hint">Password characters are compared exactly and are not trimmed.</p>
+                                        <p class="signup-success-text" id="signup-confirm-success" hidden>Passwords match.</p>
+                                        <p class="signup-error-text" id="signup-confirm-error" hidden></p>
+                                    </div>
+                                </div>
+                            </fieldset>
+
+                            <fieldset class="signup-section">
+                                <legend><span class="signup-section-title"><span class="signup-section-number">2</span>Contact Details</span><span class="signup-section-copy">The current backend allows phone to be completed later; adding it now makes checkout faster.</span></legend>
+                                <div class="signup-fields">
+                                    <div class="signup-field">
+                                        <div class="signup-field-top"><label class="signup-label" for="signup-phone">Phone Number</label><span class="signup-optional">Optional now</span></div>
+                                        <div class="signup-input-wrap">
+                                            <svg class="signup-input-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M7 3h3l1.3 4-2 1.5a15 15 0 0 0 6.2 6.2l1.5-2L21 14v3c0 2-1.5 4-4 4C9.3 21 3 14.7 3 7c0-2.5 2-4 4-4Z"></path></svg>
+                                            <input class="signup-input" id="signup-phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="22" aria-describedby="signup-phone-hint signup-phone-error">
+                                        </div>
+                                        <p class="signup-hint" id="signup-phone-hint">Used as fulfilment contact when you place an order.</p>
+                                        <p class="signup-error-text" id="signup-phone-error" hidden></p>
+                                    </div>
+                                </div>
+                            </fieldset>
+
+                            <fieldset class="signup-section">
+                                <legend><span class="signup-section-title"><span class="signup-section-number">3</span>Delivery Information</span><span class="signup-section-copy">These profile defaults are optional at signup and checkout validates the real fulfilment address again.</span></legend>
+                                <div class="signup-fields two">
+                                    <div class="signup-field">
+                                        <div class="signup-field-top"><label class="signup-label" for="signup-city">City</label><span class="signup-optional">Optional now</span></div>
+                                        <div class="signup-input-wrap">
+                                            <svg class="signup-input-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M4 20V8l5-3v15M9 20V4l7 3v13M16 20v-8l4-2v10"></path></svg>
+                                            <input class="signup-input" id="signup-city" name="city" type="text" autocomplete="address-level2" list="signup-city-list" maxlength="100" aria-describedby="signup-city-hint signup-city-error">
+                                            <datalist id="signup-city-list"></datalist>
+                                        </div>
+                                        <p class="signup-hint" id="signup-city-hint">Real outlet data may provide suggestions. Manual entry always works.</p>
+                                        <p class="signup-error-text" id="signup-city-error" hidden></p>
+                                    </div>
+
+                                    <div class="signup-field">
+                                        <div class="signup-field-top"><label class="signup-label" for="signup-area">Area</label><span class="signup-optional">Optional now</span></div>
+                                        <div class="signup-input-wrap">
+                                            <svg class="signup-input-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 21s7-5.1 7-11a7 7 0 1 0-14 0c0 5.9 7 11 7 11Z"></path><circle cx="12" cy="10" r="2.2"></circle></svg>
+                                            <input class="signup-input" id="signup-area" name="area" type="text" autocomplete="address-level3" list="signup-area-list" maxlength="120" aria-describedby="signup-area-hint signup-area-error">
+                                            <datalist id="signup-area-list"></datalist>
+                                        </div>
+                                        <p class="signup-hint" id="signup-area-hint">Enter the area you normally use for delivery.</p>
+                                        <p class="signup-error-text" id="signup-area-error" hidden></p>
+                                    </div>
+
+                                    <div class="signup-field full">
+                                        <div class="signup-field-top"><label class="signup-label" for="signup-address">Delivery Address</label><span class="signup-optional">Optional now</span></div>
+                                        <textarea class="signup-textarea" id="signup-address" name="address" autocomplete="street-address" maxlength="400" rows="3" aria-describedby="signup-address-hint signup-address-error"></textarea>
+                                        <p class="signup-hint" id="signup-address-hint">Saved as a profile default. It does not permanently lock your future delivery location.</p>
+                                        <p class="signup-error-text" id="signup-address-error" hidden></p>
+                                    </div>
+                                </div>
+
+                                <div class="signup-location-panel">
+                                    <div class="signup-location-copy"><strong>Optional browser location</strong><p>Permission is requested only when you press the button. It does not reverse-geocode or replace your address.</p></div>
+                                    <div class="signup-location-actions">
+                                        <button class="signup-location-button" id="signup-location-button" type="button"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path><circle cx="12" cy="12" r="8"></circle></svg><span id="signup-location-label">Use My Current Location</span></button>
+                                        <button class="signup-location-button" id="signup-location-clear" type="button" hidden>Clear Location</button>
+                                    </div>
+                                    <p class="signup-location-status" id="signup-location-status" role="status" aria-live="polite">Manual address entry is always available.</p>
+                                </div>
+                                <input id="signup-latitude" name="latitude" type="hidden">
+                                <input id="signup-longitude" name="longitude" type="hidden">
+                            </fieldset>
+
+                            <fieldset class="signup-section">
+                                <legend><span class="signup-section-title"><span class="signup-section-number">4</span>Preferences</span><span class="signup-section-copy">Promotional consent is separate from transactional order confirmations and status updates.</span></legend>
+                                <div class="signup-fields">
+                                    <div class="signup-consent">
+                                        <input id="signup-marketing" name="marketing_notifications_enabled" type="checkbox" value="true">
+                                        <label for="signup-marketing">I would like to receive offers and promotions.<small>Optional and unchecked by default. This does not control transactional order communication.</small></label>
+                                    </div>
+                                </div>
+                            </fieldset>
+
+                            <div class="signup-submit-row">
+                                <p class="signup-legal">By creating or continuing with an account, you agree to the <a href="{{ url_for('terms_page') }}">Terms &amp; Conditions</a> and acknowledge the <a href="{{ url_for('privacy_page') }}">Privacy Policy</a>. The current backend does not store a separate public legal-consent checkbox.</p>
+                                <button class="signup-submit" id="signup-submit" type="submit"><span class="signup-spinner" id="signup-submit-spinner" hidden aria-hidden="true"></span><span id="signup-submit-label">Create Account</span></button>
+                                <p class="signup-existing">Already have an account? <a href="{{ url_for('login_page') }}">Sign In</a></p>
+                            </div>
+                        </form>
+                    </div>
+
+                    <section class="signup-success-state" id="signup-success-state" hidden aria-labelledby="signup-success-title">
+                        <span class="signup-success-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16v12H4z"></path><path d="m5 7 7 6 7-6"></path><path d="m16 16 2 2 4-4"></path></svg></span>
+                        <h2 id="signup-success-title">Account created</h2>
+                        <p id="signup-success-copy">Your customer profile is ready.</p>
+                        <div class="signup-success-email" id="signup-success-email" hidden></div>
+                        <div class="signup-success-actions">
+                            <a class="btn btn-primary" id="signup-success-continue" href="{{ url_for('profile_page') }}">Continue</a>
+                            <button class="signup-resend" id="signup-resend" type="button" hidden>Resend Verification Email</button>
+                            <a class="btn btn-outline" href="{{ url_for('menu_page') }}">Browse Menu</a>
+                        </div>
+                        <p class="signup-success-note" id="signup-success-note">Final order placement requires a verified email under the current checkout backend rule.</p>
+                    </section>
+                </div>
+            </section>
+        </div>
+    </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+    import { initializeApp, getApp, getApps } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
+    import {
+        getAuth,
+        inMemoryPersistence,
+        setPersistence,
+        createUserWithEmailAndPassword,
+        GoogleAuthProvider,
+        FacebookAuthProvider,
+        signInWithPopup,
+        signOut,
+        sendEmailVerification,
+        updateProfile
+    } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
+
+    const root = document.getElementById("signup-root");
+
+    if (root) {
+        const GEOLOCATION_TIMEOUT_MS = 12000;
+        const RESEND_COOLDOWN_SECONDS = 60;
+
+        const elements = {
+            formState: document.getElementById("signup-form-state"),
+            form: document.getElementById("signup-form"),
+            fullName: document.getElementById("signup-full-name"),
+            email: document.getElementById("signup-email"),
+            password: document.getElementById("signup-password"),
+            confirmPassword: document.getElementById("signup-confirm-password"),
+            passwordField: document.getElementById("signup-password-field"),
+            confirmField: document.getElementById("signup-confirm-field"),
+            phone: document.getElementById("signup-phone"),
+            city: document.getElementById("signup-city"),
+            area: document.getElementById("signup-area"),
+            address: document.getElementById("signup-address"),
+            marketing: document.getElementById("signup-marketing"),
+            latitude: document.getElementById("signup-latitude"),
+            longitude: document.getElementById("signup-longitude"),
+            submit: document.getElementById("signup-submit"),
+            submitLabel: document.getElementById("signup-submit-label"),
+            submitSpinner: document.getElementById("signup-submit-spinner"),
+            passwordToggle: document.getElementById("signup-password-toggle"),
+            confirmToggle: document.getElementById("signup-confirm-toggle"),
+            passwordStrength: document.getElementById("signup-password-strength"),
+            passwordBars: document.getElementById("signup-password-bars"),
+            ruleLength: document.getElementById("signup-rule-length"),
+            ruleLetter: document.getElementById("signup-rule-letter"),
+            ruleNumber: document.getElementById("signup-rule-number"),
+            confirmSuccess: document.getElementById("signup-confirm-success"),
+            capsHint: document.getElementById("signup-caps-hint"),
+            google: document.getElementById("signup-google"),
+            facebook: document.getElementById("signup-facebook"),
+            socialSection: document.getElementById("signup-social-section"),
+            socialMode: document.getElementById("signup-social-mode"),
+            socialAvatar: document.getElementById("signup-social-avatar"),
+            socialTitle: document.getElementById("signup-social-title"),
+            socialCopy: document.getElementById("signup-social-copy"),
+            socialExit: document.getElementById("signup-social-exit"),
+            topError: document.getElementById("signup-error"),
+            topErrorTitle: document.getElementById("signup-error-title"),
+            topErrorMessage: document.getElementById("signup-error-message"),
+            topErrorAction: document.getElementById("signup-error-action"),
+            configNote: document.getElementById("signup-config-note"),
+            offlineNote: document.getElementById("signup-offline-note"),
+            locationButton: document.getElementById("signup-location-button"),
+            locationLabel: document.getElementById("signup-location-label"),
+            locationClear: document.getElementById("signup-location-clear"),
+            locationStatus: document.getElementById("signup-location-status"),
+            cityList: document.getElementById("signup-city-list"),
+            areaList: document.getElementById("signup-area-list"),
+            progressBar: document.getElementById("signup-progress-bar"),
+            progressValue: document.getElementById("signup-progress-value"),
+            successState: document.getElementById("signup-success-state"),
+            successTitle: document.getElementById("signup-success-title"),
+            successCopy: document.getElementById("signup-success-copy"),
+            successEmail: document.getElementById("signup-success-email"),
+            successContinue: document.getElementById("signup-success-continue"),
+            successNote: document.getElementById("signup-success-note"),
+            resend: document.getElementById("signup-resend"),
+            live: document.getElementById("signup-live")
+        };
+
+        const endpoints = {
+            signup: root.dataset.signupUrl || "/signup",
+            session: root.dataset.sessionUrl || "",
+            profileApi: root.dataset.profileApiUrl || "",
+            profileGet: root.dataset.profileGetUrl || "",
+            verification: root.dataset.verificationUrl || "",
+            logout: root.dataset.logoutUrl || "/api/auth/logout",
+            profilePage: root.dataset.profilePageUrl || "/profile",
+            login: root.dataset.loginUrl || "/login",
+            menu: root.dataset.menuUrl || "/menu",
+            checkout: root.dataset.checkoutUrl || "/checkout",
+            locations: root.dataset.locationsUrl || "/api/locations"
+        };
+
+        const state = {
+            auth: null,
+            firebaseReady: false,
+            firebaseConfig: {},
+            providerConfig: {},
+            busy: false,
+            busySource: "",
+            mode: "email",
+            emailIdentityCreated: false,
+            socialUser: null,
+            sessionUser: null,
+            latitude: null,
+            longitude: null,
+            locationState: "not-requested",
+            areasByCity: new Map(),
+            allAreas: new Set(),
+            resendTimer: null,
+            resendRemaining: 0
+        };
+
+        const fieldInputs = {
+            full_name: elements.fullName,
+            email: elements.email,
+            password: elements.password,
+            confirm_password: elements.confirmPassword,
+            phone: elements.phone,
+            city: elements.city,
+            area: elements.area,
+            address: elements.address
+        };
+
+        const fieldErrors = {
+            full_name: document.getElementById("signup-full-name-error"),
+            email: document.getElementById("signup-email-error"),
+            password: document.getElementById("signup-password-error"),
+            confirm_password: document.getElementById("signup-confirm-error"),
+            phone: document.getElementById("signup-phone-error"),
+            city: document.getElementById("signup-city-error"),
+            area: document.getElementById("signup-area-error"),
+            address: document.getElementById("signup-address-error")
+        };
+
+        function parseJsonElement(id) {
+            const node = document.getElementById(id);
+            if (!node) return {};
+            try {
+                const parsed = JSON.parse(node.textContent || "{}");
+                return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+            } catch (error) {
+                return {};
+            }
+        }
+
+        function publicFirebaseConfig() {
+            const rendered = parseJsonElement("signup-firebase-config");
+            const globalConfig = window.restaurantFirebaseConfig && typeof window.restaurantFirebaseConfig === "object"
+                ? window.restaurantFirebaseConfig
+                : (window.firebaseWebConfig && typeof window.firebaseWebConfig === "object" ? window.firebaseWebConfig : {});
+            return { ...globalConfig, ...rendered };
+        }
+
+        function authProviderConfig() {
+            const rendered = parseJsonElement("signup-provider-config");
+            const globalConfig = window.restaurantAuthProviders && typeof window.restaurantAuthProviders === "object"
+                ? window.restaurantAuthProviders
+                : {};
+            return { ...globalConfig, ...rendered };
+        }
+
+        function providerEnabled(config, provider) {
+            if (!config || typeof config !== "object") return false;
+            const keys = provider === "google"
+                ? ["google_enabled", "googleEnabled", "google"]
+                : ["facebook_enabled", "facebookEnabled", "facebook"];
+            return keys.some((key) => config[key] === true);
+        }
+
+        function usableFirebaseConfig(config) {
+            return Boolean(
+                config &&
+                typeof config.apiKey === "string" && config.apiKey.trim() &&
+                typeof config.authDomain === "string" && config.authDomain.trim()
+            );
+        }
+
+        function toast(message, type = "info") {
+            if (window.AppUI && typeof window.AppUI.showToast === "function") {
+                window.AppUI.showToast(message, type);
+                return;
+            }
+            if (typeof window.showToast === "function") window.showToast(message, type);
+        }
+
+        function announce(message) {
+            if (window.AppUI && typeof window.AppUI.announce === "function") window.AppUI.announce(message);
+            if (!elements.live) return;
+            elements.live.textContent = "";
+            window.setTimeout(() => { elements.live.textContent = String(message || ""); }, 30);
+        }
+
+        function normalizeText(value) { return String(value || "").trim(); }
+
+        function setOfflineState() {
+            const offline = navigator.onLine === false;
+            if (elements.offlineNote) elements.offlineNote.hidden = !offline;
+            return offline;
+        }
+
+        function clearTopError() {
+            if (elements.topError) elements.topError.hidden = true;
+            if (elements.topErrorAction) elements.topErrorAction.hidden = true;
+        }
+
+        function showTopError(message, options = {}) {
+            if (elements.topErrorTitle) elements.topErrorTitle.textContent = options.title || "We couldn't create your account";
+            if (elements.topErrorMessage) elements.topErrorMessage.textContent = String(message || "Please try again.");
+            if (elements.topErrorAction) elements.topErrorAction.hidden = options.showLogin !== true;
+            if (elements.topError) {
+                elements.topError.hidden = false;
+                if (options.focus !== false) requestAnimationFrame(() => elements.topError.focus({ preventScroll: false }));
+            }
+            announce(message);
+        }
+
+        function clearFieldError(field) {
+            const input = fieldInputs[field];
+            const error = fieldErrors[field];
+            if (input) input.removeAttribute("aria-invalid");
+            if (error) { error.textContent = ""; error.hidden = true; }
+        }
+
+        function clearFieldErrors() { Object.keys(fieldInputs).forEach(clearFieldError); }
+
+        function showFieldError(field, message) {
+            const input = fieldInputs[field];
+            const error = fieldErrors[field];
+            if (input) input.setAttribute("aria-invalid", "true");
+            if (error) { error.textContent = String(message || "Please review this field."); error.hidden = false; }
+        }
+
+        function safeJson(response) { return response.json().catch(() => null); }
+
+        async function secureFetch(url, options = {}) {
+            if (window.AppUI && typeof window.AppUI.csrfFetch === "function") return window.AppUI.csrfFetch(url, options);
+            const headers = new Headers(options.headers || {});
+            const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+            const token = csrfMeta ? csrfMeta.getAttribute("content") || "" : "";
+            if (token) headers.set("X-CSRFToken", token);
+            return fetch(url, { ...options, credentials: "same-origin", headers });
+        }
+
+        function profilePayload() {
+            const payload = {
+                full_name: normalizeText(elements.fullName ? elements.fullName.value : ""),
+                phone: normalizeText(elements.phone ? elements.phone.value : ""),
+                city: normalizeText(elements.city ? elements.city.value : ""),
+                area: normalizeText(elements.area ? elements.area.value : ""),
+                address: normalizeText(elements.address ? elements.address.value : ""),
+                marketing_notifications_enabled: Boolean(elements.marketing && elements.marketing.checked)
+            };
+            if (Number.isFinite(state.latitude) && Number.isFinite(state.longitude)) {
+                payload.latitude = state.latitude;
+                payload.longitude = state.longitude;
+            }
+            return payload;
+        }
+
+        function passwordRules(value) {
+            const password = String(value || "");
+            return {
+                length: password.length >= 8 && password.length <= 128,
+                letter: /[A-Za-z]/.test(password),
+                number: /[0-9]/.test(password)
+            };
+        }
+
+        function updatePasswordUi() {
+            if (!elements.password) return;
+            const value = elements.password.value;
+            const rules = passwordRules(value);
+            const level = Object.values(rules).filter(Boolean).length;
+            if (elements.ruleLength) elements.ruleLength.classList.toggle("is-met", rules.length);
+            if (elements.ruleLetter) elements.ruleLetter.classList.toggle("is-met", rules.letter);
+            if (elements.ruleNumber) elements.ruleNumber.classList.toggle("is-met", rules.number);
+            if (elements.passwordBars) elements.passwordBars.dataset.level = String(value ? level : 0);
+            if (elements.passwordStrength) {
+                elements.passwordStrength.textContent = !value ? "Not entered" : (level === 3 ? "Requirements met" : (level === 2 ? "Almost there" : "Needs work"));
+            }
+            updateConfirmUi();
+            updateProgress();
+        }
+
+        function updateConfirmUi() {
+            if (!elements.password || !elements.confirmPassword || state.mode === "social-profile") return;
+            const matches = elements.confirmPassword.value.length > 0 && elements.password.value === elements.confirmPassword.value;
+            if (elements.confirmSuccess) elements.confirmSuccess.hidden = !matches;
+            if (matches) clearFieldError("confirm_password");
+            updateProgress();
+        }
+
+        function updateProgress() {
+            const checks = [
+                Boolean(normalizeText(elements.fullName ? elements.fullName.value : "")),
+                Boolean(normalizeText(elements.email ? elements.email.value : ""))
+            ];
+            if (state.mode !== "social-profile") {
+                const p = elements.password ? elements.password.value : "";
+                const c = elements.confirmPassword ? elements.confirmPassword.value : "";
+                const rules = passwordRules(p);
+                checks.push(rules.length && rules.letter && rules.number, Boolean(c && c === p));
+            }
+            checks.push(
+                Boolean(normalizeText(elements.phone ? elements.phone.value : "")),
+                Boolean(normalizeText(elements.city ? elements.city.value : "")),
+                Boolean(normalizeText(elements.area ? elements.area.value : "")),
+                Boolean(normalizeText(elements.address ? elements.address.value : ""))
+            );
+            const percent = checks.length ? Math.round((checks.filter(Boolean).length / checks.length) * 100) : 0;
+            if (elements.progressBar) elements.progressBar.style.width = `${percent}%`;
+            if (elements.progressValue) elements.progressValue.textContent = `${percent}%`;
+        }
+
+        function validateProfile() {
+            clearFieldErrors();
+            clearTopError();
+            const errors = [];
+            const fullName = normalizeText(elements.fullName ? elements.fullName.value : "");
+            const phone = normalizeText(elements.phone ? elements.phone.value : "");
+            const city = normalizeText(elements.city ? elements.city.value : "");
+            const area = normalizeText(elements.area ? elements.area.value : "");
+            const address = normalizeText(elements.address ? elements.address.value : "");
+
+            if (!fullName) errors.push(["full_name", "Full name is required."]);
+            else if (fullName.length < 2 || fullName.length > 120) errors.push(["full_name", "Full name must contain 2 to 120 characters."]);
+            if (phone && !/^\+?[0-9][0-9\-\s()]{6,20}$/.test(phone)) errors.push(["phone", "Enter a valid phone number."]);
+            if (city.length > 100) errors.push(["city", "City must be 100 characters or fewer."]);
+            if (area.length > 120) errors.push(["area", "Area must be 120 characters or fewer."]);
+            if (address.length > 400) errors.push(["address", "Address must be 400 characters or fewer."]);
+            if (state.latitude !== null && (!Number.isFinite(state.latitude) || state.latitude < -90 || state.latitude > 90)) errors.push(["address", "Saved latitude is invalid. Clear location and try again."]);
+            if (state.longitude !== null && (!Number.isFinite(state.longitude) || state.longitude < -180 || state.longitude > 180)) errors.push(["address", "Saved longitude is invalid. Clear location and try again."]);
+
+            errors.forEach(([field, message]) => showFieldError(field, message));
+            return errors;
+        }
+
+        function validateEmailSignup() {
+            const errors = validateProfile();
+            const email = normalizeText(elements.email ? elements.email.value : "").toLowerCase();
+            const password = elements.password ? elements.password.value : "";
+            const confirm = elements.confirmPassword ? elements.confirmPassword.value : "";
+            const rules = passwordRules(password);
+
+            if (!email) { errors.push(["email", "Email address is required."]); showFieldError("email", "Email address is required."); }
+            else if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { errors.push(["email", "Enter a valid email address."]); showFieldError("email", "Enter a valid email address."); }
+            if (!password) { errors.push(["password", "Password is required."]); showFieldError("password", "Password is required."); }
+            else if (!(rules.length && rules.letter && rules.number)) { errors.push(["password", "Use 8–128 characters with at least one letter and one number."]); showFieldError("password", "Use 8–128 characters with at least one letter and one number."); }
+            if (!confirm) { errors.push(["confirm_password", "Confirm your password."]); showFieldError("confirm_password", "Confirm your password."); }
+            else if (confirm !== password) { errors.push(["confirm_password", "Passwords do not match."]); showFieldError("confirm_password", "Passwords do not match."); }
+            return errors;
+        }
+
+        function focusFirstError(errors) {
+            if (!errors.length) return;
+            showTopError(errors.length === 1 ? errors[0][1] : "Please review the highlighted fields before continuing.", { title: "Please review your details", focus: false });
+            const input = fieldInputs[errors[0][0]];
+            if (input) requestAnimationFrame(() => input.focus({ preventScroll: false }));
+        }
+
+        function updateProviderButton(button, provider, idle) {
+            if (!button) return;
+            const label = button.querySelector("[data-provider-label]");
+            if (!label) return;
+            label.textContent = state.busy && state.busySource === provider
+                ? (provider === "google" ? "Connecting to Google..." : "Connecting to Facebook...")
+                : idle;
+        }
+
+        function setBusy(source, busy) {
+            state.busy = busy;
+            state.busySource = busy ? source : "";
+            if (elements.form) elements.form.setAttribute("aria-busy", busy ? "true" : "false");
+            [elements.submit, elements.google, elements.facebook, elements.socialExit, elements.locationButton, elements.locationClear].forEach((control) => {
+                if (control && !control.hidden) control.disabled = busy || !state.firebaseReady;
+            });
+            [elements.fullName, elements.email, elements.password, elements.confirmPassword, elements.phone, elements.city, elements.area, elements.address, elements.marketing].forEach((control) => {
+                if (!control) return;
+                if (control === elements.email && state.mode === "social-profile") { control.disabled = false; return; }
+                control.disabled = busy || !state.firebaseReady;
+            });
+            if (elements.submitSpinner) elements.submitSpinner.hidden = !busy;
+            if (elements.submitLabel) {
+                if (busy) elements.submitLabel.textContent = state.mode === "social-profile" ? "Saving Profile..." : (state.emailIdentityCreated ? "Completing Setup..." : "Creating Account...");
+                else elements.submitLabel.textContent = state.mode === "social-profile" ? "Save & Continue" : (state.emailIdentityCreated ? "Retry Secure Setup" : "Create Account");
+            }
+            updateProviderButton(elements.google, "google", "Continue with Google");
+            updateProviderButton(elements.facebook, "facebook", "Continue with Facebook");
+        }
+
+        function firebaseErrorMessage(error) {
+            const code = String(error && error.code ? error.code : "");
+            const map = {
+                "auth/email-already-in-use": ["Account already exists", "An account already exists for this email. Sign in instead.", true],
+                "auth/invalid-email": ["Invalid email address", "Enter a valid email address.", false, "email"],
+                "auth/weak-password": ["Password does not meet the policy", "Choose a password that meets the current Firebase password policy.", false, "password"],
+                "auth/too-many-requests": ["Too many attempts", "Please wait before trying account creation again."],
+                "auth/network-request-failed": ["Connection problem", "We couldn't complete your registration right now. Check your connection and try again."],
+                "auth/popup-blocked": ["Sign-in window blocked", "Your browser blocked the provider window. Allow popups and try again."],
+                "auth/account-exists-with-different-credential": ["Different sign-in method required", "This email is already connected to a different sign-in method.", true],
+                "auth/credential-already-in-use": ["Different sign-in method required", "This email is already connected to a different sign-in method.", true],
+                "auth/operation-not-allowed": ["Sign-up method unavailable", "This authentication method is not currently enabled."],
+                "auth/unauthorized-domain": ["Account creation unavailable", "This website domain is not authorized for this Firebase authentication method."]
+            };
+            if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") return { title: "Provider sign-in cancelled", message: "The provider sign-in window was closed.", quiet: true };
+            const entry = map[code];
+            if (!entry) return { title: "We couldn't create your account", message: "Please try again. If the problem continues, contact support." };
+            return { title: entry[0], message: entry[1], showLogin: entry[2] === true, field: entry[3] || "" };
+        }
+
+        function backendMessage(code, fallback) {
+            const map = {
+                ACCOUNT_DISABLED: "This account is currently unavailable. Please contact support.",
+                AUTH_PROVIDER_NOT_ALLOWED: "This authentication method is not allowed for this account.",
+                AUTH_TOKEN_REQUIRED: "Your Firebase sign-in could not be verified. Please try again.",
+                AUTH_TOKEN_EXPIRED: "Your authentication token expired. Please try again.",
+                AUTH_TOKEN_REVOKED: "Your authentication session was revoked. Please sign in again.",
+                INVALID_AUTH_TOKEN: "Your authentication could not be verified. Please try again.",
+                AUTH_VERIFICATION_FAILED: "Authentication could not be verified right now. Please try again.",
+                FIREBASE_UNAVAILABLE: "Account creation is temporarily unavailable. Please try again later.",
+                CUSTOMER_ONLY: "This public signup flow is available only for customer accounts.",
+                VALIDATION_ERROR: fallback || "Please review your profile details."
+            };
+            return map[code] || fallback || "We couldn't complete secure account setup. Please try again.";
+        }
+
+        async function exchangeSession(user) {
+            const idToken = await user.getIdToken(true);
+            const response = await secureFetch(endpoints.session, {
+                method: "POST",
+                headers: { Accept: "application/json", "Content-Type": "application/json" },
+                body: JSON.stringify({ id_token: idToken })
+            });
+            const payload = await safeJson(response);
+            if (!response.ok || !payload || payload.success !== true) {
+                const code = payload && payload.error ? String(payload.error.code || "") : "";
+                let message = payload && payload.error ? String(payload.error.message || "") : "";
+                if (response.status === 429) message = "Too many attempts. Please wait and try again.";
+                if (response.status >= 500) message = "Account setup is temporarily unavailable. Please try again later.";
+                const error = new Error(backendMessage(code, message));
+                error.name = "BackendSessionError";
+                error.backendCode = code;
+                error.httpStatus = response.status;
+                throw error;
+            }
+            state.sessionUser = payload.data && payload.data.user ? payload.data.user : null;
+            return payload.data || {};
+        }
+
+        async function saveProfile() {
+            const response = await secureFetch(endpoints.profileApi, {
+                method: "POST",
+                headers: { Accept: "application/json", "Content-Type": "application/json" },
+                body: JSON.stringify(profilePayload())
+            });
+            const payload = await safeJson(response);
+            if (!response.ok || !payload || payload.success !== true) {
+                const code = payload && payload.error ? String(payload.error.code || "") : "";
+                const message = payload && payload.error ? String(payload.error.message || "") : "";
+                const error = new Error(response.status === 429 ? "Too many profile updates. Please wait and try again." : backendMessage(code, message));
+                error.name = "BackendProfileError";
+                error.backendCode = code;
+                error.details = payload && payload.error ? payload.error.details || {} : {};
+                throw error;
+            }
+            return payload.data || {};
+        }
+
+        async function getProfile() {
+            const response = await fetch(endpoints.profileGet, { method: "GET", credentials: "same-origin", headers: { Accept: "application/json" } });
+            const payload = await safeJson(response);
+            if (!response.ok || !payload || payload.success !== true) return null;
+            return payload.data || null;
+        }
+
+        function profileLooksComplete(profile) {
+            if (!profile || typeof profile !== "object") return false;
+            return Boolean(
+                normalizeText(profile.full_name) &&
+                normalizeText(profile.phone) &&
+                normalizeText(profile.city) &&
+                normalizeText(profile.area) &&
+                normalizeText(profile.address)
+            );
+        }
+
+        function prefillProfile(profile, user) {
+            const source = profile && typeof profile === "object" ? profile : {};
+            if (elements.fullName && !elements.fullName.value) elements.fullName.value = normalizeText(source.full_name || (user ? user.displayName : ""));
+            if (elements.email) elements.email.value = normalizeText(source.email || (user ? user.email : ""));
+            if (elements.phone && !elements.phone.value) elements.phone.value = normalizeText(source.phone);
+            if (elements.city && !elements.city.value) elements.city.value = normalizeText(source.city);
+            if (elements.area && !elements.area.value) elements.area.value = normalizeText(source.area);
+            if (elements.address && !elements.address.value) elements.address.value = normalizeText(source.address);
+            if (elements.marketing && source.marketing_notifications_enabled === true) elements.marketing.checked = true;
+            const lat = Number(source.latitude);
+            const lon = Number(source.longitude);
+            if (Number.isFinite(lat) && Number.isFinite(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) setCoordinates(lat, lon, false);
+            updateProgress();
+        }
+
+        async function requestServerVerification() {
+            const response = await secureFetch(endpoints.verification, {
+                method: "POST",
+                headers: { Accept: "application/json", "Content-Type": "application/json" },
+                body: JSON.stringify({})
+            });
+            const payload = await safeJson(response);
+            if (!response.ok || !payload || payload.success !== true) {
+                const error = new Error(response.status === 429 ? "Please wait before requesting another verification email." : "Verification email could not be requested right now.");
+                error.httpStatus = response.status;
+                throw error;
+            }
+            return payload.data || {};
+        }
+
+        async function deliverVerification(user) {
+            let serverResult = null;
+            try {
+                serverResult = await requestServerVerification();
+                if (serverResult.delivered === true) return { delivered: true, method: "server" };
+            } catch (error) {
+                if (error.httpStatus === 429) throw error;
+            }
+
+            if (user && user.emailVerified === false) {
+                try {
+                    await sendEmailVerification(user);
+                    return { delivered: true, method: "firebase-client" };
+                } catch (error) {
+                    return { delivered: false, method: "none" };
+                }
+            }
+            return { delivered: false, method: "none" };
+        }
+
+        function safeDestination() {
+            const params = new URLSearchParams(window.location.search);
+            const requested = params.get("next") || params.get("return_to") || "";
+            const allowed = new Set([endpoints.checkout, endpoints.profilePage, endpoints.menu]);
+            if (requested) {
+                try {
+                    const url = new URL(requested, window.location.origin);
+                    if (url.origin === window.location.origin && allowed.has(url.pathname)) return url.pathname;
+                } catch (error) {
+                    /* Ignore malformed or external return paths. */
+                }
+            }
+            return endpoints.profilePage;
+        }
+
+        function showSuccess(options = {}) {
+            const verificationRequired = options.verificationRequired === true;
+            const verificationDelivered = options.verificationDelivered === true;
+            const email = normalizeText(options.email);
+            if (elements.formState) elements.formState.hidden = true;
+            if (elements.socialMode) elements.socialMode.hidden = true;
+            clearTopError();
+            if (elements.successState) elements.successState.hidden = false;
+            if (elements.successTitle) elements.successTitle.textContent = verificationRequired ? "Verify your email" : "Account ready";
+            if (elements.successCopy) {
+                elements.successCopy.textContent = verificationRequired
+                    ? (verificationDelivered
+                        ? "Your customer profile is ready. Check your inbox and verify your email before final order placement."
+                        : "Your customer profile is ready, but we could not confirm that a verification email was sent. You can retry below.")
+                    : "Your customer account and trusted Flask session are ready.";
+            }
+            if (elements.successEmail) {
+                elements.successEmail.hidden = !email;
+                elements.successEmail.textContent = email;
+            }
+            const destination = safeDestination();
+            if (elements.successContinue) {
+                elements.successContinue.href = destination;
+                elements.successContinue.textContent = destination === endpoints.checkout ? "Continue to Checkout" : "Continue to Account";
+            }
+            if (elements.resend) {
+                elements.resend.hidden = !verificationRequired;
+                elements.resend.disabled = false;
+            }
+            if (elements.successNote) {
+                elements.successNote.textContent = verificationRequired
+                    ? "Under the current backend, final order placement requires a verified email."
+                    : "Trusted roles and protected access remain controlled server-side.";
+            }
+            announce(verificationRequired ? "Account created. Email verification is required before final order placement." : "Account created successfully.");
+        }
+
+        function sessionIsCustomer() {
+            return !state.sessionUser || String(state.sessionUser.role || "customer") === "customer";
+        }
+
+        async function finishEmailRegistration(user) {
+            await exchangeSession(user);
+
+            if (!sessionIsCustomer()) {
+                window.location.assign(endpoints.login);
+                return;
+            }
+
+            await saveProfile();
+            const verified = Boolean(state.sessionUser && state.sessionUser.email_verified === true);
+            if (verified) {
+                showSuccess({ verificationRequired: false, email: user.email || "" });
+                return;
+            }
+
+            let verification = { delivered: false };
+            try {
+                verification = await deliverVerification(user);
+            } catch (error) {
+                if (error && error.httpStatus === 429) {
+                    toast(error.message, "warning");
+                }
+            }
+
+            showSuccess({ verificationRequired: true, verificationDelivered: verification.delivered, email: user.email || "" });
+        }
+
+        async function handleEmailSignup(event) {
+            event.preventDefault();
+            if (state.busy || !state.firebaseReady || !state.auth) return;
+            if (state.mode === "social-profile") {
+                await handleSocialProfileSubmit();
+                return;
+            }
+            clearTopError();
+            if (setOfflineState()) {
+                showTopError("We couldn't complete registration while you're offline.", { title: "Connection problem" });
+                return;
+            }
+            const errors = validateEmailSignup();
+            if (errors.length) {
+                focusFirstError(errors);
+                return;
+            }
+
+            const email = normalizeText(elements.email.value).toLowerCase();
+            const password = elements.password.value;
+            const fullName = normalizeText(elements.fullName.value);
+            setBusy("email", true);
+
+            try {
+                let user = state.auth.currentUser;
+                if (!state.emailIdentityCreated) {
+                    const credential = await createUserWithEmailAndPassword(state.auth, email, password);
+                    user = credential.user;
+                    state.emailIdentityCreated = true;
+                    if (fullName) {
+                        try { await updateProfile(user, { displayName: fullName }); }
+                        catch (error) { /* Firestore profile remains application profile authority. */ }
+                    }
+                } else if (!user || normalizeText(user.email).toLowerCase() !== email) {
+                    const error = new Error("Your Firebase identity may already have been created, but this browser no longer has that authenticated state. Sign in with the account you just created to continue safely.");
+                    error.name = "PartialRegistrationState";
+                    throw error;
+                }
+                await finishEmailRegistration(user);
+            } catch (error) {
+                if (error && ["BackendSessionError", "BackendProfileError", "PartialRegistrationState"].includes(error.name)) {
+                    const details = error.details || {};
+                    if (details.field && fieldInputs[details.field]) showFieldError(details.field, error.message);
+                    showTopError(error.message, {
+                        title: state.emailIdentityCreated ? "Your account may already exist" : "Secure account setup could not be completed",
+                        showLogin: state.emailIdentityCreated
+                    });
+                } else {
+                    const mapped = firebaseErrorMessage(error);
+                    if (mapped.field) showFieldError(mapped.field, mapped.message);
+                    if (mapped.quiet) announce(mapped.message);
+                    else showTopError(mapped.message, { title: mapped.title, showLogin: mapped.showLogin === true });
+                }
+            } finally {
+                setBusy("", false);
+            }
+        }
+
+        function providerObject(provider) {
+            return provider === "google" ? new GoogleAuthProvider() : new FacebookAuthProvider();
+        }
+
+        async function enterSocialProfileMode(provider, user, profile) {
+            state.mode = "social-profile";
+            state.socialUser = user;
+            if (elements.socialSection) elements.socialSection.hidden = true;
+            if (elements.socialMode) elements.socialMode.hidden = false;
+            if (elements.passwordField) elements.passwordField.hidden = true;
+            if (elements.confirmField) elements.confirmField.hidden = true;
+            if (elements.password) elements.password.required = false;
+            if (elements.confirmPassword) elements.confirmPassword.required = false;
+            if (elements.email) elements.email.readOnly = true;
+            const label = provider === "google" ? "Google" : "Facebook";
+            if (elements.socialAvatar) elements.socialAvatar.textContent = label.charAt(0);
+            if (elements.socialTitle) elements.socialTitle.textContent = `${label} account connected`;
+            if (elements.socialCopy) elements.socialCopy.textContent = "Complete or confirm your customer profile. No provider password is requested or stored here.";
+            prefillProfile(profile, user);
+            setBusy("", false);
+            updateProgress();
+            if (elements.fullName && !normalizeText(elements.fullName.value)) elements.fullName.focus({ preventScroll: false });
+        }
+
+        async function handleSocialLogin(provider) {
+            if (state.busy || !state.firebaseReady || !state.auth) return;
+            clearTopError();
+            if (setOfflineState()) {
+                showTopError("We couldn't connect to the provider while you're offline.", { title: "Connection problem" });
+                return;
+            }
+            setBusy(provider, true);
+            try {
+                const credential = await signInWithPopup(state.auth, providerObject(provider));
+                const user = credential.user;
+                await exchangeSession(user);
+
+                if (!sessionIsCustomer()) {
+                    window.location.assign(endpoints.login);
+                    return;
+                }
+
+                const profile = await getProfile();
+                const verified = Boolean(state.sessionUser && state.sessionUser.email_verified === true);
+
+                if (profileLooksComplete(profile)) {
+                    if (!verified) {
+                        let verification = { delivered: false };
+                        try {
+                            verification = await deliverVerification(user);
+                        } catch (error) {
+                            if (error && error.httpStatus === 429) toast(error.message, "warning");
+                        }
+                        showSuccess({ verificationRequired: true, verificationDelivered: verification.delivered, email: user.email || "" });
+                    } else {
+                        toast("Signed in successfully.", "success");
+                        window.location.assign(safeDestination());
+                    }
+                    return;
+                }
+
+                await enterSocialProfileMode(provider, user, profile);
+            } catch (error) {
+                if (error && error.name === "BackendSessionError") {
+                    await signOutClientQuietly();
+                    showTopError(error.message, { title: error.backendCode === "ACCOUNT_DISABLED" ? "Account unavailable" : "Secure session could not be created" });
+                } else {
+                    const mapped = firebaseErrorMessage(error);
+                    if (mapped.quiet) announce(mapped.message);
+                    else showTopError(mapped.message, { title: mapped.title, showLogin: mapped.showLogin === true });
+                }
+            } finally {
+                if (state.mode !== "social-profile") setBusy("", false);
+            }
+        }
+
+        async function handleSocialProfileSubmit() {
+            if (state.busy || state.mode !== "social-profile") return;
+            clearTopError();
+            if (setOfflineState()) {
+                showTopError("Reconnect before saving your customer profile.", { title: "Connection problem" });
+                return;
+            }
+            const errors = validateProfile();
+            if (errors.length) {
+                focusFirstError(errors);
+                return;
+            }
+            setBusy("social-profile", true);
+            try {
+                await saveProfile();
+                const verified = Boolean(state.sessionUser && state.sessionUser.email_verified === true);
+                if (!verified && state.socialUser) {
+                    let verification = { delivered: false };
+                    try {
+                        verification = await deliverVerification(state.socialUser);
+                    } catch (error) {
+                        if (error && error.httpStatus === 429) toast(error.message, "warning");
+                    }
+                    showSuccess({ verificationRequired: true, verificationDelivered: verification.delivered, email: state.socialUser.email || "" });
+                } else {
+                    toast("Customer profile saved.", "success");
+                    window.location.assign(safeDestination());
+                }
+            } catch (error) {
+                const details = error && error.details ? error.details : {};
+                if (details.field && fieldInputs[details.field]) showFieldError(details.field, error.message);
+                showTopError(error && error.message ? error.message : "We couldn't complete your customer profile. Please try again.", { title: "Profile setup could not be completed" });
+            } finally {
+                setBusy("", false);
+            }
+        }
+
+        async function signOutClientQuietly() {
+            if (!state.auth) return;
+            try { await signOut(state.auth); }
+            catch (error) { /* Flask session remains authoritative. */ }
+        }
+
+        async function exitSocialMode() {
+            if (state.busy) return;
+            setBusy("social-exit", true);
+            try {
+                if (endpoints.logout) {
+                    try {
+                        await secureFetch(endpoints.logout, {
+                            method: "POST",
+                            headers: { Accept: "application/json", "Content-Type": "application/json" },
+                            body: JSON.stringify({})
+                        });
+                    } catch (error) {
+                        /* Continue client sign-out even if the logout request fails. */
+                    }
+                }
+                await signOutClientQuietly();
+            } finally {
+                window.location.assign(endpoints.signup);
+            }
+        }
+
+        function initializePasswordToggle(button, input, label) {
+            if (!button || !input) return;
+            button.addEventListener("click", () => {
+                const visible = input.type === "text";
+                input.type = visible ? "password" : "text";
+                button.setAttribute("aria-pressed", visible ? "false" : "true");
+                button.setAttribute("aria-label", visible ? `Show ${label}` : `Hide ${label}`);
+                input.focus({ preventScroll: true });
+            });
+        }
+
+        function initializeCapsLock() {
+            if (!elements.password || !elements.capsHint) return;
+            const update = (event) => {
+                const active = typeof event.getModifierState === "function" && event.getModifierState("CapsLock");
+                elements.capsHint.hidden = !active;
+            };
+            elements.password.addEventListener("keydown", update);
+            elements.password.addEventListener("keyup", update);
+            elements.password.addEventListener("blur", () => { elements.capsHint.hidden = true; });
+        }
+
+        function updateLocationStatus(message = "") {
+            if (!elements.locationStatus) return;
+            elements.locationStatus.classList.remove("is-success", "is-warning");
+            if (state.locationState === "detecting") elements.locationStatus.textContent = "Detecting your location…";
+            else if (state.locationState === "detected") { elements.locationStatus.textContent = "Location detected. Coordinates will be saved only as optional profile data."; elements.locationStatus.classList.add("is-success"); }
+            else if (state.locationState === "denied") { elements.locationStatus.textContent = message || "Location permission was not granted. Continue with your address manually."; elements.locationStatus.classList.add("is-warning"); }
+            else if (state.locationState === "unavailable") { elements.locationStatus.textContent = message || "Current location is unavailable. Manual address entry remains available."; elements.locationStatus.classList.add("is-warning"); }
+            else elements.locationStatus.textContent = "Manual address entry is always available.";
+        }
+
+        function setCoordinates(latitude, longitude, shouldAnnounce = true) {
+            state.latitude = Number(latitude);
+            state.longitude = Number(longitude);
+            state.locationState = "detected";
+            if (elements.latitude) elements.latitude.value = Number.isFinite(state.latitude) ? String(state.latitude) : "";
+            if (elements.longitude) elements.longitude.value = Number.isFinite(state.longitude) ? String(state.longitude) : "";
+            if (elements.locationClear) elements.locationClear.hidden = !(Number.isFinite(state.latitude) && Number.isFinite(state.longitude));
+            updateLocationStatus();
+            if (shouldAnnounce) announce("Location detected. Your manual address can still be edited.");
+        }
+
+        function clearLocation() {
+            state.latitude = null;
+            state.longitude = null;
+            state.locationState = "not-requested";
+            if (elements.latitude) elements.latitude.value = "";
+            if (elements.longitude) elements.longitude.value = "";
+            if (elements.locationClear) elements.locationClear.hidden = true;
+            if (elements.locationLabel) elements.locationLabel.textContent = "Use My Current Location";
+            updateLocationStatus();
+            announce("Saved browser location cleared.");
+        }
+
+        function requestLocation() {
+            if (state.busy || state.locationState === "detecting") return;
+            if (!navigator.geolocation) {
+                state.locationState = "unavailable";
+                updateLocationStatus("This browser does not provide geolocation. Continue with manual address entry.");
+                announce("Browser location is unavailable. Manual address entry remains available.");
+                return;
+            }
+            state.locationState = "detecting";
+            updateLocationStatus();
+            if (elements.locationButton) elements.locationButton.disabled = true;
+            if (elements.locationLabel) elements.locationLabel.textContent = "Detecting Location...";
+
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    if (elements.locationButton) elements.locationButton.disabled = false;
+                    if (elements.locationLabel) elements.locationLabel.textContent = "Update Current Location";
+                    setCoordinates(position.coords.latitude, position.coords.longitude, true);
+                },
+                (error) => {
+                    if (elements.locationButton) elements.locationButton.disabled = false;
+                    if (elements.locationLabel) elements.locationLabel.textContent = "Use My Current Location";
+                    if (error && error.code === error.PERMISSION_DENIED) {
+                        state.locationState = "denied";
+                        updateLocationStatus("We couldn't access your location. You can continue with your address manually.");
+                    } else if (error && error.code === error.TIMEOUT) {
+                        state.locationState = "unavailable";
+                        updateLocationStatus("Location detection timed out. You can continue manually or try again.");
+                    } else {
+                        state.locationState = "unavailable";
+                        updateLocationStatus("Your location could not be detected right now. Manual address entry remains available.");
+                    }
+                    announce(elements.locationStatus ? elements.locationStatus.textContent : "Location could not be detected.");
+                },
+                { enableHighAccuracy: false, timeout: GEOLOCATION_TIMEOUT_MS, maximumAge: 120000 }
+            );
+        }
+
+        function fillDatalist(node, values) {
+            if (!node) return;
+            node.replaceChildren();
+            Array.from(values).filter(Boolean).sort((a, b) => a.localeCompare(b)).forEach((value) => {
+                const option = document.createElement("option");
+                option.value = value;
+                node.appendChild(option);
+            });
+        }
+
+        function refreshAreaSuggestions() {
+            const city = normalizeText(elements.city ? elements.city.value : "").toLowerCase();
+            const matches = state.areasByCity.get(city);
+            fillDatalist(elements.areaList, matches && matches.size ? matches : state.allAreas);
+        }
+
+        async function loadLocationSuggestions() {
+            if (!endpoints.locations) return;
+            try {
+                const response = await fetch(endpoints.locations, { method: "GET", credentials: "same-origin", headers: { Accept: "application/json" } });
+                const payload = await safeJson(response);
+                if (!response.ok || !payload || payload.success !== true) return;
+                const locations = payload.data && Array.isArray(payload.data.locations) ? payload.data.locations : [];
+                const cities = new Set();
+                locations.forEach((location) => {
+                    if (!location || typeof location !== "object") return;
+                    const city = normalizeText(location.city);
+                    const area = normalizeText(location.area);
+                    if (city) cities.add(city);
+                    if (area) state.allAreas.add(area);
+                    if (city && area) {
+                        const key = city.toLowerCase();
+                        if (!state.areasByCity.has(key)) state.areasByCity.set(key, new Set());
+                        state.areasByCity.get(key).add(area);
+                    }
+                });
+                fillDatalist(elements.cityList, cities);
+                refreshAreaSuggestions();
+            } catch (error) {
+                /* Optional suggestions only; manual fields remain functional. */
+            }
+        }
+
+        function configureProviders() {
+            const google = providerEnabled(state.providerConfig, "google");
+            const facebook = providerEnabled(state.providerConfig, "facebook");
+            if (elements.google) elements.google.hidden = !google;
+            if (elements.facebook) elements.facebook.hidden = !facebook;
+            if (elements.socialSection) elements.socialSection.hidden = !(google || facebook);
+        }
+
+        async function initializeFirebase() {
+            state.firebaseConfig = publicFirebaseConfig();
+            state.providerConfig = authProviderConfig();
+            configureProviders();
+
+            if (!usableFirebaseConfig(state.firebaseConfig)) {
+                state.firebaseReady = false;
+                if (elements.configNote) elements.configNote.hidden = false;
+                setBusy("", false);
+                return;
+            }
+
+            try {
+                const app = getApps().length ? getApp() : initializeApp(state.firebaseConfig);
+                state.auth = getAuth(app);
+                await setPersistence(state.auth, inMemoryPersistence);
+                state.firebaseReady = true;
+                if (elements.configNote) elements.configNote.hidden = true;
+                setBusy("", false);
+            } catch (error) {
+                state.firebaseReady = false;
+                if (elements.configNote) elements.configNote.hidden = false;
+                setBusy("", false);
+            }
+        }
+
+        function startResendCooldown() {
+            window.clearInterval(state.resendTimer);
+            state.resendRemaining = RESEND_COOLDOWN_SECONDS;
+            if (elements.resend) {
+                elements.resend.disabled = true;
+                elements.resend.textContent = `Resend available in ${state.resendRemaining}s`;
+            }
+            state.resendTimer = window.setInterval(() => {
+                state.resendRemaining -= 1;
+                if (!elements.resend) { window.clearInterval(state.resendTimer); return; }
+                if (state.resendRemaining <= 0) {
+                    window.clearInterval(state.resendTimer);
+                    state.resendTimer = null;
+                    elements.resend.disabled = false;
+                    elements.resend.textContent = "Resend Verification Email";
+                    return;
+                }
+                elements.resend.textContent = `Resend available in ${state.resendRemaining}s`;
+            }, 1000);
+        }
+
+        async function resendVerification() {
+            if (state.busy || !state.auth || !state.auth.currentUser) return;
+            if (setOfflineState()) {
+                toast("Reconnect before requesting another verification email.", "warning");
+                return;
+            }
+            if (elements.resend) { elements.resend.disabled = true; elements.resend.textContent = "Requesting..."; }
+            try {
+                const result = await deliverVerification(state.auth.currentUser);
+                if (result.delivered) {
+                    toast("Verification email requested. Check your inbox.", "success");
+                    announce("Verification email requested.");
+                    startResendCooldown();
+                } else {
+                    toast("We could not confirm that a verification email was sent. Please try again later.", "warning");
+                    if (elements.resend) { elements.resend.disabled = false; elements.resend.textContent = "Resend Verification Email"; }
+                }
+            } catch (error) {
+                toast(error && error.message ? error.message : "Verification email could not be requested right now.", "warning");
+                if (elements.resend) { elements.resend.disabled = false; elements.resend.textContent = "Resend Verification Email"; }
+            }
+        }
+
+        function initializeFields() {
+            Object.entries(fieldInputs).forEach(([field, input]) => {
+                if (!input) return;
+                input.addEventListener("input", () => {
+                    clearFieldError(field);
+                    clearTopError();
+                    updateProgress();
+                });
+            });
+            if (elements.password) elements.password.addEventListener("input", updatePasswordUi);
+            if (elements.confirmPassword) elements.confirmPassword.addEventListener("input", updateConfirmUi);
+            if (elements.city) elements.city.addEventListener("input", refreshAreaSuggestions);
+            if (elements.marketing) elements.marketing.addEventListener("change", updateProgress);
+        }
+
+        function initializeSignupPage() {
+            initializePasswordToggle(elements.passwordToggle, elements.password, "password");
+            initializePasswordToggle(elements.confirmToggle, elements.confirmPassword, "confirmed password");
+            initializeCapsLock();
+            initializeFields();
+            setOfflineState();
+            updatePasswordUi();
+            updateProgress();
+            loadLocationSuggestions();
+
+            if (elements.form) elements.form.addEventListener("submit", handleEmailSignup);
+            if (elements.google) elements.google.addEventListener("click", () => handleSocialLogin("google"));
+            if (elements.facebook) elements.facebook.addEventListener("click", () => handleSocialLogin("facebook"));
+            if (elements.socialExit) elements.socialExit.addEventListener("click", exitSocialMode);
+
+            if (elements.locationButton) {
+                if (!navigator.geolocation) {
+                    elements.locationButton.hidden = true;
+                    state.locationState = "unavailable";
+                    updateLocationStatus("This browser does not provide geolocation. Continue with manual address entry.");
+                } else {
+                    elements.locationButton.addEventListener("click", requestLocation);
+                }
+            }
+            if (elements.locationClear) elements.locationClear.addEventListener("click", clearLocation);
+            if (elements.resend) elements.resend.addEventListener("click", resendVerification);
+
+            window.addEventListener("offline", setOfflineState);
+            window.addEventListener("online", () => {
+                setOfflineState();
+                toast("You're back online. You can continue account setup.", "info");
+            });
+            window.addEventListener("beforeunload", () => {
+                if (state.resendTimer) window.clearInterval(state.resendTimer);
+            });
+
+            initializeFirebase();
+        }
+
+        initializeSignupPage();
+    }
+</script>
+
+<script>
+(function () {
+    "use strict";
+
+    /* =====================================================================
+       SIGNUP CINEMATIC UX ENHANCEMENT
+       ---------------------------------------------------------------------
+       This script is deliberately presentation-only.
+       It never changes Firebase identity, request payloads, endpoints,
+       validation rules, hidden coordinates, session state, or form values.
+       ===================================================================== */
+
+    const root = document.getElementById("signup-root");
+    if (!root) return;
+
+    const doc = document.documentElement;
+    const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const coarsePointerQuery = window.matchMedia("(pointer: coarse)");
+
+    let reduceMotion = reducedMotionQuery.matches;
+    let coarsePointer = coarsePointerQuery.matches;
+
+    const state = {
+        raf: 0,
+        pageX: window.innerWidth * 0.72,
+        pageY: 80,
+        lastScrollY: window.scrollY || 0,
+        activeCard: null,
+        cardFrame: 0,
+        sectionFrame: 0,
+        ready: false
+    };
+
+    function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+    }
+
+    function toFixed(value, precision) {
+        return Number(value).toFixed(precision == null ? 2 : precision);
+    }
+
+    function setStyleVar(element, name, value) {
+        if (!element) return;
+        element.style.setProperty(name, value);
+    }
+
+    function safeRect(element) {
+        try {
+            return element.getBoundingClientRect();
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function viewportPoint(event) {
+        const point = event && event.touches && event.touches[0]
+            ? event.touches[0]
+            : event;
+
+        return {
+            x: Number(point && point.clientX) || 0,
+            y: Number(point && point.clientY) || 0
+        };
+    }
+
+    function pointerPercent(element, clientX, clientY) {
+        const rect = safeRect(element);
+        if (!rect || !rect.width || !rect.height) {
+            return { x: 50, y: 50 };
+        }
+
+        return {
+            x: clamp(((clientX - rect.left) / rect.width) * 100, 0, 100),
+            y: clamp(((clientY - rect.top) / rect.height) * 100, 0, 100)
+        };
+    }
+
+    function pointerTilt(element, clientX, clientY, maxX, maxY) {
+        const rect = safeRect(element);
+        if (!rect || !rect.width || !rect.height) {
+            return { x: 0, y: 0 };
+        }
+
+        const px = clamp((clientX - rect.left) / rect.width, 0, 1);
+        const py = clamp((clientY - rect.top) / rect.height, 0, 1);
+
+        return {
+            x: (0.5 - py) * (maxX * 2),
+            y: (px - 0.5) * (maxY * 2)
+        };
+    }
+
+    function schedulePagePaint() {
+        if (state.raf) return;
+
+        state.raf = window.requestAnimationFrame(function () {
+            state.raf = 0;
+
+            const viewportWidth = Math.max(window.innerWidth, 1);
+            const viewportHeight = Math.max(window.innerHeight, 1);
+
+            const xPercent = clamp((state.pageX / viewportWidth) * 100, 0, 100);
+            const yPercent = clamp((state.pageY / viewportHeight) * 100, 0, 100);
+
+            setStyleVar(root, "--lux-pointer-x", toFixed(xPercent, 2) + "%");
+            setStyleVar(root, "--lux-pointer-y", toFixed(yPercent, 2) + "%");
+            setStyleVar(root, "--lux-page-scroll", toFixed(state.lastScrollY, 1) + "px");
+        });
+    }
+
+    function handlePagePointer(event) {
+        if (reduceMotion) return;
+
+        const point = viewportPoint(event);
+        state.pageX = point.x;
+        state.pageY = point.y;
+        schedulePagePaint();
+    }
+
+    function handlePageScroll() {
+        state.lastScrollY = window.scrollY || 0;
+        schedulePagePaint();
+        updateScrollProgress();
+    }
+
+    function createScrollProgress() {
+        const existing = document.querySelector(".signup-lux-scroll-progress");
+        if (existing) return existing;
+
+        const bar = document.createElement("div");
+        bar.className = "signup-lux-scroll-progress";
+        bar.setAttribute("aria-hidden", "true");
+        document.body.appendChild(bar);
+        return bar;
+    }
+
+    const scrollProgress = createScrollProgress();
+
+    function updateScrollProgress() {
+        if (!scrollProgress) return;
+
+        const pageHeight = Math.max(
+            document.documentElement.scrollHeight,
+            document.body ? document.body.scrollHeight : 0
+        );
+
+        const maxScroll = Math.max(pageHeight - window.innerHeight, 1);
+        const progress = clamp((window.scrollY || 0) / maxScroll, 0, 1);
+        scrollProgress.style.width = toFixed(progress * 100, 3) + "%";
+    }
+
+    function resetCardTilt(card) {
+        if (!card) return;
+
+        setStyleVar(card, "--signup-card-rx", "0deg");
+        setStyleVar(card, "--signup-card-ry", "0deg");
+    }
+
+    function bindMainCardTilt() {
+        const card = root.querySelector(".signup-card");
+        if (!card) return;
+
+        card.addEventListener("pointermove", function (event) {
+            if (reduceMotion || coarsePointer) return;
+
+            const point = viewportPoint(event);
+            const percent = pointerPercent(card, point.x, point.y);
+            const tilt = pointerTilt(card, point.x, point.y, 1.15, 1.65);
+
+            setStyleVar(card, "--signup-card-x", toFixed(percent.x, 2) + "%");
+            setStyleVar(card, "--signup-card-y", toFixed(percent.y, 2) + "%");
+            setStyleVar(card, "--signup-card-rx", toFixed(tilt.x, 2) + "deg");
+            setStyleVar(card, "--signup-card-ry", toFixed(tilt.y, 2) + "deg");
+        });
+
+        card.addEventListener("pointerleave", function () {
+            resetCardTilt(card);
+        });
+
+        card.addEventListener("pointercancel", function () {
+            resetCardTilt(card);
+        });
+    }
+
+    function resetSmallTilt(element, kind) {
+        if (!element) return;
+
+        if (kind === "section") {
+            setStyleVar(element, "--signup-section-rx", "0deg");
+            setStyleVar(element, "--signup-section-ry", "0deg");
+        } else {
+            setStyleVar(element, "--signup-tilt-x", "0deg");
+            setStyleVar(element, "--signup-tilt-y", "0deg");
+        }
+    }
+
+    function bindSmallTilt(element, kind) {
+        if (!element) return;
+
+        element.addEventListener("pointermove", function (event) {
+            if (reduceMotion || coarsePointer) return;
+
+            const point = viewportPoint(event);
+            const percent = pointerPercent(element, point.x, point.y);
+            const tilt = pointerTilt(
+                element,
+                point.x,
+                point.y,
+                kind === "section" ? 0.65 : 1.2,
+                kind === "section" ? 0.9 : 1.7
+            );
+
+            if (kind === "section") {
+                setStyleVar(element, "--signup-section-light-x", toFixed(percent.x, 2) + "%");
+                setStyleVar(element, "--signup-section-light-y", toFixed(percent.y, 2) + "%");
+                setStyleVar(element, "--signup-section-rx", toFixed(tilt.x, 2) + "deg");
+                setStyleVar(element, "--signup-section-ry", toFixed(tilt.y, 2) + "deg");
+            } else {
+                setStyleVar(element, "--signup-light-x", toFixed(percent.x, 2) + "%");
+                setStyleVar(element, "--signup-light-y", toFixed(percent.y, 2) + "%");
+                setStyleVar(element, "--signup-tilt-x", toFixed(tilt.x, 2) + "deg");
+                setStyleVar(element, "--signup-tilt-y", toFixed(tilt.y, 2) + "deg");
+            }
+        });
+
+        element.addEventListener("pointerleave", function () {
+            resetSmallTilt(element, kind);
+        });
+
+        element.addEventListener("pointercancel", function () {
+            resetSmallTilt(element, kind);
+        });
+    }
+
+    function bindInteractiveTilts() {
+        root.querySelectorAll(".signup-trust-item").forEach(function (item) {
+            bindSmallTilt(item, "trust");
+        });
+
+        root.querySelectorAll(".signup-section").forEach(function (section) {
+            bindSmallTilt(section, "section");
+        });
+    }
+
+    function bindFieldFocusDepth() {
+        root.querySelectorAll(".signup-field").forEach(function (field) {
+            const control = field.querySelector("input, textarea, select, button");
+            if (!control) return;
+
+            field.addEventListener("focusin", function () {
+                field.classList.add("is-lux-active");
+            });
+
+            field.addEventListener("focusout", function () {
+                window.requestAnimationFrame(function () {
+                    if (!field.contains(document.activeElement)) {
+                        field.classList.remove("is-lux-active");
+                    }
+                });
+            });
+        });
+    }
+
+    function addRipple(event, element) {
+        if (!element || reduceMotion) return;
+
+        const rect = safeRect(element);
+        if (!rect) return;
+
+        const point = viewportPoint(event);
+        const ripple = document.createElement("span");
+
+        ripple.className = "signup-lux-ripple";
+        ripple.style.left = toFixed(point.x - rect.left, 1) + "px";
+        ripple.style.top = toFixed(point.y - rect.top, 1) + "px";
+        ripple.setAttribute("aria-hidden", "true");
+
+        element.appendChild(ripple);
+
+        window.setTimeout(function () {
+            ripple.remove();
+        }, 720);
+    }
+
+    function bindRipples() {
+        const selector = [
+            ".signup-submit",
+            ".signup-social-button",
+            ".signup-location-button",
+            ".signup-resend",
+            ".signup-password-toggle",
+            ".signup-social-exit",
+            ".signup-success-actions .btn"
+        ].join(",");
+
+        root.addEventListener("pointerdown", function (event) {
+            const target = event.target.closest(selector);
+            if (!target || target.disabled) return;
+            addRipple(event, target);
+        });
+    }
+
+    function bindButtonMagnetism() {
+        if (coarsePointer || reduceMotion) return;
+
+        const selector = [
+            ".signup-submit",
+            ".signup-social-button",
+            ".signup-location-button"
+        ].join(",");
+
+        root.querySelectorAll(selector).forEach(function (button) {
+            button.addEventListener("pointermove", function (event) {
+                if (reduceMotion || coarsePointer) return;
+
+                const rect = safeRect(button);
+                if (!rect) return;
+
+                const point = viewportPoint(event);
+                const offsetX = clamp((point.x - (rect.left + rect.width / 2)) / rect.width, -0.5, 0.5);
+                const offsetY = clamp((point.y - (rect.top + rect.height / 2)) / rect.height, -0.5, 0.5);
+
+                setStyleVar(button, "--signup-magnet-x", toFixed(offsetX * 3.5, 2) + "px");
+                setStyleVar(button, "--signup-magnet-y", toFixed(offsetY * 2.5, 2) + "px");
+            });
+
+            button.addEventListener("pointerleave", function () {
+                setStyleVar(button, "--signup-magnet-x", "0px");
+                setStyleVar(button, "--signup-magnet-y", "0px");
+            });
+        });
+    }
+
+    function revealSections() {
+        const sections = Array.from(root.querySelectorAll(".signup-section"));
+        if (!sections.length) return;
+
+        if (reduceMotion || !("IntersectionObserver" in window)) {
+            sections.forEach(function (section) {
+                section.classList.add("is-lux-revealed");
+            });
+            return;
+        }
+
+        sections.forEach(function (section) {
+            section.classList.add("is-lux-pending");
+        });
+
+        const observer = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+                if (!entry.isIntersecting) return;
+
+                entry.target.classList.remove("is-lux-pending");
+                entry.target.classList.add("is-lux-revealed");
+                observer.unobserve(entry.target);
+            });
+        }, {
+            threshold: 0.12,
+            rootMargin: "0px 0px -4% 0px"
+        });
+
+        sections.forEach(function (section, index) {
+            section.style.transitionDelay = Math.min(index * 55, 180) + "ms";
+            observer.observe(section);
+        });
+    }
+
+    function bindProgressPulse() {
+        const progressBar = document.getElementById("signup-progress-bar");
+        const progressValue = document.getElementById("signup-progress-value");
+
+        if (!progressBar || !progressValue || !("MutationObserver" in window)) return;
+
+        const observer = new MutationObserver(function () {
+            progressBar.classList.remove("is-lux-progress-changed");
+            void progressBar.offsetWidth;
+            progressBar.classList.add("is-lux-progress-changed");
+        });
+
+        observer.observe(progressBar, {
+            attributes: true,
+            attributeFilter: ["style"]
+        });
+    }
+
+    function bindSuccessStateObserver() {
+        const success = document.getElementById("signup-success-state");
+        if (!success || !("MutationObserver" in window)) return;
+
+        const observer = new MutationObserver(function () {
+            if (!success.hidden) {
+                success.classList.add("is-lux-success-visible");
+            }
+        });
+
+        observer.observe(success, {
+            attributes: true,
+            attributeFilter: ["hidden"]
+        });
+    }
+
+    function resetAllTransforms() {
+        resetCardTilt(root.querySelector(".signup-card"));
+
+        root.querySelectorAll(".signup-section").forEach(function (section) {
+            resetSmallTilt(section, "section");
+        });
+
+        root.querySelectorAll(".signup-trust-item").forEach(function (item) {
+            resetSmallTilt(item, "trust");
+        });
+    }
+
+    function handleMotionPreference(event) {
+        reduceMotion = event.matches;
+
+        if (reduceMotion) {
+            resetAllTransforms();
+        }
+    }
+
+    function handlePointerPreference(event) {
+        coarsePointer = event.matches;
+
+        if (coarsePointer) {
+            resetAllTransforms();
+        }
+    }
+
+    function handleResize() {
+        schedulePagePaint();
+        updateScrollProgress();
+
+        if (window.innerWidth < 900) {
+            resetAllTransforms();
+        }
+    }
+
+    function markReady() {
+        window.requestAnimationFrame(function () {
+            root.classList.add("is-lux-ready");
+            state.ready = true;
+        });
+    }
+
+    function initialize() {
+        bindMainCardTilt();
+        bindInteractiveTilts();
+        bindFieldFocusDepth();
+        bindRipples();
+        bindButtonMagnetism();
+        revealSections();
+        bindProgressPulse();
+        bindSuccessStateObserver();
+
+        window.addEventListener("pointermove", handlePagePointer, { passive: true });
+        window.addEventListener("scroll", handlePageScroll, { passive: true });
+        window.addEventListener("resize", handleResize, { passive: true });
+
+        if (typeof reducedMotionQuery.addEventListener === "function") {
+            reducedMotionQuery.addEventListener("change", handleMotionPreference);
+        }
+
+        if (typeof coarsePointerQuery.addEventListener === "function") {
+            coarsePointerQuery.addEventListener("change", handlePointerPreference);
+        }
+
+        schedulePagePaint();
+        updateScrollProgress();
+        markReady();
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initialize, { once: true });
+    } else {
+        initialize();
+    }
+}());
+</script>
+
+{% endblock %}

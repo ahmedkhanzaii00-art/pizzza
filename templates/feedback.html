@@ -1,0 +1,3689 @@
+{% extends "base.html" %}
+
+{# =========================================================
+   FEEDBACK PAGE — CURRENT MAIN.PY CONTRACT
+
+   Current /feedback supports:
+   - GET + POST on endpoint feedback_page
+   - POST rate limit: 10/hour
+   - rating: optional integer 1..5
+   - comment: optional plain text, max 2000
+   - at least one of rating/comment must be provided
+   - related_order_id: optional; authenticated user required
+   - related order ownership is checked server-side
+   - customer_uid is derived from trusted Flask session
+   - status/moderation timestamps are server-owned
+   - success JSON:
+       data.feedback_id
+       data.message
+
+   Current backend does NOT store:
+   - category
+   - service type
+   - aspect ratings
+   - recommendation
+   - follow-up consent
+   - anonymity/public-display preference
+   - guest contact details
+   - honeypot/CAPTCHA fields
+
+   Those unsupported controls are deliberately omitted rather than
+   pretending they are persisted.
+========================================================= #}
+
+{% set principal_data = principal|default({}, true) %}
+{% if principal_data is not mapping %}
+    {% set principal_data = {} %}
+{% endif %}
+
+{% set current_role = principal_data.get("role", "")|default("", true) %}
+{% set is_customer = current_role == "customer" %}
+{% set form_state = form_data|default({}, true) %}
+
+{% if form_state is not mapping %}
+    {% set form_state = {} %}
+{% endif %}
+
+{% set initial_rating = form_state.get("rating", "")|string %}
+{% set initial_comment = form_state.get("comment", "")|default("", true) %}
+{% set initial_order_id = form_state.get("related_order_id", "")|default("", true) %}
+
+{% block title %}Share Feedback | {{ business_name|default("Restaurant", true) }}{% endblock %}
+
+{% block meta_description %}Share feedback about your food, delivery, pickup, dine-in or ordering experience with {{ business_name|default("our restaurant", true) }}.{% endblock %}
+
+{% block styles %}
+<style>
+    .feedback-page {
+        --fb-primary: var(--primary-color, #b83222);
+        --fb-primary-hover: var(--primary-color-hover, #98281b);
+        --fb-primary-soft: var(--primary-color-soft, #fff0eb);
+        --fb-primary-contrast: var(--primary-contrast, #fff);
+
+        --fb-bg: var(--background-color, #fffaf4);
+        --fb-bg-soft: var(--background-subtle, #f8f2ea);
+        --fb-surface: var(--surface-color, #fff);
+        --fb-surface-raised: var(--surface-elevated, #fff);
+        --fb-surface-muted: var(--surface-muted, #f5eee5);
+
+        --fb-text: var(--text-color, #201c19);
+        --fb-strong: var(--text-strong, #151210);
+        --fb-muted: var(--muted-text, #6f6760);
+        --fb-subtle: var(--subtle-text, #8c8279);
+
+        --fb-border: var(--border-color, #e7ded4);
+        --fb-border-strong: var(--border-strong, #d3c6b9);
+
+        --fb-success: var(--success-color, #247a4a);
+        --fb-success-soft: var(--success-soft, #eaf7ef);
+        --fb-warning: var(--warning-color, #9a6510);
+        --fb-warning-soft: var(--warning-soft, #fff5dc);
+        --fb-error: var(--error-color, #b42318);
+        --fb-error-soft: var(--error-soft, #fff0ee);
+        --fb-info: var(--info-color, #285ea8);
+        --fb-info-soft: var(--info-soft, #edf4ff);
+
+        --fb-radius-sm: var(--radius-sm, 8px);
+        --fb-radius-md: var(--radius-md, 12px);
+        --fb-radius-lg: var(--radius-lg, 18px);
+        --fb-radius-xl: var(--radius-xl, 26px);
+
+        --fb-shadow-sm:
+            var(
+                --shadow-sm,
+                0 7px 20px rgba(31, 24, 19, .08)
+            );
+
+        --fb-shadow-md:
+            var(
+                --shadow-md,
+                0 18px 42px rgba(31, 24, 19, .12)
+            );
+
+        --fb-transition:
+            var(
+                --transition-fast,
+                160ms ease
+            );
+
+        min-height: 72vh;
+
+        padding:
+            clamp(.9rem, 2.6vw, 1.6rem)
+            0
+            clamp(4rem, 7vw, 5.5rem);
+
+        color: var(--fb-text);
+
+        background:
+            radial-gradient(
+                circle at 0 6%,
+                color-mix(
+                    in srgb,
+                    var(--fb-primary) 5%,
+                    transparent
+                ),
+                transparent 29rem
+            ),
+            radial-gradient(
+                circle at 100% 50%,
+                color-mix(
+                    in srgb,
+                    var(--accent-color, #d99b35) 4%,
+                    transparent
+                ),
+                transparent 24rem
+            );
+    }
+
+    .feedback-page,
+    .feedback-page *,
+    .feedback-page *::before,
+    .feedback-page *::after {
+        box-sizing: border-box;
+    }
+
+    .feedback-page [hidden] {
+        display: none !important;
+    }
+
+    .feedback-page svg {
+        display: block;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+
+    .feedback-shell {
+        width: min(100% - 2rem, 1120px);
+        margin-inline: auto;
+    }
+
+    /* =====================================================
+       BREADCRUMBS
+    ====================================================== */
+
+    .feedback-breadcrumbs {
+        margin-bottom: .8rem;
+    }
+
+    .feedback-breadcrumbs ol {
+        display: flex;
+        align-items: center;
+        gap: .34rem;
+        flex-wrap: wrap;
+
+        margin: 0;
+        padding: 0;
+
+        list-style: none;
+    }
+
+    .feedback-breadcrumbs li {
+        display: inline-flex;
+        align-items: center;
+        gap: .34rem;
+
+        color: var(--fb-muted);
+
+        font-size: .58rem;
+        line-height: 1.35;
+    }
+
+    .feedback-breadcrumbs li:not(:last-child)::after {
+        content: "/";
+        color: var(--fb-subtle);
+    }
+
+    .feedback-breadcrumbs a {
+        color: var(--fb-muted);
+        text-decoration: none;
+    }
+
+    .feedback-breadcrumbs a:hover {
+        color: var(--fb-primary);
+        text-decoration: underline;
+        text-underline-offset: .18em;
+    }
+
+    .feedback-breadcrumbs [aria-current="page"] {
+        color: var(--fb-text);
+        font-weight: 780;
+    }
+
+    /* =====================================================
+       HEADER
+    ====================================================== */
+
+    .feedback-hero {
+        position: relative;
+
+        overflow: hidden;
+
+        margin-bottom: 1rem;
+        padding:
+            clamp(1rem, 3vw, 1.55rem);
+
+        border: 1px solid var(--fb-border);
+        border-radius: var(--fb-radius-xl);
+
+        background:
+            linear-gradient(
+                145deg,
+                color-mix(
+                    in srgb,
+                    var(--fb-primary-soft) 55%,
+                    var(--fb-surface)
+                ),
+                var(--fb-surface)
+            );
+
+        box-shadow: var(--fb-shadow-sm);
+    }
+
+    .feedback-hero::after {
+        content: "";
+
+        position: absolute;
+        top: -48px;
+        right: -44px;
+
+        width: 180px;
+        height: 180px;
+
+        border: 1px solid
+            color-mix(
+                in srgb,
+                var(--fb-primary) 12%,
+                transparent
+            );
+
+        border-radius: 50%;
+
+        pointer-events: none;
+    }
+
+    .feedback-hero__grid {
+        position: relative;
+        z-index: 1;
+
+        display: grid;
+        grid-template-columns:
+            minmax(0, 1fr)
+            auto;
+
+        gap: 1rem;
+        align-items: center;
+    }
+
+    .feedback-eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+
+        margin: 0 0 .4rem;
+
+        color: var(--fb-primary);
+
+        font-size: .62rem;
+        font-weight: 860;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+    }
+
+    .feedback-eyebrow::before {
+        content: "";
+
+        width: 22px;
+        height: 2px;
+
+        border-radius: 999px;
+
+        background: currentColor;
+    }
+
+    .feedback-hero h1 {
+        max-width: 19ch;
+
+        margin: 0;
+
+        color: var(--fb-strong);
+
+        font-size:
+            clamp(
+                1.85rem,
+                4.8vw,
+                3.15rem
+            );
+
+        line-height: 1;
+        letter-spacing: -.048em;
+        text-wrap: balance;
+    }
+
+    .feedback-hero__copy {
+        max-width: 64ch;
+
+        margin: .58rem 0 0;
+
+        color: var(--fb-muted);
+
+        font-size: .76rem;
+        line-height: 1.62;
+    }
+
+    .feedback-hero__icon {
+        width: 72px;
+        height: 72px;
+
+        display: grid;
+        place-items: center;
+
+        border: 1px solid
+            color-mix(
+                in srgb,
+                var(--fb-primary) 16%,
+                var(--fb-border)
+            );
+
+        border-radius: 21px;
+
+        background: var(--fb-surface);
+        color: var(--fb-primary);
+
+        box-shadow: var(--fb-shadow-sm);
+    }
+
+    .feedback-hero__icon svg {
+        width: 1.85rem;
+        height: 1.85rem;
+    }
+
+    /* =====================================================
+       MAIN LAYOUT
+    ====================================================== */
+
+    .feedback-layout {
+        display: grid;
+        grid-template-columns:
+            minmax(250px, .68fr)
+            minmax(0, 1.32fr);
+
+        gap:
+            clamp(.75rem, 2.5vw, 1.15rem);
+
+        align-items: start;
+    }
+
+    .feedback-aside {
+        display: grid;
+        gap: .7rem;
+    }
+
+    .feedback-panel {
+        overflow: hidden;
+
+        border: 1px solid var(--fb-border);
+        border-radius: 15px;
+
+        background: var(--fb-surface);
+
+        box-shadow: var(--fb-shadow-sm);
+    }
+
+    .feedback-panel__head {
+        padding: .76rem .8rem .65rem;
+
+        border-bottom: 1px solid var(--fb-border);
+    }
+
+    .feedback-panel__head h2 {
+        margin: 0;
+
+        color: var(--fb-strong);
+
+        font-size: .75rem;
+        font-weight: 860;
+        line-height: 1.3;
+    }
+
+    .feedback-panel__head p {
+        margin: .2rem 0 0;
+
+        color: var(--fb-muted);
+
+        font-size: .56rem;
+        line-height: 1.45;
+    }
+
+    .feedback-panel__body {
+        padding: .75rem .8rem;
+    }
+
+    /* =====================================================
+       EXPLANATION / HELP
+    ====================================================== */
+
+    .feedback-guide-list {
+        display: grid;
+        gap: .5rem;
+
+        margin: 0;
+        padding: 0;
+
+        list-style: none;
+    }
+
+    .feedback-guide-item {
+        display: grid;
+        grid-template-columns:
+            auto
+            minmax(0, 1fr);
+
+        gap: .5rem;
+        align-items: start;
+    }
+
+    .feedback-guide-item__icon {
+        width: 32px;
+        height: 32px;
+
+        display: grid;
+        place-items: center;
+
+        border-radius: 9px;
+
+        background: var(--fb-primary-soft);
+        color: var(--fb-primary);
+    }
+
+    .feedback-guide-item__icon svg {
+        width: .86rem;
+        height: .86rem;
+    }
+
+    .feedback-guide-item h3 {
+        margin: 0;
+
+        color: var(--fb-strong);
+
+        font-size: .61rem;
+        font-weight: 820;
+        line-height: 1.35;
+    }
+
+    .feedback-guide-item p {
+        margin: .12rem 0 0;
+
+        color: var(--fb-muted);
+
+        font-size: .53rem;
+        line-height: 1.42;
+    }
+
+    .feedback-help-callout {
+        display: grid;
+        grid-template-columns:
+            auto
+            minmax(0, 1fr);
+
+        gap: .5rem;
+
+        padding: .62rem;
+
+        border: 1px solid
+            color-mix(
+                in srgb,
+                var(--fb-warning) 22%,
+                var(--fb-border)
+            );
+
+        border-radius: 11px;
+
+        background: var(--fb-warning-soft);
+        color: var(--fb-warning);
+    }
+
+    .feedback-help-callout > svg {
+        width: .86rem;
+        height: .86rem;
+
+        flex: 0 0 .86rem;
+
+        margin-top: .02rem;
+    }
+
+    .feedback-help-callout strong {
+        display: block;
+
+        font-size: .57rem;
+    }
+
+    .feedback-help-callout p {
+        margin: .12rem 0 0;
+
+        color:
+            color-mix(
+                in srgb,
+                var(--fb-warning) 78%,
+                var(--fb-text)
+            );
+
+        font-size: .53rem;
+        line-height: 1.44;
+    }
+
+    .feedback-help-callout__actions {
+        display: flex;
+        gap: .34rem;
+        flex-wrap: wrap;
+
+        margin-top: .42rem;
+    }
+
+    /* =====================================================
+       QUICK LINKS
+    ====================================================== */
+
+    .feedback-links {
+        display: grid;
+        gap: .38rem;
+    }
+
+    .feedback-link {
+        min-height: 44px;
+
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .55rem;
+
+        padding: .55rem .6rem;
+
+        border: 1px solid var(--fb-border);
+        border-radius: 10px;
+
+        background: var(--fb-bg-soft);
+        color: var(--fb-text);
+
+        font-size: .57rem;
+        font-weight: 780;
+        line-height: 1.3;
+
+        text-decoration: none;
+
+        transition:
+            transform var(--fb-transition),
+            border-color var(--fb-transition),
+            background var(--fb-transition);
+    }
+
+    .feedback-link:hover,
+    .feedback-link:focus-visible {
+        transform: translateY(-1px);
+        border-color: var(--fb-border-strong);
+        background: var(--fb-surface-muted);
+    }
+
+    .feedback-link__main {
+        display: flex;
+        align-items: center;
+        gap: .42rem;
+    }
+
+    .feedback-link__main svg,
+    .feedback-link > svg {
+        width: .76rem;
+        height: .76rem;
+
+        flex: 0 0 .76rem;
+
+        color: var(--fb-primary);
+    }
+
+    /* =====================================================
+       FORM CARD
+    ====================================================== */
+
+    .feedback-form-card {
+        overflow: hidden;
+
+        border: 1px solid var(--fb-border);
+        border-radius: 16px;
+
+        background: var(--fb-surface);
+
+        box-shadow: var(--fb-shadow-md);
+    }
+
+    .feedback-form-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: .8rem;
+
+        padding:
+            clamp(.82rem, 2.4vw, 1rem);
+
+        border-bottom: 1px solid var(--fb-border);
+
+        background:
+            linear-gradient(
+                180deg,
+                var(--fb-surface),
+                color-mix(
+                    in srgb,
+                    var(--fb-bg-soft) 46%,
+                    var(--fb-surface)
+                )
+            );
+    }
+
+    .feedback-form-head h2 {
+        margin: 0;
+
+        color: var(--fb-strong);
+
+        font-size: .86rem;
+        font-weight: 880;
+    }
+
+    .feedback-form-head p {
+        max-width: 58ch;
+
+        margin: .2rem 0 0;
+
+        color: var(--fb-muted);
+
+        font-size: .57rem;
+        line-height: 1.46;
+    }
+
+    .feedback-form-head__badge {
+        flex: 0 0 auto;
+
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+
+        padding: .34rem .44rem;
+
+        border: 1px solid
+            color-mix(
+                in srgb,
+                var(--fb-success) 20%,
+                var(--fb-border)
+            );
+
+        border-radius: 999px;
+
+        background: var(--fb-success-soft);
+        color: var(--fb-success);
+
+        font-size: .49rem;
+        font-weight: 820;
+        white-space: nowrap;
+    }
+
+    .feedback-form-head__badge svg {
+        width: .68rem;
+        height: .68rem;
+    }
+
+    .feedback-form {
+        padding:
+            clamp(.82rem, 2.6vw, 1.05rem);
+    }
+
+    .feedback-form-error {
+        margin: 0 0 .72rem;
+        padding: .62rem .65rem;
+
+        border: 1px solid
+            color-mix(
+                in srgb,
+                var(--fb-error) 28%,
+                var(--fb-border)
+            );
+
+        border-radius: 10px;
+
+        background: var(--fb-error-soft);
+        color: var(--fb-error);
+
+        font-size: .55rem;
+        font-weight: 700;
+        line-height: 1.45;
+    }
+
+    .feedback-form-error:empty {
+        display: none;
+    }
+
+    /* =====================================================
+       RATING
+    ====================================================== */
+
+    .feedback-rating {
+        min-width: 0;
+
+        margin: 0;
+        padding: 0 0 .8rem;
+
+        border: 0;
+        border-bottom: 1px solid var(--fb-border);
+    }
+
+    .feedback-rating legend {
+        width: 100%;
+
+        margin: 0;
+        padding: 0;
+
+        color: var(--fb-strong);
+
+        font-size: .7rem;
+        font-weight: 860;
+        line-height: 1.35;
+    }
+
+    .feedback-rating__help {
+        margin: .22rem 0 0;
+
+        color: var(--fb-muted);
+
+        font-size: .54rem;
+        line-height: 1.45;
+    }
+
+    .feedback-rating__row {
+        display: flex;
+        align-items: center;
+        gap: .36rem;
+        flex-wrap: wrap;
+
+        margin-top: .58rem;
+    }
+
+    .feedback-rating__option {
+        position: relative;
+
+        flex: 0 0 auto;
+    }
+
+    .feedback-rating__input {
+        position: absolute;
+
+        width: 1px;
+        height: 1px;
+
+        overflow: hidden;
+
+        margin: -1px;
+        padding: 0;
+
+        border: 0;
+
+        clip: rect(0 0 0 0);
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
+
+    .feedback-rating__star {
+        width: 48px;
+        height: 48px;
+
+        display: grid;
+        place-items: center;
+
+        border: 1px solid var(--fb-border);
+        border-radius: 12px;
+
+        background: var(--fb-bg-soft);
+        color: var(--fb-subtle);
+
+        cursor: pointer;
+
+        transition:
+            transform var(--fb-transition),
+            border-color var(--fb-transition),
+            background var(--fb-transition),
+            color var(--fb-transition),
+            box-shadow var(--fb-transition);
+    }
+
+    .feedback-rating__star svg {
+        width: 1.2rem;
+        height: 1.2rem;
+
+        fill: transparent;
+    }
+
+    .feedback-rating__star:hover {
+        transform: translateY(-1px);
+        border-color: var(--fb-border-strong);
+    }
+
+    .feedback-rating__star.is-active {
+        border-color:
+            color-mix(
+                in srgb,
+                var(--accent-color, #d99b35) 55%,
+                var(--fb-border)
+            );
+
+        background:
+            color-mix(
+                in srgb,
+                var(--accent-color, #d99b35) 13%,
+                var(--fb-surface)
+            );
+
+        color: var(--accent-color, #d99b35);
+    }
+
+    .feedback-rating__star.is-active svg {
+        fill: currentColor;
+    }
+
+    .feedback-rating__input:focus-visible
+    + .feedback-rating__star {
+        outline:
+            3px solid
+            color-mix(
+                in srgb,
+                var(--fb-primary) 24%,
+                transparent
+            );
+
+        outline-offset: 2px;
+    }
+
+    .feedback-rating__status {
+        min-height: 21px;
+
+        display: flex;
+        align-items: center;
+        gap: .35rem;
+
+        margin-top: .42rem;
+
+        color: var(--fb-muted);
+
+        font-size: .55rem;
+        line-height: 1.4;
+    }
+
+    .feedback-rating__status strong {
+        color: var(--fb-text);
+        font-weight: 820;
+    }
+
+    .feedback-rating__clear {
+        min-height: 31px;
+
+        margin-left: .15rem;
+        padding: .35rem .44rem;
+
+        border: 0;
+        border-radius: 8px;
+
+        background: transparent;
+        color: var(--fb-primary);
+
+        font: inherit;
+        font-size: .51rem;
+        font-weight: 780;
+
+        cursor: pointer;
+    }
+
+    .feedback-rating__clear:hover {
+        background: var(--fb-primary-soft);
+    }
+
+    .feedback-field-error {
+        margin: .28rem 0 0;
+
+        color: var(--fb-error);
+
+        font-size: .51rem;
+        font-weight: 700;
+        line-height: 1.42;
+    }
+
+    .feedback-field-error:empty {
+        display: none;
+    }
+
+    /* =====================================================
+       FORM FIELDS
+    ====================================================== */
+
+    .feedback-fields {
+        display: grid;
+        gap: .68rem;
+
+        margin-top: .78rem;
+    }
+
+    .feedback-field {
+        min-width: 0;
+
+        display: grid;
+        gap: .28rem;
+    }
+
+    .feedback-label {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: .5rem;
+
+        color: var(--fb-text);
+
+        font-size: .58rem;
+        font-weight: 820;
+        line-height: 1.35;
+    }
+
+    .feedback-label__optional {
+        color: var(--fb-subtle);
+
+        font-size: .49rem;
+        font-weight: 680;
+    }
+
+    .feedback-input,
+    .feedback-textarea {
+        width: 100%;
+
+        border: 1px solid var(--fb-border);
+        outline: 0;
+
+        border-radius: 10px;
+
+        background: var(--fb-bg);
+        color: var(--fb-text);
+
+        font: inherit;
+        font-size: .66rem;
+
+        transition:
+            border-color var(--fb-transition),
+            box-shadow var(--fb-transition),
+            background var(--fb-transition);
+    }
+
+    .feedback-input {
+        min-height: 44px;
+
+        padding: .61rem .66rem;
+    }
+
+    .feedback-textarea {
+        min-height: 165px;
+
+        padding: .66rem .68rem;
+
+        line-height: 1.55;
+
+        resize: vertical;
+    }
+
+    .feedback-input:hover,
+    .feedback-textarea:hover {
+        border-color: var(--fb-border-strong);
+    }
+
+    .feedback-input:focus,
+    .feedback-textarea:focus {
+        border-color: var(--fb-primary);
+
+        background: var(--fb-surface);
+
+        box-shadow:
+            0 0 0 4px
+            color-mix(
+                in srgb,
+                var(--fb-primary) 11%,
+                transparent
+            );
+    }
+
+    .feedback-input[aria-invalid="true"],
+    .feedback-textarea[aria-invalid="true"] {
+        border-color: var(--fb-error);
+
+        box-shadow:
+            0 0 0 3px
+            color-mix(
+                in srgb,
+                var(--fb-error) 9%,
+                transparent
+            );
+    }
+
+    .feedback-help {
+        margin: 0;
+
+        color: var(--fb-subtle);
+
+        font-size: .51rem;
+        line-height: 1.42;
+    }
+
+    .feedback-counter-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: .7rem;
+    }
+
+    .feedback-counter {
+        flex: 0 0 auto;
+
+        color: var(--fb-subtle);
+
+        font-size: .5rem;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+
+    .feedback-order-note {
+        display: grid;
+        grid-template-columns:
+            auto
+            minmax(0, 1fr);
+
+        gap: .42rem;
+
+        padding: .58rem .6rem;
+
+        border: 1px solid
+            color-mix(
+                in srgb,
+                var(--fb-info) 20%,
+                var(--fb-border)
+            );
+
+        border-radius: 10px;
+
+        background: var(--fb-info-soft);
+        color: var(--fb-info);
+
+        font-size: .52rem;
+        line-height: 1.44;
+    }
+
+    .feedback-order-note svg {
+        width: .78rem;
+        height: .78rem;
+
+        flex: 0 0 .78rem;
+
+        margin-top: .02rem;
+    }
+
+    .feedback-order-note a {
+        color: currentColor;
+        font-weight: 800;
+        text-decoration: underline;
+        text-underline-offset: .15em;
+    }
+
+    .feedback-sensitive-note {
+        display: grid;
+        grid-template-columns:
+            auto
+            minmax(0, 1fr);
+
+        gap: .45rem;
+
+        padding: .62rem;
+
+        border: 1px solid
+            color-mix(
+                in srgb,
+                var(--fb-warning) 22%,
+                var(--fb-border)
+            );
+
+        border-radius: 10px;
+
+        background: var(--fb-warning-soft);
+        color: var(--fb-warning);
+    }
+
+    .feedback-sensitive-note svg {
+        width: .86rem;
+        height: .86rem;
+
+        flex: 0 0 .86rem;
+
+        margin-top: .02rem;
+    }
+
+    .feedback-sensitive-note strong {
+        display: block;
+
+        font-size: .56rem;
+    }
+
+    .feedback-sensitive-note p {
+        margin: .08rem 0 0;
+
+        color:
+            color-mix(
+                in srgb,
+                var(--fb-warning) 80%,
+                var(--fb-text)
+            );
+
+        font-size: .52rem;
+        line-height: 1.45;
+    }
+
+    /* =====================================================
+       ACTIONS
+    ====================================================== */
+
+    .feedback-form-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .7rem;
+        flex-wrap: wrap;
+
+        margin-top: .8rem;
+        padding-top: .72rem;
+
+        border-top: 1px solid var(--fb-border);
+    }
+
+    .feedback-privacy {
+        max-width: 58ch;
+
+        margin: 0;
+
+        color: var(--fb-subtle);
+
+        font-size: .5rem;
+        line-height: 1.45;
+    }
+
+    .feedback-privacy a {
+        color: var(--fb-primary);
+        text-decoration: underline;
+        text-underline-offset: .15em;
+    }
+
+    .feedback-btn {
+        min-height: 41px;
+
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: .36rem;
+
+        padding: .55rem .7rem;
+
+        border-radius: 9px;
+
+        font: inherit;
+        font-size: .58rem;
+        font-weight: 820;
+        line-height: 1;
+
+        text-decoration: none;
+
+        transition:
+            transform var(--fb-transition),
+            border-color var(--fb-transition),
+            background var(--fb-transition),
+            color var(--fb-transition),
+            opacity var(--fb-transition);
+    }
+
+    button.feedback-btn {
+        cursor: pointer;
+    }
+
+    .feedback-btn svg {
+        width: .8rem;
+        height: .8rem;
+    }
+
+    .feedback-btn--primary {
+        border: 1px solid var(--fb-primary);
+
+        background: var(--fb-primary);
+        color: var(--fb-primary-contrast);
+    }
+
+    .feedback-btn--primary:hover:not(:disabled) {
+        transform: translateY(-1px);
+
+        border-color: var(--fb-primary-hover);
+        background: var(--fb-primary-hover);
+    }
+
+    .feedback-btn--secondary {
+        border: 1px solid var(--fb-border);
+
+        background: var(--fb-bg);
+        color: var(--fb-text);
+    }
+
+    .feedback-btn--secondary:hover:not(:disabled) {
+        transform: translateY(-1px);
+
+        border-color: var(--fb-border-strong);
+        background: var(--fb-surface-muted);
+    }
+
+    .feedback-btn--ghost {
+        border: 1px solid transparent;
+
+        background: transparent;
+        color: var(--fb-primary);
+    }
+
+    .feedback-btn--ghost:hover:not(:disabled) {
+        background: var(--fb-primary-soft);
+    }
+
+    .feedback-btn--compact {
+        min-height: 34px;
+
+        padding: .43rem .52rem;
+
+        font-size: .52rem;
+    }
+
+    .feedback-btn:disabled {
+        cursor: not-allowed;
+        opacity: .56;
+        transform: none !important;
+    }
+
+    .feedback-submit {
+        flex: 0 0 auto;
+    }
+
+    .feedback-spinner {
+        width: .78rem;
+        height: .78rem;
+
+        border: 2px solid
+            color-mix(
+                in srgb,
+                currentColor 30%,
+                transparent
+            );
+
+        border-top-color: currentColor;
+        border-radius: 50%;
+
+        animation:
+            feedback-spin
+            .8s
+            linear
+            infinite;
+    }
+
+    @keyframes feedback-spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    /* =====================================================
+       SUCCESS
+    ====================================================== */
+
+    .feedback-success {
+        padding:
+            clamp(1rem, 3vw, 1.45rem);
+
+        text-align: center;
+    }
+
+    .feedback-success__icon {
+        width: 56px;
+        height: 56px;
+
+        display: grid;
+        place-items: center;
+
+        margin: 0 auto .7rem;
+
+        border-radius: 16px;
+
+        background: var(--fb-success-soft);
+        color: var(--fb-success);
+    }
+
+    .feedback-success__icon svg {
+        width: 1.5rem;
+        height: 1.5rem;
+    }
+
+    .feedback-success h2 {
+        margin: 0;
+
+        color: var(--fb-strong);
+
+        font-size: .95rem;
+        font-weight: 880;
+        line-height: 1.3;
+    }
+
+    .feedback-success__message {
+        max-width: 54ch;
+
+        margin: .3rem auto 0;
+
+        color: var(--fb-muted);
+
+        font-size: .61rem;
+        line-height: 1.5;
+    }
+
+    .feedback-success__reference {
+        width: fit-content;
+
+        display: flex;
+        align-items: center;
+        gap: .44rem;
+
+        margin: .62rem auto 0;
+        padding: .48rem .55rem;
+
+        border: 1px solid var(--fb-border);
+        border-radius: 10px;
+
+        background: var(--fb-bg-soft);
+    }
+
+    .feedback-success__reference span {
+        color: var(--fb-subtle);
+
+        font-size: .49rem;
+        font-weight: 760;
+        text-transform: uppercase;
+    }
+
+    .feedback-success__reference code {
+        color: var(--fb-text);
+
+        font-family:
+            ui-monospace,
+            SFMono-Regular,
+            Menlo,
+            Consolas,
+            monospace;
+
+        font-size: .54rem;
+        font-weight: 760;
+
+        overflow-wrap: anywhere;
+    }
+
+    .feedback-success__support {
+        max-width: 52ch;
+
+        margin: .68rem auto 0;
+        padding: .58rem .62rem;
+
+        border: 1px solid
+            color-mix(
+                in srgb,
+                var(--fb-info) 20%,
+                var(--fb-border)
+            );
+
+        border-radius: 10px;
+
+        background: var(--fb-info-soft);
+        color: var(--fb-info);
+
+        font-size: .53rem;
+        line-height: 1.45;
+    }
+
+    .feedback-success__actions {
+        display: flex;
+        justify-content: center;
+        gap: .42rem;
+        flex-wrap: wrap;
+
+        margin-top: .78rem;
+    }
+
+    /* =====================================================
+       AUTOFILL / FOCUS
+    ====================================================== */
+
+    .feedback-page
+    input:-webkit-autofill,
+    .feedback-page
+    input:-webkit-autofill:hover,
+    .feedback-page
+    input:-webkit-autofill:focus,
+    .feedback-page
+    textarea:-webkit-autofill {
+        -webkit-text-fill-color: var(--fb-text);
+        caret-color: var(--fb-text);
+
+        -webkit-box-shadow:
+            0 0 0 1000px
+            var(--fb-bg)
+            inset;
+
+        transition:
+            background-color
+            99999s
+            ease-in-out
+            0s;
+    }
+
+    .feedback-page a:focus-visible,
+    .feedback-page button:focus-visible,
+    .feedback-page input:focus-visible,
+    .feedback-page textarea:focus-visible {
+        outline:
+            3px solid
+            color-mix(
+                in srgb,
+                var(--fb-primary) 24%,
+                transparent
+            );
+
+        outline-offset: 2px;
+    }
+
+    /* =====================================================
+       RESPONSIVE
+    ====================================================== */
+
+    @media (max-width: 900px) {
+        .feedback-layout {
+            grid-template-columns: 1fr;
+        }
+
+        .feedback-aside {
+            grid-template-columns:
+                repeat(2, minmax(0, 1fr));
+        }
+
+        .feedback-aside
+        .feedback-panel:last-child {
+            grid-column: 1 / -1;
+        }
+    }
+
+    @media (max-width: 680px) {
+        .feedback-shell {
+            width: min(100% - 1.1rem, 760px);
+        }
+
+        .feedback-hero__grid {
+            grid-template-columns: 1fr;
+        }
+
+        .feedback-hero__icon {
+            display: none;
+        }
+
+        .feedback-aside {
+            grid-template-columns: 1fr;
+        }
+
+        .feedback-aside
+        .feedback-panel:last-child {
+            grid-column: auto;
+        }
+
+        .feedback-form-head {
+            flex-direction: column;
+        }
+
+        .feedback-rating__star {
+            width: 46px;
+            height: 46px;
+        }
+
+        .feedback-form-actions {
+            align-items: stretch;
+            flex-direction: column;
+        }
+
+        .feedback-submit {
+            width: 100%;
+        }
+    }
+
+    @media (max-width: 420px) {
+        .feedback-page {
+            padding-top: .72rem;
+        }
+
+        .feedback-shell {
+            width: min(100% - .82rem, 760px);
+        }
+
+        .feedback-hero {
+            border-radius: 18px;
+        }
+
+        .feedback-hero h1 {
+            font-size:
+                clamp(
+                    1.7rem,
+                    10vw,
+                    2.25rem
+                );
+        }
+
+        .feedback-rating__row {
+            gap: .28rem;
+        }
+
+        .feedback-rating__star {
+            width: 44px;
+            height: 44px;
+
+            border-radius: 10px;
+        }
+
+        .feedback-success__actions {
+            flex-direction: column;
+        }
+
+        .feedback-success__actions
+        .feedback-btn {
+            width: 100%;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .feedback-page *,
+        .feedback-page *::before,
+        .feedback-page *::after {
+            scroll-behavior: auto !important;
+            transition-duration: .01ms !important;
+            animation-iteration-count: 1 !important;
+        }
+
+        .feedback-spinner {
+            animation-duration: 1.35s;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div
+    class="feedback-page"
+    id="feedback-page-root"
+    data-feedback-endpoint="{{ url_for('feedback_page') }}"
+>
+    <span
+        class="visually-hidden"
+        id="feedback-live-region"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+    ></span>
+
+    <div class="feedback-shell">
+        <nav
+            class="feedback-breadcrumbs"
+            aria-label="Breadcrumb"
+        >
+            <ol>
+                <li>
+                    <a href="{{ url_for('home_page') }}">
+                        Home
+                    </a>
+                </li>
+
+                <li>
+                    <span aria-current="page">
+                        Feedback
+                    </span>
+                </li>
+            </ol>
+        </nav>
+
+        <header class="feedback-hero">
+            <div class="feedback-hero__grid">
+                <div>
+                    <p class="feedback-eyebrow">
+                        Customer Experience
+                    </p>
+
+                    <h1>
+                        Share Your Feedback
+                    </h1>
+
+                    <p class="feedback-hero__copy">
+                        Your feedback helps us understand your food, service and ordering experience.
+                        Share a rating, a comment, or both.
+                    </p>
+                </div>
+
+                <span
+                    class="feedback-hero__icon"
+                    aria-hidden="true"
+                >
+                    <svg viewBox="0 0 24 24">
+                        <path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"></path>
+                    </svg>
+                </span>
+            </div>
+        </header>
+
+        <div class="feedback-layout">
+            <aside
+                class="feedback-aside"
+                aria-label="Feedback information and help"
+            >
+                <section
+                    class="feedback-panel"
+                    aria-labelledby="feedback-guide-title"
+                >
+                    <header class="feedback-panel__head">
+                        <h2 id="feedback-guide-title">
+                            What This Form Is For
+                        </h2>
+
+                        <p>
+                            General customer-experience feedback and suggestions.
+                        </p>
+                    </header>
+
+                    <div class="feedback-panel__body">
+                        <ul class="feedback-guide-list">
+                            <li class="feedback-guide-item">
+                                <span
+                                    class="feedback-guide-item__icon"
+                                    aria-hidden="true"
+                                >
+                                    <svg viewBox="0 0 24 24">
+                                        <path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"></path>
+                                    </svg>
+                                </span>
+
+                                <div>
+                                    <h3>
+                                        Experience feedback
+                                    </h3>
+
+                                    <p>
+                                        Tell us what worked well or what could be improved.
+                                    </p>
+                                </div>
+                            </li>
+
+                            <li class="feedback-guide-item">
+                                <span
+                                    class="feedback-guide-item__icon"
+                                    aria-hidden="true"
+                                >
+                                    <svg viewBox="0 0 24 24">
+                                        <path d="M4 5h16v12H8l-4 4V5Z"></path>
+                                        <path d="M8 9h8M8 13h5"></path>
+                                    </svg>
+                                </span>
+
+                                <div>
+                                    <h3>
+                                        Suggestions
+                                    </h3>
+
+                                    <p>
+                                        Comments about food, service, delivery, pickup, dine-in or the ordering website are welcome.
+                                    </p>
+                                </div>
+                            </li>
+
+                            <li class="feedback-guide-item">
+                                <span
+                                    class="feedback-guide-item__icon"
+                                    aria-hidden="true"
+                                >
+                                    <svg viewBox="0 0 24 24">
+                                        <path d="M12 3 5 6v5.4c0 4.3 2.8 7.5 7 9.1 4.2-1.6 7-4.8 7-9.1V6l-7-3Z"></path>
+                                        <path d="m9 12 2 2 4-4"></path>
+                                    </svg>
+                                </span>
+
+                                <div>
+                                    <h3>
+                                        Private by default
+                                    </h3>
+
+                                    <p>
+                                        This page does not publish your feedback as a product review or testimonial.
+                                    </p>
+                                </div>
+                            </li>
+                        </ul>
+                    </div>
+                </section>
+
+                <section
+                    class="feedback-panel"
+                    aria-labelledby="feedback-help-title"
+                >
+                    <header class="feedback-panel__head">
+                        <h2 id="feedback-help-title">
+                            Need Help Instead?
+                        </h2>
+
+                        <p>
+                            Feedback is not a real-time support, refund or payment-dispute channel.
+                        </p>
+                    </header>
+
+                    <div class="feedback-panel__body">
+                        <div class="feedback-help-callout">
+                            <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <path d="M12 3 2.8 20h18.4L12 3Z"></path>
+                                <path d="M12 9v5M12 17h.01"></path>
+                            </svg>
+
+                            <div>
+                                <strong>
+                                    Urgent order or payment issue?
+                                </strong>
+
+                                <p>
+                                    Submit your feedback normally if you want to share it, but use Contact or Support when you need customer assistance.
+                                </p>
+
+                                <div class="feedback-help-callout__actions">
+                                    <a
+                                        class="feedback-btn feedback-btn--secondary feedback-btn--compact"
+                                        href="{{ url_for('contact_page') }}"
+                                    >
+                                        Contact Us
+                                    </a>
+
+                                    <a
+                                        class="feedback-btn feedback-btn--secondary feedback-btn--compact"
+                                        href="{{ url_for('support_page') }}"
+                                    >
+                                        Support
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section
+                    class="feedback-panel"
+                    aria-labelledby="feedback-links-title"
+                >
+                    <header class="feedback-panel__head">
+                        <h2 id="feedback-links-title">
+                            Useful Links
+                        </h2>
+                    </header>
+
+                    <div class="feedback-panel__body">
+                        <div class="feedback-links">
+                            {% if is_customer %}
+                                <a
+                                    class="feedback-link"
+                                    href="{{ url_for('orders_page') }}"
+                                >
+                                    <span class="feedback-link__main">
+                                        <svg
+                                            aria-hidden="true"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path d="M5 4h14v16H5z"></path>
+                                            <path d="M8 8h8M8 12h8M8 16h5"></path>
+                                        </svg>
+
+                                        My Orders
+                                    </span>
+
+                                    <svg
+                                        aria-hidden="true"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path d="M5 12h14M14 7l5 5-5 5"></path>
+                                    </svg>
+                                </a>
+                            {% else %}
+                                <a
+                                    class="feedback-link"
+                                    href="{{ url_for('login_page') }}"
+                                >
+                                    <span class="feedback-link__main">
+                                        <svg
+                                            aria-hidden="true"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <circle cx="12" cy="8" r="3"></circle>
+                                            <path d="M5 20c.6-4.2 3-6.4 7-6.4s6.4 2.2 7 6.4"></path>
+                                        </svg>
+
+                                        Sign In
+                                    </span>
+
+                                    <svg
+                                        aria-hidden="true"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path d="M5 12h14M14 7l5 5-5 5"></path>
+                                    </svg>
+                                </a>
+                            {% endif %}
+
+                            <a
+                                class="feedback-link"
+                                href="{{ url_for('menu_page') }}"
+                            >
+                                <span class="feedback-link__main">
+                                    <svg
+                                        aria-hidden="true"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path d="M5 4h14v16H5z"></path>
+                                        <path d="M8 8h8M8 12h8M8 16h5"></path>
+                                    </svg>
+
+                                    Browse Menu
+                                </span>
+
+                                <svg
+                                    aria-hidden="true"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path d="M5 12h14M14 7l5 5-5 5"></path>
+                                </svg>
+                            </a>
+                        </div>
+                    </div>
+                </section>
+            </aside>
+
+            <section
+                class="feedback-form-card"
+                aria-labelledby="feedback-form-title"
+            >
+                <header class="feedback-form-head">
+                    <div>
+                        <h2 id="feedback-form-title">
+                            Tell Us About Your Experience
+                        </h2>
+
+                        <p>
+                            A rating is optional and a written comment is optional, but you must provide at least one of them.
+                        </p>
+                    </div>
+
+                    <span class="feedback-form-head__badge">
+                        <svg
+                            aria-hidden="true"
+                            viewBox="0 0 24 24"
+                        >
+                            <path d="M12 3 5 6v5.4c0 4.3 2.8 7.5 7 9.1 4.2-1.6 7-4.8 7-9.1V6l-7-3Z"></path>
+                            <path d="m9 12 2 2 4-4"></path>
+                        </svg>
+
+                        Server validated
+                    </span>
+                </header>
+
+                <form
+                    class="feedback-form"
+                    id="feedback-form"
+                    action="{{ url_for('feedback_page') }}"
+                    method="post"
+                    novalidate
+                    aria-busy="false"
+                >
+                    <input
+                        type="hidden"
+                        name="csrf_token"
+                        value="{{ csrf_token() }}"
+                    >
+
+                    <p
+                        class="feedback-form-error"
+                        id="feedback-form-error"
+                        role="alert"
+                    ></p>
+
+                    <fieldset
+                        class="feedback-rating"
+                        id="feedback-rating-fieldset"
+                        aria-describedby="feedback-rating-help feedback-rating-error"
+                    >
+                        <legend>
+                            Overall Rating
+                            <span class="feedback-label__optional">
+                                Optional
+                            </span>
+                        </legend>
+
+                        <p
+                            class="feedback-rating__help"
+                            id="feedback-rating-help"
+                        >
+                            Choose 1 to 5 stars. No rating is preselected.
+                        </p>
+
+                        <div
+                            class="feedback-rating__row"
+                            id="feedback-rating-row"
+                        >
+                            <span class="feedback-rating__option">
+                                <input
+                                    class="feedback-rating__input"
+                                    id="feedback-rating-1"
+                                    name="rating"
+                                    type="radio"
+                                    value="1"
+                                    {% if initial_rating == "1" %}checked{% endif %}
+                                >
+
+                                <label
+                                    class="feedback-rating__star"
+                                    for="feedback-rating-1"
+                                    data-rating-label="1"
+                                    title="1 star — Very Poor"
+                                >
+                                    <svg
+                                        aria-hidden="true"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"></path>
+                                    </svg>
+
+                                    <span class="visually-hidden">
+                                        1 star — Very Poor
+                                    </span>
+                                </label>
+                            </span>
+
+                            <span class="feedback-rating__option">
+                                <input
+                                    class="feedback-rating__input"
+                                    id="feedback-rating-2"
+                                    name="rating"
+                                    type="radio"
+                                    value="2"
+                                    {% if initial_rating == "2" %}checked{% endif %}
+                                >
+
+                                <label
+                                    class="feedback-rating__star"
+                                    for="feedback-rating-2"
+                                    data-rating-label="2"
+                                    title="2 stars — Poor"
+                                >
+                                    <svg
+                                        aria-hidden="true"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"></path>
+                                    </svg>
+
+                                    <span class="visually-hidden">
+                                        2 stars — Poor
+                                    </span>
+                                </label>
+                            </span>
+
+                            <span class="feedback-rating__option">
+                                <input
+                                    class="feedback-rating__input"
+                                    id="feedback-rating-3"
+                                    name="rating"
+                                    type="radio"
+                                    value="3"
+                                    {% if initial_rating == "3" %}checked{% endif %}
+                                >
+
+                                <label
+                                    class="feedback-rating__star"
+                                    for="feedback-rating-3"
+                                    data-rating-label="3"
+                                    title="3 stars — Okay"
+                                >
+                                    <svg
+                                        aria-hidden="true"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"></path>
+                                    </svg>
+
+                                    <span class="visually-hidden">
+                                        3 stars — Okay
+                                    </span>
+                                </label>
+                            </span>
+
+                            <span class="feedback-rating__option">
+                                <input
+                                    class="feedback-rating__input"
+                                    id="feedback-rating-4"
+                                    name="rating"
+                                    type="radio"
+                                    value="4"
+                                    {% if initial_rating == "4" %}checked{% endif %}
+                                >
+
+                                <label
+                                    class="feedback-rating__star"
+                                    for="feedback-rating-4"
+                                    data-rating-label="4"
+                                    title="4 stars — Good"
+                                >
+                                    <svg
+                                        aria-hidden="true"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"></path>
+                                    </svg>
+
+                                    <span class="visually-hidden">
+                                        4 stars — Good
+                                    </span>
+                                </label>
+                            </span>
+
+                            <span class="feedback-rating__option">
+                                <input
+                                    class="feedback-rating__input"
+                                    id="feedback-rating-5"
+                                    name="rating"
+                                    type="radio"
+                                    value="5"
+                                    {% if initial_rating == "5" %}checked{% endif %}
+                                >
+
+                                <label
+                                    class="feedback-rating__star"
+                                    for="feedback-rating-5"
+                                    data-rating-label="5"
+                                    title="5 stars — Excellent"
+                                >
+                                    <svg
+                                        aria-hidden="true"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"></path>
+                                    </svg>
+
+                                    <span class="visually-hidden">
+                                        5 stars — Excellent
+                                    </span>
+                                </label>
+                            </span>
+
+                            <button
+                                class="feedback-rating__clear"
+                                id="feedback-rating-clear"
+                                type="button"
+                                hidden
+                            >
+                                Clear rating
+                            </button>
+                        </div>
+
+                        <p
+                            class="feedback-rating__status"
+                            id="feedback-rating-status"
+                            aria-live="polite"
+                            aria-atomic="true"
+                        >
+                            No rating selected.
+                        </p>
+
+                        <p
+                            class="feedback-field-error"
+                            id="feedback-rating-error"
+                        ></p>
+                    </fieldset>
+
+                    <div class="feedback-fields">
+                        {% if is_customer %}
+                            <div class="feedback-field">
+                                <label
+                                    class="feedback-label"
+                                    for="feedback-order-id"
+                                >
+                                    <span>
+                                        Link an Order
+                                    </span>
+
+                                    <span class="feedback-label__optional">
+                                        Optional
+                                    </span>
+                                </label>
+
+                                <input
+                                    class="feedback-input"
+                                    id="feedback-order-id"
+                                    name="related_order_id"
+                                    type="text"
+                                    maxlength="128"
+                                    value="{{ initial_order_id }}"
+                                    autocomplete="off"
+                                    spellcheck="false"
+                                    aria-invalid="false"
+                                    aria-describedby="feedback-order-help feedback-order-error"
+                                >
+
+                                <div class="feedback-order-note">
+                                    <svg
+                                        aria-hidden="true"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <circle cx="12" cy="12" r="9"></circle>
+                                        <path d="M12 10v6M12 7h.01"></path>
+                                    </svg>
+
+                                    <span id="feedback-order-help">
+                                        Enter an order ID only when you want this feedback associated with one of your orders.
+                                        The server verifies ownership.
+                                        An order ID never authorizes access by itself.
+                                        You can find your orders on
+                                        <a href="{{ url_for('orders_page') }}">
+                                            My Orders
+                                        </a>.
+                                    </span>
+                                </div>
+
+                                <p
+                                    class="feedback-field-error"
+                                    id="feedback-order-error"
+                                ></p>
+                            </div>
+                        {% else %}
+                            <div class="feedback-order-note">
+                                <svg
+                                    aria-hidden="true"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <circle cx="12" cy="8" r="3"></circle>
+                                    <path d="M5 20c.6-4.2 3-6.4 7-6.4s6.4 2.2 7 6.4"></path>
+                                </svg>
+
+                                <span>
+                                    General feedback can be submitted as a guest.
+                                    To securely associate feedback with an order, first
+                                    <a href="{{ url_for('login_page') }}">
+                                        sign in
+                                    </a>.
+                                </span>
+                            </div>
+                        {% endif %}
+
+                        <div class="feedback-field">
+                            <label
+                                class="feedback-label"
+                                for="feedback-comment"
+                            >
+                                <span>
+                                    Comments or Suggestions
+                                </span>
+
+                                <span class="feedback-label__optional">
+                                    Optional
+                                </span>
+                            </label>
+
+                            <textarea
+                                class="feedback-textarea"
+                                id="feedback-comment"
+                                name="comment"
+                                maxlength="2000"
+                                aria-invalid="false"
+                                aria-describedby="feedback-comment-help feedback-comment-error"
+                                placeholder="Tell us more about your experience..."
+                            >{{ initial_comment }}</textarea>
+
+                            <div class="feedback-counter-row">
+                                <p
+                                    class="feedback-help"
+                                    id="feedback-comment-help"
+                                >
+                                    Write your feedback as plain text. A comment can be submitted without a star rating.
+                                </p>
+
+                                <span
+                                    class="feedback-counter"
+                                    id="feedback-comment-counter"
+                                    aria-live="off"
+                                >
+                                    0 / 2000
+                                </span>
+                            </div>
+
+                            <p
+                                class="feedback-field-error"
+                                id="feedback-comment-error"
+                            ></p>
+                        </div>
+
+                        <div class="feedback-sensitive-note">
+                            <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <path d="M12 3 5 6v5.4c0 4.3 2.8 7.5 7 9.1 4.2-1.6 7-4.8 7-9.1V6l-7-3Z"></path>
+                                <path d="M12 8v5M12 16.5h.01"></path>
+                            </svg>
+
+                            <div>
+                                <strong>
+                                    Do not include sensitive credentials
+                                </strong>
+
+                                <p>
+                                    Please do not include passwords, PINs, OTP codes, CVVs, full card numbers, bank passwords or other sensitive payment information.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="feedback-form-actions">
+                        <p class="feedback-privacy">
+                            Feedback is used to understand and improve customer experience.
+                            Submitting this form does not enroll you in marketing.
+                            See the
+                            <a href="{{ url_for('privacy_page') }}">
+                                Privacy Policy
+                            </a>.
+                        </p>
+
+                        <button
+                            class="feedback-btn feedback-btn--primary feedback-submit"
+                            id="feedback-submit"
+                            type="submit"
+                        >
+                            <span
+                                class="feedback-spinner"
+                                id="feedback-submit-spinner"
+                                aria-hidden="true"
+                                hidden
+                            ></span>
+
+                            <svg
+                                id="feedback-submit-icon"
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <path d="m4 5 16 7-16 7 3-7-3-7Z"></path>
+                                <path d="M7 12h13"></path>
+                            </svg>
+
+                            <span id="feedback-submit-label">
+                                Submit Feedback
+                            </span>
+                        </button>
+                    </div>
+                </form>
+
+                <section
+                    class="feedback-success"
+                    id="feedback-success"
+                    role="status"
+                    aria-live="polite"
+                    aria-atomic="true"
+                    hidden
+                >
+                    <span
+                        class="feedback-success__icon"
+                        aria-hidden="true"
+                    >
+                        <svg viewBox="0 0 24 24">
+                            <circle cx="12" cy="12" r="9"></circle>
+                            <path d="m8 12 2.7 2.7L16.5 9"></path>
+                        </svg>
+                    </span>
+
+                    <h2
+                        id="feedback-success-title"
+                        tabindex="-1"
+                    >
+                        Thank You for Your Feedback
+                    </h2>
+
+                    <p
+                        class="feedback-success__message"
+                        id="feedback-success-message"
+                    >
+                        Thank you. Your feedback has been received.
+                    </p>
+
+                    <div
+                        class="feedback-success__reference"
+                        id="feedback-success-reference-wrap"
+                        hidden
+                    >
+                        <span>
+                            Feedback Reference
+                        </span>
+
+                        <code id="feedback-success-reference"></code>
+
+                        <button
+                            class="feedback-btn feedback-btn--ghost feedback-btn--compact"
+                            id="feedback-copy-reference"
+                            type="button"
+                        >
+                            Copy
+                        </button>
+                    </div>
+
+                    <p
+                        class="feedback-success__support"
+                        id="feedback-success-support"
+                        hidden
+                    >
+                        If you also need help with an order, payment or another actionable issue,
+                        use Contact or Support.
+                    </p>
+
+                    <div class="feedback-success__actions">
+                        <button
+                            class="feedback-btn feedback-btn--secondary"
+                            id="feedback-submit-another"
+                            type="button"
+                        >
+                            Submit More Feedback
+                        </button>
+
+                        <a
+                            class="feedback-btn feedback-btn--secondary"
+                            href="{{ url_for('contact_page') }}"
+                        >
+                            Contact Support
+                        </a>
+
+                        <a
+                            class="feedback-btn feedback-btn--primary"
+                            href="{{ url_for('menu_page') }}"
+                        >
+                            Browse Menu
+                        </a>
+                    </div>
+                </section>
+            </section>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    "use strict";
+
+    const root =
+        document.getElementById(
+            "feedback-page-root"
+        );
+
+    if (!root) {
+        return;
+    }
+
+    const form =
+        document.getElementById(
+            "feedback-form"
+        );
+
+    if (!form) {
+        return;
+    }
+
+    const ratingInputs =
+        Array.from(
+            document.querySelectorAll(
+                'input[name="rating"]'
+            )
+        );
+
+    const ratingLabels =
+        Array.from(
+            document.querySelectorAll(
+                "[data-rating-label]"
+            )
+        );
+
+    const elements = {
+        live:
+            document.getElementById(
+                "feedback-live-region"
+            ),
+
+        formError:
+            document.getElementById(
+                "feedback-form-error"
+            ),
+
+        ratingFieldset:
+            document.getElementById(
+                "feedback-rating-fieldset"
+            ),
+
+        ratingStatus:
+            document.getElementById(
+                "feedback-rating-status"
+            ),
+
+        ratingError:
+            document.getElementById(
+                "feedback-rating-error"
+            ),
+
+        ratingClear:
+            document.getElementById(
+                "feedback-rating-clear"
+            ),
+
+        comment:
+            document.getElementById(
+                "feedback-comment"
+            ),
+
+        commentError:
+            document.getElementById(
+                "feedback-comment-error"
+            ),
+
+        commentCounter:
+            document.getElementById(
+                "feedback-comment-counter"
+            ),
+
+        orderId:
+            document.getElementById(
+                "feedback-order-id"
+            ),
+
+        orderError:
+            document.getElementById(
+                "feedback-order-error"
+            ),
+
+        submit:
+            document.getElementById(
+                "feedback-submit"
+            ),
+
+        submitSpinner:
+            document.getElementById(
+                "feedback-submit-spinner"
+            ),
+
+        submitIcon:
+            document.getElementById(
+                "feedback-submit-icon"
+            ),
+
+        submitLabel:
+            document.getElementById(
+                "feedback-submit-label"
+            ),
+
+        success:
+            document.getElementById(
+                "feedback-success"
+            ),
+
+        successTitle:
+            document.getElementById(
+                "feedback-success-title"
+            ),
+
+        successMessage:
+            document.getElementById(
+                "feedback-success-message"
+            ),
+
+        successReferenceWrap:
+            document.getElementById(
+                "feedback-success-reference-wrap"
+            ),
+
+        successReference:
+            document.getElementById(
+                "feedback-success-reference"
+            ),
+
+        copyReference:
+            document.getElementById(
+                "feedback-copy-reference"
+            ),
+
+        successSupport:
+            document.getElementById(
+                "feedback-success-support"
+            ),
+
+        submitAnother:
+            document.getElementById(
+                "feedback-submit-another"
+            )
+    };
+
+    const ratingNames = {
+        "1":
+            "Very Poor",
+
+        "2":
+            "Poor",
+
+        "3":
+            "Okay",
+
+        "4":
+            "Good",
+
+        "5":
+            "Excellent"
+    };
+
+    const state = {
+        submitting:
+            false,
+
+        successfulReference:
+            "",
+
+        submittedRating:
+            null
+    };
+
+    function announce(message) {
+        if (
+            window.AppUI &&
+            typeof window.AppUI.announce ===
+                "function"
+        ) {
+            window.AppUI.announce(
+                message
+            );
+        }
+
+        if (!elements.live) {
+            return;
+        }
+
+        elements.live.textContent =
+            "";
+
+        window.setTimeout(
+            function () {
+                elements.live.textContent =
+                    String(
+                        message ||
+                        ""
+                    );
+            },
+            30
+        );
+    }
+
+    function toast(message, type) {
+        if (
+            window.AppUI &&
+            typeof window.AppUI.showToast ===
+                "function"
+        ) {
+            window.AppUI.showToast(
+                message,
+                type ||
+                "info"
+            );
+
+            return;
+        }
+
+        if (
+            typeof window.showToast ===
+                "function"
+        ) {
+            window.showToast(
+                message,
+                type ||
+                "info"
+            );
+        }
+    }
+
+    async function secureFetch(
+        url,
+        options
+    ) {
+        if (
+            window.AppUI &&
+            typeof window.AppUI.csrfFetch ===
+                "function"
+        ) {
+            return window.AppUI.csrfFetch(
+                url,
+                options ||
+                {}
+            );
+        }
+
+        throw new Error(
+            "CSRF helper unavailable"
+        );
+    }
+
+    async function responseJson(
+        response
+    ) {
+        try {
+            return await response.json();
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function selectedRating() {
+        const selected =
+            ratingInputs.find(
+                function (input) {
+                    return input.checked;
+                }
+            );
+
+        if (!selected) {
+            return null;
+        }
+
+        const value =
+            Number(
+                selected.value
+            );
+
+        if (
+            !Number.isInteger(
+                value
+            ) ||
+            value <
+                1 ||
+            value >
+                5
+        ) {
+            return null;
+        }
+
+        return value;
+    }
+
+    function updateRatingVisuals() {
+        const rating =
+            selectedRating();
+
+        ratingLabels.forEach(
+            function (label) {
+                const value =
+                    Number(
+                        label.dataset.ratingLabel ||
+                        "0"
+                    );
+
+                label.classList.toggle(
+                    "is-active",
+                    Boolean(
+                        rating &&
+                        value <=
+                            rating
+                    )
+                );
+            }
+        );
+
+        if (elements.ratingClear) {
+            elements.ratingClear.hidden =
+                rating ===
+                null;
+        }
+
+        if (elements.ratingStatus) {
+            if (rating === null) {
+                elements.ratingStatus.textContent =
+                    "No rating selected.";
+            } else {
+                const strong =
+                    document.createElement(
+                        "strong"
+                    );
+
+                strong.textContent =
+                    rating +
+                    " / 5";
+
+                const text =
+                    document.createTextNode(
+                        " — " +
+                        (
+                            ratingNames[
+                                String(
+                                    rating
+                                )
+                            ] ||
+                            ""
+                        )
+                    );
+
+                elements.ratingStatus.replaceChildren(
+                    strong,
+                    text
+                );
+            }
+        }
+
+        if (
+            rating !==
+            null
+        ) {
+            clearRatingError();
+        }
+    }
+
+    function clearRating() {
+        ratingInputs.forEach(
+            function (input) {
+                input.checked =
+                    false;
+            }
+        );
+
+        updateRatingVisuals();
+
+        const first =
+            ratingInputs[0];
+
+        if (first) {
+            first.focus();
+        }
+
+        announce(
+            "Rating cleared."
+        );
+    }
+
+    function updateCommentCounter() {
+        if (
+            !elements.comment ||
+            !elements.commentCounter
+        ) {
+            return;
+        }
+
+        elements.commentCounter.textContent =
+            elements.comment.value.length +
+            " / 2000";
+    }
+
+    function showFormError(message) {
+        if (elements.formError) {
+            elements.formError.textContent =
+                String(
+                    message ||
+                    ""
+                );
+        }
+
+        if (message) {
+            announce(
+                message
+            );
+        }
+    }
+
+    function clearFormError() {
+        showFormError(
+            ""
+        );
+    }
+
+    function setRatingError(message) {
+        if (elements.ratingError) {
+            elements.ratingError.textContent =
+                String(
+                    message ||
+                    ""
+                );
+        }
+
+        if (elements.ratingFieldset) {
+            elements.ratingFieldset.setAttribute(
+                "aria-invalid",
+                message
+                    ? "true"
+                    : "false"
+            );
+        }
+    }
+
+    function clearRatingError() {
+        setRatingError(
+            ""
+        );
+    }
+
+    function setCommentError(message) {
+        if (elements.commentError) {
+            elements.commentError.textContent =
+                String(
+                    message ||
+                    ""
+                );
+        }
+
+        if (elements.comment) {
+            elements.comment.setAttribute(
+                "aria-invalid",
+                message
+                    ? "true"
+                    : "false"
+            );
+        }
+    }
+
+    function setOrderError(message) {
+        if (elements.orderError) {
+            elements.orderError.textContent =
+                String(
+                    message ||
+                    ""
+                );
+        }
+
+        if (elements.orderId) {
+            elements.orderId.setAttribute(
+                "aria-invalid",
+                message
+                    ? "true"
+                    : "false"
+            );
+        }
+    }
+
+    function clearErrors() {
+        clearFormError();
+        clearRatingError();
+        setCommentError(
+            ""
+        );
+        setOrderError(
+            ""
+        );
+    }
+
+    function focusFirstInvalid() {
+        if (
+            elements.ratingFieldset &&
+            elements.ratingFieldset.getAttribute(
+                "aria-invalid"
+            ) ===
+                "true"
+        ) {
+            const firstRating =
+                ratingInputs[0];
+
+            if (firstRating) {
+                firstRating.focus();
+
+                return;
+            }
+        }
+
+        if (
+            elements.comment &&
+            elements.comment.getAttribute(
+                "aria-invalid"
+            ) ===
+                "true"
+        ) {
+            elements.comment.focus();
+
+            return;
+        }
+
+        if (
+            elements.orderId &&
+            elements.orderId.getAttribute(
+                "aria-invalid"
+            ) ===
+                "true"
+        ) {
+            elements.orderId.focus();
+        }
+    }
+
+    function validateFeedbackForm() {
+        clearErrors();
+
+        let valid =
+            true;
+
+        const rating =
+            selectedRating();
+
+        const comment =
+            elements.comment
+                ? String(
+                    elements.comment.value ||
+                    ""
+                ).trim()
+                : "";
+
+        const orderId =
+            elements.orderId
+                ? String(
+                    elements.orderId.value ||
+                    ""
+                ).trim()
+                : "";
+
+        if (
+            rating ===
+                null &&
+            !comment
+        ) {
+            setRatingError(
+                "Choose a rating or write a comment."
+            );
+
+            setCommentError(
+                "Choose a rating or write a comment."
+            );
+
+            valid =
+                false;
+        }
+
+        if (
+            comment.length >
+            2000
+        ) {
+            setCommentError(
+                "Comment is too long."
+            );
+
+            valid =
+                false;
+        }
+
+        if (
+            orderId &&
+            !/^[A-Za-z0-9_-]{1,128}$/.test(
+                orderId
+            )
+        ) {
+            setOrderError(
+                "Enter a valid order ID."
+            );
+
+            valid =
+                false;
+        }
+
+        if (!valid) {
+            showFormError(
+                "Please review the highlighted fields."
+            );
+
+            focusFirstInvalid();
+        }
+
+        return valid;
+    }
+
+    function buildPayload() {
+        const payload =
+            {};
+
+        const rating =
+            selectedRating();
+
+        const comment =
+            elements.comment
+                ? String(
+                    elements.comment.value ||
+                    ""
+                ).trim()
+                : "";
+
+        const orderId =
+            elements.orderId
+                ? String(
+                    elements.orderId.value ||
+                    ""
+                ).trim()
+                : "";
+
+        if (
+            rating !==
+            null
+        ) {
+            payload.rating =
+                rating;
+        }
+
+        if (comment) {
+            payload.comment =
+                comment;
+        }
+
+        if (orderId) {
+            payload.related_order_id =
+                orderId;
+        }
+
+        return payload;
+    }
+
+    function setLoadingState(
+        loading
+    ) {
+        state.submitting =
+            Boolean(
+                loading
+            );
+
+        form.setAttribute(
+            "aria-busy",
+            loading
+                ? "true"
+                : "false"
+        );
+
+        if (elements.submit) {
+            elements.submit.disabled =
+                state.submitting;
+        }
+
+        if (elements.submitSpinner) {
+            elements.submitSpinner.hidden =
+                !state.submitting;
+        }
+
+        if (elements.submitIcon) {
+            elements.submitIcon.hidden =
+                state.submitting;
+        }
+
+        if (elements.submitLabel) {
+            elements.submitLabel.textContent =
+                state.submitting
+                    ? "Submitting..."
+                    : "Submit Feedback";
+        }
+    }
+
+    function backendField(
+        payload
+    ) {
+        if (
+            !payload ||
+            !payload.error ||
+            !payload.error.details
+        ) {
+            return "";
+        }
+
+        const field =
+            payload.error.details.field;
+
+        return typeof field ===
+            "string"
+            ? field
+            : "";
+    }
+
+    function errorCode(
+        payload
+    ) {
+        if (
+            !payload ||
+            !payload.error
+        ) {
+            return "";
+        }
+
+        return String(
+            payload.error.code ||
+            ""
+        );
+    }
+
+    function safeErrorMessage(
+        response,
+        payload
+    ) {
+        const code =
+            errorCode(
+                payload
+            );
+
+        if (
+            response.status ===
+            429
+        ) {
+            return "Too many feedback submissions. Please wait before trying again.";
+        }
+
+        if (
+            response.status ===
+                401 ||
+            code ===
+                "AUTH_REQUIRED"
+        ) {
+            return "Please sign in before attaching feedback to an order.";
+        }
+
+        if (
+            response.status ===
+                404 ||
+            code ===
+                "ORDER_NOT_FOUND"
+        ) {
+            return "That order could not be linked to your feedback.";
+        }
+
+        if (
+            response.status >=
+            500
+        ) {
+            return "We couldn't submit your feedback right now. Please try again later.";
+        }
+
+        if (
+            payload &&
+            payload.error &&
+            typeof payload.error.message ===
+                "string" &&
+            payload.error.message
+        ) {
+            return payload.error.message;
+        }
+
+        return "We couldn't submit your feedback. Please review the form and try again.";
+    }
+
+    function applyServerError(
+        response,
+        payload
+    ) {
+        const message =
+            safeErrorMessage(
+                response,
+                payload
+            );
+
+        const field =
+            backendField(
+                payload
+            );
+
+        const code =
+            errorCode(
+                payload
+            );
+
+        if (
+            field ===
+            "rating"
+        ) {
+            setRatingError(
+                message
+            );
+
+        } else if (
+            field ===
+            "comment"
+        ) {
+            setCommentError(
+                message
+            );
+
+        } else if (
+            field ===
+                "related_order_id" ||
+            code ===
+                "ORDER_NOT_FOUND" ||
+            code ===
+                "AUTH_REQUIRED"
+        ) {
+            setOrderError(
+                message
+            );
+        }
+
+        showFormError(
+            message
+        );
+
+        focusFirstInvalid();
+
+        toast(
+            message,
+            response.status ===
+                429
+                ? "warning"
+                : "error"
+        );
+    }
+
+    function resetFormAfterSuccess() {
+        form.reset();
+
+        ratingInputs.forEach(
+            function (input) {
+                input.checked =
+                    false;
+            }
+        );
+
+        clearErrors();
+        updateRatingVisuals();
+        updateCommentCounter();
+    }
+
+    function showSuccess(
+        payload
+    ) {
+        const data =
+            payload &&
+            payload.data &&
+            typeof payload.data ===
+                "object"
+                ? payload.data
+                : {};
+
+        const message =
+            typeof data.message ===
+                "string" &&
+            data.message
+                ? data.message
+                : "Thank you. Your feedback has been received.";
+
+        const reference =
+            typeof data.feedback_id ===
+                "string"
+                ? data.feedback_id.trim()
+                : "";
+
+        state.successfulReference =
+            reference;
+
+        resetFormAfterSuccess();
+
+        form.hidden =
+            true;
+
+        if (elements.success) {
+            elements.success.hidden =
+                false;
+        }
+
+        if (elements.successMessage) {
+            elements.successMessage.textContent =
+                message;
+        }
+
+        if (
+            elements.successReferenceWrap &&
+            elements.successReference
+        ) {
+            elements.successReferenceWrap.hidden =
+                !reference;
+
+            elements.successReference.textContent =
+                reference;
+        }
+
+        if (elements.successSupport) {
+            elements.successSupport.hidden =
+                !(
+                    Number.isInteger(
+                        state.submittedRating
+                    ) &&
+                    state.submittedRating <=
+                        2
+                );
+        }
+
+        announce(
+            "Thank you for your feedback. " +
+            message
+        );
+
+        toast(
+            "Feedback submitted.",
+            "success"
+        );
+
+        if (elements.successTitle) {
+            elements.successTitle.focus();
+        }
+    }
+
+    async function submitFeedback() {
+        if (
+            state.submitting
+        ) {
+            return;
+        }
+
+        if (
+            navigator.onLine ===
+            false
+        ) {
+            const message =
+                "We couldn't submit your feedback because of a connection problem. Please try again.";
+
+            showFormError(
+                message
+            );
+
+            toast(
+                message,
+                "warning"
+            );
+
+            return;
+        }
+
+        if (
+            !validateFeedbackForm()
+        ) {
+            return;
+        }
+
+        state.submittedRating =
+            selectedRating();
+
+        setLoadingState(
+            true
+        );
+
+        try {
+            const response =
+                await secureFetch(
+                    String(
+                        root.dataset.feedbackEndpoint ||
+                        form.action
+                    ),
+                    {
+                        method:
+                            "POST",
+
+                        credentials:
+                            "same-origin",
+
+                        headers: {
+                            Accept:
+                                "application/json",
+
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body:
+                            JSON.stringify(
+                                buildPayload()
+                            )
+                    }
+                );
+
+            const payload =
+                await responseJson(
+                    response
+                );
+
+            if (
+                response.ok &&
+                payload &&
+                payload.success ===
+                    true
+            ) {
+                showSuccess(
+                    payload
+                );
+
+                return;
+            }
+
+            applyServerError(
+                response,
+                payload
+            );
+        } catch (error) {
+            const message =
+                "We couldn't submit your feedback because of a connection problem. Please try again.";
+
+            showFormError(
+                message
+            );
+
+            toast(
+                message,
+                "error"
+            );
+        } finally {
+            setLoadingState(
+                false
+            );
+        }
+    }
+
+    async function copyText(
+        value,
+        successMessage
+    ) {
+        const text =
+            String(
+                value ||
+                ""
+            ).trim();
+
+        if (!text) {
+            return;
+        }
+
+        if (
+            !navigator.clipboard ||
+            typeof navigator.clipboard.writeText !==
+                "function"
+        ) {
+            toast(
+                "Copy is not available in this browser. You can select the reference manually.",
+                "info"
+            );
+
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(
+                text
+            );
+
+            toast(
+                successMessage,
+                "success"
+            );
+
+            announce(
+                successMessage
+            );
+        } catch (error) {
+            toast(
+                "Copy was not available. You can select the reference manually.",
+                "info"
+            );
+        }
+    }
+
+    function initializeRatingControls() {
+        ratingInputs.forEach(
+            function (input) {
+                input.addEventListener(
+                    "change",
+                    function () {
+                        updateRatingVisuals();
+                    }
+                );
+            }
+        );
+
+        if (elements.ratingClear) {
+            elements.ratingClear.addEventListener(
+                "click",
+                clearRating
+            );
+        }
+
+        updateRatingVisuals();
+    }
+
+    function initializeCommentCounter() {
+        if (!elements.comment) {
+            return;
+        }
+
+        elements.comment.addEventListener(
+            "input",
+            function () {
+                updateCommentCounter();
+
+                if (
+                    elements.comment.getAttribute(
+                        "aria-invalid"
+                    ) ===
+                        "true"
+                ) {
+                    setCommentError(
+                        ""
+                    );
+
+                    if (
+                        selectedRating() !==
+                            null ||
+                        String(
+                            elements.comment.value ||
+                            ""
+                        ).trim()
+                    ) {
+                        clearRatingError();
+                    }
+                }
+            }
+        );
+
+        updateCommentCounter();
+    }
+
+    function initializeOrderField() {
+        if (!elements.orderId) {
+            return;
+        }
+
+        elements.orderId.addEventListener(
+            "input",
+            function () {
+                if (
+                    elements.orderId.getAttribute(
+                        "aria-invalid"
+                    ) ===
+                        "true"
+                ) {
+                    setOrderError(
+                        ""
+                    );
+                }
+            }
+        );
+    }
+
+    function initializeSubmission() {
+        form.addEventListener(
+            "submit",
+            function (event) {
+                event.preventDefault();
+
+                submitFeedback();
+            }
+        );
+    }
+
+    function initializeSuccessActions() {
+        if (elements.copyReference) {
+            elements.copyReference.addEventListener(
+                "click",
+                function () {
+                    copyText(
+                        state.successfulReference,
+                        "Feedback reference copied."
+                    );
+                }
+            );
+        }
+
+        if (elements.submitAnother) {
+            elements.submitAnother.addEventListener(
+                "click",
+                function () {
+                    if (elements.success) {
+                        elements.success.hidden =
+                            true;
+                    }
+
+                    form.hidden =
+                        false;
+
+                    const first =
+                        ratingInputs[0] ||
+                        elements.comment;
+
+                    if (
+                        first &&
+                        typeof first.focus ===
+                            "function"
+                    ) {
+                        first.focus();
+                    }
+
+                    announce(
+                        "Feedback form ready."
+                    );
+                }
+            );
+        }
+    }
+
+    function initializeNetworkState() {
+        window.addEventListener(
+            "offline",
+            function () {
+                announce(
+                    "You are offline. Feedback cannot be submitted until your connection returns."
+                );
+            }
+        );
+
+        window.addEventListener(
+            "online",
+            function () {
+                toast(
+                    "You're back online.",
+                    "info"
+                );
+            }
+        );
+    }
+
+    function initializeFeedbackPage() {
+        initializeRatingControls();
+        initializeCommentCounter();
+        initializeOrderField();
+        initializeSubmission();
+        initializeSuccessActions();
+        initializeNetworkState();
+    }
+
+    if (
+        document.readyState ===
+        "loading"
+    ) {
+        document.addEventListener(
+            "DOMContentLoaded",
+            initializeFeedbackPage,
+            {
+                once:
+                    true
+            }
+        );
+    } else {
+        initializeFeedbackPage();
+    }
+}());
+</script>
+{% endblock %}

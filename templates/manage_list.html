@@ -1,0 +1,2661 @@
+{% extends "base.html" %}
+
+{#
+  Generic protected management list.
+  main.py remains authoritative for resource access, visible fields,
+  record scope, row/bulk actions, routes and mutation validation.
+
+  Expected backend mapping:
+    resource = {
+      key, title, description, authorized, icon, mode,
+      columns, rows, filters, search, sort_options,
+      current_sort, current_direction,
+      result_count, total_count, timezone_label,
+      create_action, export_action, bulk_actions,
+      pagination, empty_message, filtered_empty_message,
+      id_key, display_key, row_actions_key
+    }
+
+  Actions are structured data only. No raw HTML/JS/CSS is rendered.
+#}
+
+{% set resource_data = resource|default(manage_list|default({}, true), true) %}
+{% if resource_data is not mapping %}{% set resource_data = {} %}{% endif %}
+
+{% set principal_data = principal|default({}, true) %}
+{% if principal_data is not mapping %}{% set principal_data = {} %}{% endif %}
+
+{% set trusted_role = principal_data.get("role", "")|default("", true) %}
+{% set resource_title = resource_data.get("title", "Management")|default("Management", true) %}
+{% set resource_description = resource_data.get("description", "")|default("", true) %}
+{% set resource_authorized = resource_data.get("authorized", true) %}
+
+{% set allowed_modes = ["default", "kitchen", "finance", "moderation", "operations"] %}
+{% set requested_mode = resource_data.get("mode", "default")|default("default", true)|string|lower %}
+{% set resource_mode = requested_mode if requested_mode in allowed_modes else "default" %}
+
+{% set columns = resource_data.get("columns", columns|default([], true)) %}
+{% if columns is string or columns is not sequence %}{% set columns = [] %}{% endif %}
+
+{% set rows_data = resource_data.get("rows", rows|default([], true)) %}
+{% if rows_data is string or rows_data is not sequence %}{% set rows_data = [] %}{% endif %}
+
+{% set filters = resource_data.get("filters", filters|default([], true)) %}
+{% if filters is string or filters is not sequence %}{% set filters = [] %}{% endif %}
+
+{% set search_config = resource_data.get("search", {}) %}
+{% if search_config is not mapping %}{% set search_config = {} %}{% endif %}
+
+{% set sort_options = resource_data.get("sort_options", []) %}
+{% if sort_options is string or sort_options is not sequence %}{% set sort_options = [] %}{% endif %}
+
+{% set bulk_actions = resource_data.get("bulk_actions", []) %}
+{% if bulk_actions is string or bulk_actions is not sequence %}{% set bulk_actions = [] %}{% endif %}
+
+{% set pagination = resource_data.get("pagination", {}) %}
+{% if pagination is not mapping %}{% set pagination = {} %}{% endif %}
+
+{% set create_action = resource_data.get("create_action", {}) %}
+{% if create_action is not mapping %}{% set create_action = {} %}{% endif %}
+{% set export_action = resource_data.get("export_action", {}) %}
+{% if export_action is not mapping %}{% set export_action = {} %}{% endif %}
+
+{% set id_key = resource_data.get("id_key", "id")|default("id", true)|string %}
+{% set display_key = resource_data.get("display_key", "name")|default("name", true)|string %}
+{% set row_actions_key = resource_data.get("row_actions_key", "actions")|default("actions", true)|string %}
+
+{% set search_enabled = search_config.get("enabled", false) %}
+{% set search_param = search_config.get("param", "q")|default("q", true)|string %}
+{% set search_value = search_config.get("value", request.args.get(search_param, ""))|default("", true) %}
+{% set search_placeholder = search_config.get("placeholder", "Search records")|default("Search records", true) %}
+
+{% set sort_param = resource_data.get("sort_param", "sort")|default("sort", true)|string %}
+{% set direction_param = resource_data.get("direction_param", "direction")|default("direction", true)|string %}
+{% set current_sort = resource_data.get("current_sort", request.args.get(sort_param, ""))|default("", true)|string %}
+{% set current_direction = resource_data.get("current_direction", request.args.get(direction_param, "desc"))|default("desc", true)|string|lower %}
+{% if current_direction not in ["asc", "desc"] %}{% set current_direction = "desc" %}{% endif %}
+
+{% set result_count = resource_data.get("result_count", rows_data|length) %}
+{% set total_count = resource_data.get("total_count", none) %}
+{% set timezone_label = resource_data.get("timezone_label", "")|default("", true) %}
+
+{% set has_active_filters = namespace(value=false) %}
+{% if search_enabled and search_value %}{% set has_active_filters.value = true %}{% endif %}
+{% for filter in filters %}
+  {% if filter is mapping %}
+    {% set fv = filter.get("value", request.args.get(filter.get("name", ""), "")) %}
+    {% if fv not in [none, "", [], ()] %}{% set has_active_filters.value = true %}{% endif %}
+  {% endif %}
+{% endfor %}
+
+{% if trusted_role == "owner" %}
+  {% set dashboard_url = url_for("owner_dashboard") %}
+{% elif trusted_role == "super_admin" %}
+  {% set dashboard_url = url_for("super_admin_dashboard") %}
+{% elif trusted_role == "admin" %}
+  {% set dashboard_url = url_for("admin_dashboard") %}
+{% elif trusted_role == "chef" %}
+  {% set dashboard_url = url_for("chef_dashboard") %}
+{% else %}
+  {% set dashboard_url = url_for("home_page") %}
+{% endif %}
+
+{% macro safe_internal_href(raw_url) -%}
+  {%- set value = raw_url|default("", true)|string|trim -%}
+  {%- if value.startswith("/") and not value.startswith("//") -%}{{- value -}}{%- endif -%}
+{%- endmacro %}
+
+{% macro action_style(raw_style) -%}
+  {%- set style = raw_style|default("neutral", true)|string|lower -%}
+  {%- if style in ["primary", "secondary", "warning", "danger", "neutral"] -%}{{- style -}}{%- else -%}neutral{%- endif -%}
+{%- endmacro %}
+
+{% macro status_variant(raw_value) -%}
+  {%- set value = raw_value|default("", true)|string|lower -%}
+  {%- if value in ["active","approved","paid","completed","delivered","picked_up","served","confirmed","success","open"] -%}success
+  {%- elif value in ["disabled","inactive","rejected","failed","cancelled","hidden","closed"] -%}danger
+  {%- elif value in ["pending","awaiting_verification","order_placed","received","review","unread"] -%}warning
+  {%- elif value in ["preparing","packing","ready","ready_for_pickup","sent_to_kitchen","serving","out_for_delivery","rider_assigned","processing"] -%}info
+  {%- else -%}neutral{%- endif -%}
+{%- endmacro %}
+
+{% macro icon_for(key) -%}
+  {% set icon = key|default("records", true)|string|lower %}
+  {% if icon in ["products","product","box"] %}
+    <svg viewBox="0 0 24 24"><path d="m4 7 8-4 8 4-8 4-8-4Z"></path><path d="M4 7v10l8 4 8-4V7M12 11v10"></path></svg>
+  {% elif icon in ["payments","money","finance"] %}
+    <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M7 9h10M7 15h10"></path><circle cx="12" cy="12" r="2.2"></circle></svg>
+  {% elif icon in ["staff","customers","users"] %}
+    <svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"></circle><circle cx="17" cy="10" r="2"></circle><path d="M3 20c.6-4.2 2.6-6.2 6-6.2s5.4 2 6 6.2"></path></svg>
+  {% elif icon in ["reviews","rating"] %}
+    <svg viewBox="0 0 24 24"><path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"></path></svg>
+  {% elif icon in ["locations","location"] %}
+    <svg viewBox="0 0 24 24"><path d="M12 21s6-5.3 6-11a6 6 0 1 0-12 0c0 5.7 6 11 6 11Z"></path><circle cx="12" cy="10" r="2"></circle></svg>
+  {% elif icon in ["feedback","messages","inquiries"] %}
+    <svg viewBox="0 0 24 24"><path d="M4 5h16v12H8l-4 4V5Z"></path><path d="M8 9h8M8 13h5"></path></svg>
+  {% elif icon in ["deals","tag"] %}
+    <svg viewBox="0 0 24 24"><path d="M3 12 12 3h7v7l-9 9-7-7Z"></path><circle cx="16" cy="7" r="1"></circle></svg>
+  {% else %}
+    <svg viewBox="0 0 24 24"><path d="M5 4h14v16H5z"></path><path d="M8 8h8M8 12h8M8 16h5"></path></svg>
+  {% endif %}
+{%- endmacro %}
+
+{% macro render_status(value) -%}
+  {% set text = value|default("Unknown", true)|string %}
+  {% set variant = status_variant(text)|trim %}
+  <span class="ml-status ml-status--{{ variant }}"><span class="ml-status__dot" aria-hidden="true"></span><span>{{ text|replace("_", " ")|title }}</span></span>
+{%- endmacro %}
+
+{% macro render_boolean(value, true_label="Yes", false_label="No") -%}
+  {% if value %}
+    <span class="ml-status ml-status--success"><span class="ml-status__dot" aria-hidden="true"></span><span>{{ true_label }}</span></span>
+  {% else %}
+    <span class="ml-status ml-status--neutral"><span class="ml-status__dot" aria-hidden="true"></span><span>{{ false_label }}</span></span>
+  {% endif %}
+{%- endmacro %}
+
+{% macro render_image(value, alt_text) -%}
+  {% set src = value|default("", true)|string|trim %}
+  {% if (src.startswith("/") and not src.startswith("//")) or src.startswith("https://") or src.startswith("http://") %}
+    <span class="ml-thumb"><img src="{{ src }}" alt="{{ alt_text }}" loading="lazy" decoding="async" data-list-image><span class="ml-thumb__fallback" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"></rect><path d="m7 16 3.2-3.4 2.3 2.2 2.5-3 2 2.2"></path></svg></span></span>
+  {% else %}
+    <span class="ml-thumb ml-thumb--fallback"><span class="ml-thumb__fallback" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"></rect><path d="m7 16 3.2-3.4 2.3 2.2 2.5-3 2 2.2"></path></svg></span><span class="visually-hidden">No image</span></span>
+  {% endif %}
+{%- endmacro %}
+
+{% macro render_cell(row, column) -%}
+  {% set key = column.get("key", "")|default("", true)|string %}
+  {% set display_value_key = column.get("display_key", "")|default("", true)|string %}
+  {% set value = row.get(display_value_key) if display_value_key else row.get(key) %}
+  {% set cell_type = column.get("type", "text")|default("text", true)|string|lower %}
+
+  {% if cell_type == "status" %}
+    {{ render_status(value) }}
+  {% elif cell_type == "boolean" %}
+    {{ render_boolean(value, column.get("true_label", "Yes"), column.get("false_label", "No")) }}
+  {% elif cell_type == "money" %}
+    {% if value is mapping %}
+      <span class="ml-money">{% if value.get("currency") %}<span class="ml-money__currency">{{ value.get("currency") }}</span>{% endif %}<span class="ml-money__amount">{{ value.get("amount", "—") }}</span></span>
+    {% elif value is string %}{{ value }}{% else %}—{% endif %}
+  {% elif cell_type == "image" %}
+    {{ render_image(value, column.get("alt", row.get(display_key, resource_title))) }}
+  {% elif cell_type == "rating" %}
+    {% set rating = value|int if value is not none else 0 %}
+    <span class="ml-rating" aria-label="Rating: {{ rating }} out of 5"><span aria-hidden="true">{% for index in range(1,6) %}<span class="{{ 'is-filled' if index <= rating else '' }}">★</span>{% endfor %}</span><small>{{ rating }}/5</small></span>
+  {% elif cell_type in ["number", "count"] %}
+    <span class="ml-number">{{ value if value is not none else "—" }}</span>
+  {% elif cell_type in ["date", "datetime"] %}
+    <time>{{ value if value else "—" }}</time>
+  {% elif cell_type == "link" %}
+    {% set url_key = column.get("url_key", "")|default("", true)|string %}
+    {% set href = row.get(url_key, "") if url_key else "" %}
+    {% set safe_href = safe_internal_href(href)|trim %}
+    {% if safe_href %}<a class="ml-cell-link" href="{{ safe_href }}">{{ value if value is not none else "Open" }}</a>{% else %}{{ value if value is not none else "—" }}{% endif %}
+  {% else %}
+    {% if value is none or value == "" %}—{% elif column.get("truncate") %}{{ value|string|truncate(column.get("truncate")|int, true, "…") }}{% else %}{{ value }}{% endif %}
+  {% endif %}
+{%- endmacro %}
+
+{% macro action_payload_fields(action) -%}
+  {% set payload = action.get("payload", {}) if action is mapping else {} %}
+  {% if payload is mapping %}
+    {% for key, value in payload.items() %}
+      {% if key not in ["actor_uid","actor_role","permissions","permission","outlet_scope"] and (value is string or value is number or value is boolean or value is none) %}
+        <input type="hidden" data-action-field name="{{ key }}" value="{{ 'true' if value is sameas true else ('false' if value is sameas false else ('' if value is none else value)) }}">
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+{%- endmacro %}
+
+{% macro render_action(action, row_id="", compact=false, in_menu=false) -%}
+  {% set href = safe_internal_href(action.get("url", ""))|trim %}
+  {% set method = action.get("method", "GET")|default("GET", true)|string|upper %}
+  {% set label = action.get("label", "Action")|default("Action", true) %}
+  {% set style = action_style(action.get("style", "neutral"))|trim %}
+  {% set confirm = action.get("confirm", {}) %}
+  {% if confirm is not mapping %}{% set confirm = {} %}{% endif %}
+  {% if href and method in ["GET","POST","PATCH","PUT","DELETE"] %}
+    {% if method == "GET" %}
+      <a class="ml-action ml-action--{{ style }}{{ ' ml-action--compact' if compact else '' }}" href="{{ href }}"{% if in_menu %} role="menuitem"{% endif %}>{{ label }}</a>
+    {% else %}
+      <span class="ml-action-definition">
+        {{ action_payload_fields(action) }}
+        <button
+          class="ml-action ml-action--{{ style }}{{ ' ml-action--compact' if compact else '' }}"
+          type="button"
+          data-row-action
+          data-action-url="{{ href }}"
+          data-action-method="{{ method }}"
+          data-row-id="{{ row_id }}"
+          data-action-label="{{ label }}"
+          data-confirm-title="{{ confirm.get('title', '') }}"
+          data-confirm-message="{{ confirm.get('message', '') }}"
+          data-confirm-label="{{ confirm.get('confirm_label', label) }}"
+          data-note-field="{{ confirm.get('note_field', '') }}"
+          data-note-label="{{ confirm.get('note_label', 'Note') }}"
+          data-note-required="{{ 'true' if confirm.get('note_required') else 'false' }}"
+          data-note-max="{{ confirm.get('note_max_length', 500) }}"
+          {% if in_menu %}role="menuitem"{% endif %}
+        >{{ label }}</button>
+      </span>
+    {% endif %}
+  {% endif %}
+{%- endmacro %}
+
+{% macro render_row_actions(row) -%}
+  {% set actions = row.get(row_actions_key, []) if row is mapping else [] %}
+  {% if actions is string or actions is not sequence %}{% set actions = [] %}{% endif %}
+  {% set row_id = row.get(id_key, "")|default("", true)|string %}
+  {% if actions %}
+    {% if actions|length <= 2 %}
+      <div class="ml-row-actions" aria-label="Actions">{% for action in actions %}{% if action is mapping %}{{ render_action(action, row_id, true, false) }}{% endif %}{% endfor %}</div>
+    {% else %}
+      <div class="ml-menu" data-action-menu>
+        <button class="ml-action ml-action--neutral ml-action--compact ml-menu__toggle" type="button" aria-haspopup="menu" aria-expanded="false" data-action-menu-toggle>More Actions <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"></path></svg></button>
+        <div class="ml-menu__panel" role="menu" hidden data-action-menu-panel>{% for action in actions %}{% if action is mapping %}{{ render_action(action, row_id, true, true) }}{% endif %}{% endfor %}</div>
+      </div>
+    {% endif %}
+    <p class="ml-row-error" data-row-error hidden></p>
+  {% else %}<span class="ml-muted">No actions</span>{% endif %}
+{%- endmacro %}
+
+{% block title %}{{ resource_title }} | {{ business_name|default("Restaurant", true) }}{% endblock %}
+{% block meta_description %}Protected staff management list for {{ resource_title }}.{% endblock %}
+
+{% block head %}
+  {{ super() }}
+  <meta name="robots" content="noindex,nofollow">
+{% endblock %}
+
+{% block styles %}
+<style>
+.manage-list{--ml-primary:var(--primary-color,#b83222);--ml-primary-hover:var(--primary-color-hover,#98281b);--ml-primary-soft:var(--primary-color-soft,#fff0eb);--ml-primary-contrast:var(--primary-contrast,#fff);--ml-bg:var(--background-color,#fffaf4);--ml-bg-soft:var(--background-subtle,#f8f2ea);--ml-surface:var(--surface-color,#fff);--ml-surface-muted:var(--surface-muted,#f5eee5);--ml-text:var(--text-color,#201c19);--ml-strong:var(--text-strong,#151210);--ml-muted:var(--muted-text,#6f6760);--ml-subtle:var(--subtle-text,#8c8279);--ml-border:var(--border-color,#e7ded4);--ml-border-strong:var(--border-strong,#d3c6b9);--ml-success:var(--success-color,#247a4a);--ml-success-soft:var(--success-soft,#eaf7ef);--ml-warning:var(--warning-color,#9a6510);--ml-warning-soft:var(--warning-soft,#fff5dc);--ml-danger:var(--error-color,#b42318);--ml-danger-soft:var(--error-soft,#fff0ee);--ml-info:var(--info-color,#285ea8);--ml-info-soft:var(--info-soft,#edf4ff);--ml-shadow:var(--shadow-sm,0 8px 22px rgba(31,24,19,.08));--ml-shadow-lg:var(--shadow-md,0 18px 42px rgba(31,24,19,.12));--ml-transition:var(--transition-fast,160ms ease);min-height:72vh;padding:clamp(.75rem,2vw,1.2rem) 0 clamp(4rem,7vw,5.5rem);color:var(--ml-text);background:radial-gradient(circle at 0 0,color-mix(in srgb,var(--ml-primary) 4%,transparent),transparent 28rem),radial-gradient(circle at 100% 70%,color-mix(in srgb,var(--accent-color,#d99b35) 3%,transparent),transparent 24rem)}
+.manage-list,.manage-list *,.manage-list *::before,.manage-list *::after{box-sizing:border-box}.manage-list [hidden]{display:none!important}.manage-list svg{display:block;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.ml-shell{width:min(100% - 1.5rem,1460px);margin-inline:auto}.ml-breadcrumb{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap;margin:0 0 .55rem;color:var(--ml-muted);font-size:.5rem}.ml-breadcrumb a{color:var(--ml-primary);font-weight:800;text-decoration:none}
+.ml-header{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.9rem;align-items:center;padding:clamp(.8rem,2.2vw,1.15rem);border:1px solid var(--ml-border);border-radius:18px;background:linear-gradient(140deg,color-mix(in srgb,var(--ml-primary-soft) 50%,var(--ml-surface)),var(--ml-surface));box-shadow:var(--ml-shadow)}.ml-header__main{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.62rem;align-items:center}.ml-header__icon{width:48px;height:48px;display:grid;place-items:center;border:1px solid color-mix(in srgb,var(--ml-primary) 18%,var(--ml-border));border-radius:13px;background:var(--ml-surface);color:var(--ml-primary)}.ml-header__icon svg{width:1.25rem;height:1.25rem}.ml-header h1{margin:0;color:var(--ml-strong);font-size:clamp(1.35rem,3.2vw,2.15rem);font-weight:920;line-height:1.05;letter-spacing:-.04em}.ml-header p{max-width:70ch;margin:.24rem 0 0;color:var(--ml-muted);font-size:.56rem;line-height:1.5}.ml-header__actions{display:flex;align-items:center;justify-content:flex-end;gap:.4rem;flex-wrap:wrap}
+.ml-button,.ml-action{min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:.32rem;padding:.5rem .62rem;border-radius:9px;font:inherit;font-size:.53rem;font-weight:820;line-height:1;text-decoration:none;cursor:pointer;transition:transform var(--ml-transition),border-color var(--ml-transition),background var(--ml-transition),color var(--ml-transition),opacity var(--ml-transition)}.ml-button svg,.ml-action svg{width:.74rem;height:.74rem}.ml-button--primary,.ml-action--primary{border:1px solid var(--ml-primary);background:var(--ml-primary);color:var(--ml-primary-contrast)}.ml-button--secondary,.ml-action--secondary{border:1px solid var(--ml-border);background:var(--ml-bg);color:var(--ml-text)}.ml-action--neutral{border:1px solid var(--ml-border);background:var(--ml-surface);color:var(--ml-text)}.ml-action--warning{border:1px solid color-mix(in srgb,var(--ml-warning) 28%,var(--ml-border));background:var(--ml-warning-soft);color:var(--ml-warning)}.ml-action--danger{border:1px solid color-mix(in srgb,var(--ml-danger) 28%,var(--ml-border));background:var(--ml-danger-soft);color:var(--ml-danger)}.ml-button:hover:not(:disabled),.ml-action:hover:not(:disabled){transform:translateY(-1px)}.ml-button:disabled,.ml-action:disabled{cursor:not-allowed;opacity:.56;transform:none!important}.ml-action--compact{min-height:34px;padding:.42rem .5rem;font-size:.49rem}.ml-muted{color:var(--ml-subtle);font-size:.49rem}
+.ml-alert{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.45rem;margin-top:.62rem;padding:.58rem .66rem;border:1px solid color-mix(in srgb,var(--ml-warning) 24%,var(--ml-border));border-radius:10px;background:var(--ml-warning-soft);color:color-mix(in srgb,var(--ml-warning) 80%,var(--ml-text));font-size:.53rem;line-height:1.45}.ml-alert--danger{border-color:color-mix(in srgb,var(--ml-danger) 24%,var(--ml-border));background:var(--ml-danger-soft);color:var(--ml-danger)}.ml-alert svg{width:.8rem;height:.8rem;margin-top:.03rem}.ml-panel{margin-top:.72rem;border:1px solid var(--ml-border);border-radius:15px;background:var(--ml-surface);box-shadow:var(--ml-shadow)}
+.ml-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) minmax(0,2fr) auto;gap:.55rem;align-items:end;padding:.72rem;border-bottom:1px solid var(--ml-border)}.ml-search,.ml-filters,.ml-sort{display:flex;gap:.42rem;align-items:end;flex-wrap:wrap}.ml-field{display:grid;gap:.22rem;min-width:0}.ml-field label,.ml-field__label{color:var(--ml-muted);font-size:.48rem;font-weight:800}.ml-input,.ml-select{min-height:40px;width:100%;padding:.48rem .55rem;border:1px solid var(--ml-border);border-radius:9px;background:var(--ml-bg);color:var(--ml-text);font:inherit;font-size:.53rem;outline:none}.ml-input:focus,.ml-select:focus{border-color:var(--ml-primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--ml-primary) 14%,transparent)}.ml-search__box{position:relative;min-width:min(340px,70vw)}.ml-search__box svg{position:absolute;left:.55rem;top:50%;width:.72rem;height:.72rem;transform:translateY(-50%);color:var(--ml-subtle);pointer-events:none}.ml-search__box .ml-input{padding-left:1.65rem}.ml-clear-search{position:absolute;right:.25rem;top:50%;min-width:32px;min-height:32px;display:grid;place-items:center;transform:translateY(-50%);border:0;background:transparent;color:var(--ml-muted);cursor:pointer}.ml-clear-search svg{position:static;width:.68rem;height:.68rem;transform:none}.ml-toolbar__right{display:flex;gap:.36rem;justify-content:flex-end;align-items:center;flex-wrap:wrap}.ml-filter-chipbar{display:flex;align-items:center;gap:.32rem;flex-wrap:wrap;padding:.55rem .72rem;border-bottom:1px solid var(--ml-border);background:var(--ml-bg-soft)}.ml-filter-chip{display:inline-flex;align-items:center;gap:.25rem;min-height:30px;padding:.32rem .42rem;border:1px solid var(--ml-border);border-radius:999px;background:var(--ml-surface);color:var(--ml-text);font-size:.48rem;font-weight:760}.ml-filter-chip button{display:grid;place-items:center;width:22px;height:22px;border:0;background:transparent;color:var(--ml-muted);cursor:pointer}.ml-filter-chip button svg{width:.58rem;height:.58rem}
+.ml-summarybar{display:flex;align-items:center;justify-content:space-between;gap:.55rem;flex-wrap:wrap;padding:.58rem .72rem;border-bottom:1px solid var(--ml-border)}.ml-result-count{margin:0;color:var(--ml-muted);font-size:.52rem}.ml-result-count strong{color:var(--ml-text)}.ml-timezone{color:var(--ml-subtle);font-size:.47rem}.ml-bulkbar{display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap;padding:.55rem .72rem;border-bottom:1px solid var(--ml-border);background:var(--ml-primary-soft)}.ml-bulkbar__count{font-size:.52rem;font-weight:800;color:var(--ml-primary)}.ml-bulkbar__actions{display:flex;gap:.36rem;flex-wrap:wrap}
+.ml-table-wrap{overflow:auto;max-width:100%;border-radius:0 0 15px 15px}.ml-table{width:100%;border-collapse:separate;border-spacing:0;font-size:.52rem}.ml-table caption{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.ml-table th,.ml-table td{padding:.58rem .62rem;border-bottom:1px solid var(--ml-border);vertical-align:middle;text-align:left}.ml-table th{position:sticky;top:0;z-index:2;background:var(--ml-surface-muted);color:var(--ml-muted);font-size:.48rem;font-weight:850;letter-spacing:.02em}.ml-table tbody tr{background:var(--ml-surface);transition:background var(--ml-transition)}.ml-table tbody tr:hover,.ml-table tbody tr:focus-within{background:color-mix(in srgb,var(--ml-primary-soft) 26%,var(--ml-surface))}.ml-table tbody tr.is-stale{background:var(--ml-warning-soft)}.ml-table tbody tr:last-child td{border-bottom:0}.ml-sort-button{display:inline-flex;align-items:center;gap:.24rem;padding:0;border:0;background:transparent;color:inherit;font:inherit;font-weight:850;cursor:pointer}.ml-sort-button svg{width:.58rem;height:.58rem}.ml-select-cell{width:42px;text-align:center!important}.ml-checkbox{width:17px;height:17px;accent-color:var(--ml-primary);cursor:pointer}.ml-number{font-variant-numeric:tabular-nums;font-weight:760}.ml-money{display:inline-flex;align-items:baseline;gap:.22rem;white-space:nowrap;font-variant-numeric:tabular-nums}.ml-money__currency{color:var(--ml-muted);font-size:.86em;font-weight:800}.ml-money__amount{color:var(--ml-strong);font-weight:860}.ml-cell-link{color:var(--ml-primary);font-weight:780;text-decoration:underline;text-underline-offset:.12em}.ml-rating{display:inline-flex;align-items:center;gap:.3rem}.ml-rating>span{letter-spacing:.04em;color:var(--ml-border-strong)}.ml-rating .is-filled{color:#b7791f}.ml-rating small{color:var(--ml-muted);font-size:.46rem}
+.ml-status{min-height:27px;display:inline-flex;align-items:center;gap:.25rem;padding:.3rem .4rem;border:1px solid var(--ml-border);border-radius:999px;font-size:.47rem;font-weight:820;line-height:1;white-space:nowrap}.ml-status__dot{width:6px;height:6px;border-radius:50%;background:currentColor}.ml-status--success{border-color:color-mix(in srgb,var(--ml-success) 22%,var(--ml-border));background:var(--ml-success-soft);color:var(--ml-success)}.ml-status--warning{border-color:color-mix(in srgb,var(--ml-warning) 22%,var(--ml-border));background:var(--ml-warning-soft);color:var(--ml-warning)}.ml-status--danger{border-color:color-mix(in srgb,var(--ml-danger) 22%,var(--ml-border));background:var(--ml-danger-soft);color:var(--ml-danger)}.ml-status--info{border-color:color-mix(in srgb,var(--ml-info) 22%,var(--ml-border));background:var(--ml-info-soft);color:var(--ml-info)}.ml-status--neutral{background:var(--ml-bg-soft);color:var(--ml-muted)}
+.ml-thumb{position:relative;width:42px;height:42px;display:grid;place-items:center;overflow:hidden;border:1px solid var(--ml-border);border-radius:9px;background:var(--ml-bg-soft)}.ml-thumb img{position:relative;z-index:2;width:100%;height:100%;object-fit:cover}.ml-thumb__fallback{position:absolute;inset:0;display:grid;place-items:center;color:var(--ml-subtle)}.ml-thumb__fallback svg{width:1rem;height:1rem}.ml-thumb--fallback .ml-thumb__fallback{position:static}.ml-row-actions{display:flex;gap:.28rem;flex-wrap:wrap}.ml-row-error{margin:.22rem 0 0;color:var(--ml-danger);font-size:.45rem;line-height:1.35}.ml-action-definition{display:contents}
+.ml-menu{position:relative;display:inline-block}.ml-menu__toggle svg{transition:transform var(--ml-transition)}.ml-menu__toggle[aria-expanded="true"] svg{transform:rotate(180deg)}.ml-menu__panel{position:absolute;right:0;top:calc(100% + .25rem);z-index:20;min-width:170px;display:grid;gap:.2rem;padding:.3rem;border:1px solid var(--ml-border);border-radius:10px;background:var(--ml-surface);box-shadow:var(--ml-shadow-lg)}.ml-menu__panel .ml-action{width:100%;justify-content:flex-start}.ml-menu__panel .ml-action-definition{display:block}.ml-menu__panel .ml-action-definition .ml-action{width:100%}
+.ml-empty{padding:2rem 1rem;text-align:center}.ml-empty__icon{width:48px;height:48px;display:grid;place-items:center;margin:0 auto .45rem;border-radius:13px;background:var(--ml-bg-soft);color:var(--ml-muted)}.ml-empty__icon svg{width:1.1rem;height:1.1rem}.ml-empty h2{margin:0;color:var(--ml-strong);font-size:.8rem;font-weight:880}.ml-empty p{max-width:54ch;margin:.2rem auto 0;color:var(--ml-muted);font-size:.52rem;line-height:1.5}.ml-empty__actions{display:flex;justify-content:center;gap:.4rem;flex-wrap:wrap;margin-top:.65rem}
+.ml-pagination{display:flex;align-items:center;justify-content:space-between;gap:.6rem;flex-wrap:wrap;padding:.68rem .72rem;border-top:1px solid var(--ml-border)}.ml-pagination__meta{color:var(--ml-muted);font-size:.5rem}.ml-pagination__actions{display:flex;gap:.36rem;flex-wrap:wrap}
+.ml-dialog{width:min(100% - 1.2rem,480px);padding:0;border:1px solid var(--ml-border);border-radius:16px;background:var(--ml-surface);color:var(--ml-text);box-shadow:var(--ml-shadow-lg)}.ml-dialog::backdrop{background:rgba(18,16,14,.58);backdrop-filter:blur(2px)}.ml-dialog__head{display:flex;align-items:flex-start;justify-content:space-between;gap:.6rem;padding:.72rem .8rem;border-bottom:1px solid var(--ml-border)}.ml-dialog__head h2{margin:0;color:var(--ml-strong);font-size:.78rem;font-weight:880}.ml-dialog__close{width:34px;height:34px;display:grid;place-items:center;border:1px solid var(--ml-border);border-radius:9px;background:var(--ml-bg);color:var(--ml-muted);cursor:pointer}.ml-dialog__close svg{width:.7rem;height:.7rem}.ml-dialog__body{padding:.75rem .8rem}.ml-dialog__message{margin:0;color:var(--ml-muted);font-size:.54rem;line-height:1.5;white-space:pre-wrap}.ml-dialog__note{display:grid;gap:.22rem;margin-top:.62rem}.ml-dialog__note label{font-size:.5rem;font-weight:800;color:var(--ml-text)}.ml-textarea{min-height:92px;resize:vertical;padding:.52rem;border:1px solid var(--ml-border);border-radius:9px;background:var(--ml-bg);color:var(--ml-text);font:inherit;font-size:.52rem}.ml-dialog__footer{display:flex;justify-content:flex-end;gap:.38rem;flex-wrap:wrap;padding:.7rem .8rem;border-top:1px solid var(--ml-border)}
+.manage-list a:focus-visible,.manage-list button:focus-visible,.manage-list input:focus-visible,.manage-list select:focus-visible,.manage-list textarea:focus-visible{outline:3px solid color-mix(in srgb,var(--ml-primary) 24%,transparent);outline-offset:2px}
+@media(max-width:1050px){.ml-toolbar{grid-template-columns:1fr}.ml-toolbar__right{justify-content:flex-start}.ml-search__box{min-width:min(100%,520px)}.ml-header{grid-template-columns:1fr}.ml-header__actions{justify-content:flex-start}}
+@media(max-width:760px){.ml-shell{width:min(100% - .8rem,760px)}.ml-toolbar,.ml-summarybar,.ml-filter-chipbar,.ml-bulkbar,.ml-pagination{padding:.58rem}.ml-filters,.ml-sort{width:100%}.ml-field{flex:1 1 145px}.ml-search,.ml-search__box{width:100%;min-width:0}.ml-table-wrap{overflow:visible}.ml-table,.ml-table thead,.ml-table tbody,.ml-table tr,.ml-table th,.ml-table td{display:block}.ml-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}.ml-table tbody{display:grid;gap:.55rem;padding:.58rem}.ml-table tbody tr{display:block;border:1px solid var(--ml-border);border-radius:12px;overflow:hidden;background:var(--ml-bg-soft)}.ml-table td{display:grid;grid-template-columns:minmax(105px,.72fr) minmax(0,1.28fr);gap:.45rem;align-items:start;padding:.5rem .55rem;border-bottom:1px solid var(--ml-border)}.ml-table td::before{content:attr(data-label);color:var(--ml-muted);font-size:.46rem;font-weight:850}.ml-table td:last-child{border-bottom:0}.ml-table .ml-select-cell{display:flex;width:auto;text-align:left!important}.ml-table .ml-select-cell::before{content:"Select";min-width:105px}.ml-row-actions{justify-content:flex-start}.ml-menu__panel{position:fixed;left:.65rem;right:.65rem;top:auto;bottom:.65rem;min-width:0}.ml-pagination{align-items:stretch}.ml-pagination__actions{width:100%}.ml-pagination__actions .ml-button{flex:1}}
+@media(max-width:460px){.ml-shell{width:min(100% - .55rem,520px)}.ml-header{padding:.72rem;border-radius:14px}.ml-header__main{grid-template-columns:1fr}.ml-header__icon{width:42px;height:42px}.ml-header__actions{align-items:stretch;flex-direction:column}.ml-header__actions .ml-button{width:100%}.ml-table tbody{padding:.42rem}.ml-table td{grid-template-columns:1fr;gap:.2rem}.ml-table .ml-select-cell::before{min-width:0}.ml-dialog__footer{flex-direction:column-reverse}.ml-dialog__footer .ml-button{width:100%}}
+@media(prefers-reduced-motion:reduce){.manage-list *,.manage-list *::before,.manage-list *::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-iteration-count:1!important}}
+
+
+    /* =====================================================================
+       PREMIUM PROTECTED MANAGEMENT LIST — CINEMATIC BLACK / GOLD / IVORY V2
+       =====================================================================
+       Presentation-only enhancement layer.
+       Existing Flask/Jinja data, RBAC, action payloads, CSRF, confirmations,
+       filtering, sorting, pagination and mutation flows remain authoritative.
+       ===================================================================== */
+
+    .manage-list {
+        --lux-black-0: #020202;
+        --lux-black-1: #050504;
+        --lux-black-2: #080806;
+        --lux-black-3: #0d0c09;
+        --lux-black-4: #12100d;
+        --lux-black-5: #18140f;
+        --lux-black-6: #211a13;
+
+        --lux-gold-50: #fff9e8;
+        --lux-gold-100: #fbeaba;
+        --lux-gold-200: #f4d681;
+        --lux-gold-300: #e9be57;
+        --lux-gold-400: #d39d33;
+        --lux-gold-500: #ae741b;
+        --lux-gold-600: #81500e;
+
+        --lux-ivory: #fffaf1;
+        --lux-cream: #f5eadb;
+        --lux-cream-deep: #e4d2b6;
+        --lux-white: #fffdfa;
+        --lux-white-soft: rgba(255, 253, 250, .88);
+        --lux-white-glow: rgba(255, 255, 255, .16);
+
+        --lux-silver-50: #f2f0ec;
+        --lux-silver-100: #d8d4cc;
+        --lux-silver-200: #aaa69f;
+        --lux-silver-300: #7b7770;
+
+        --lux-success: #8db99a;
+        --lux-warning: #dfb45e;
+        --lux-danger: #e5786b;
+        --lux-info: #8aadd7;
+
+        --lux-border: rgba(232, 190, 91, .13);
+        --lux-border-strong: rgba(246, 216, 141, .28);
+        --lux-border-silver: rgba(230, 226, 218, .11);
+        --lux-border-white: rgba(255, 255, 255, .13);
+
+        --lux-shadow-xs: 0 8px 20px rgba(0, 0, 0, .17);
+        --lux-shadow-sm: 0 16px 36px rgba(0, 0, 0, .24);
+        --lux-shadow-md: 0 26px 58px rgba(0, 0, 0, .32);
+        --lux-shadow-lg: 0 40px 96px rgba(0, 0, 0, .42);
+        --lux-shadow-white: 0 0 0 1px rgba(255,255,255,.025), 0 18px 50px rgba(255,255,255,.035), 0 30px 80px rgba(0,0,0,.28);
+
+        --lux-ease: cubic-bezier(.2, .72, .2, 1);
+        --lux-ease-out: cubic-bezier(.16, 1, .3, 1);
+        --lux-ease-spring: cubic-bezier(.17, .89, .32, 1.18);
+
+        --lux-pointer-x: 52%;
+        --lux-pointer-y: 12%;
+        --lux-header-rx: 0deg;
+        --lux-header-ry: 0deg;
+        --lux-panel-rx: 0deg;
+        --lux-panel-ry: 0deg;
+        --lux-scroll-progress: 0%;
+
+        --ml-primary: var(--lux-gold-400);
+        --ml-primary-hover: var(--lux-gold-300);
+        --ml-primary-soft: rgba(232, 190, 87, .075);
+        --ml-primary-contrast: #171006;
+        --ml-bg: var(--lux-black-2);
+        --ml-bg-soft: var(--lux-black-3);
+        --ml-surface: var(--lux-black-4);
+        --ml-surface-muted: var(--lux-black-5);
+        --ml-text: #ded7ca;
+        --ml-strong: var(--lux-ivory);
+        --ml-muted: #aaa196;
+        --ml-subtle: #7d766d;
+        --ml-border: var(--lux-border);
+        --ml-border-strong: var(--lux-border-strong);
+        --ml-success: var(--lux-success);
+        --ml-success-soft: rgba(141, 185, 154, .09);
+        --ml-warning: var(--lux-warning);
+        --ml-warning-soft: rgba(223, 180, 94, .09);
+        --ml-danger: var(--lux-danger);
+        --ml-danger-soft: rgba(229, 120, 107, .09);
+        --ml-info: var(--lux-info);
+        --ml-info-soft: rgba(138, 173, 215, .09);
+        --ml-shadow: var(--lux-shadow-sm);
+        --ml-shadow-lg: var(--lux-shadow-lg);
+
+        position: relative;
+        isolation: isolate;
+        overflow: clip;
+        min-height: 84vh;
+        padding-top: clamp(1rem, 2.3vw, 1.55rem);
+        color: var(--ml-text);
+        background:
+            radial-gradient(circle at var(--lux-pointer-x) var(--lux-pointer-y), rgba(236, 198, 105, .062), transparent 31rem),
+            radial-gradient(circle at 98% 4%, rgba(232, 190, 87, .115), transparent 32rem),
+            radial-gradient(circle at -5% 47%, rgba(135, 78, 22, .09), transparent 36rem),
+            linear-gradient(180deg, #090807 0%, #050504 44%, #090705 100%);
+    }
+
+    .manage-list::before {
+        content: "";
+        position: absolute;
+        z-index: -2;
+        top: 1rem;
+        right: -16rem;
+        width: 39rem;
+        height: 39rem;
+        border: 1px solid rgba(246, 216, 141, .075);
+        border-radius: 50%;
+        box-shadow:
+            0 0 0 46px rgba(232, 190, 87, .013),
+            0 0 0 92px rgba(232, 190, 87, .007),
+            0 0 100px rgba(232, 190, 87, .04);
+        transform: rotateX(67deg) rotateZ(-7deg);
+        pointer-events: none;
+        animation: ml-lux-orbit-a 16s ease-in-out infinite alternate;
+    }
+
+    .manage-list::after {
+        content: "";
+        position: absolute;
+        z-index: -2;
+        top: 65rem;
+        left: -15rem;
+        width: 31rem;
+        height: 31rem;
+        border: 1px solid rgba(216, 212, 204, .055);
+        border-radius: 50%;
+        box-shadow:
+            0 0 0 42px rgba(232, 190, 87, .009),
+            0 0 0 84px rgba(232, 190, 87, .004);
+        transform: rotateX(62deg) rotateZ(5deg);
+        pointer-events: none;
+        animation: ml-lux-orbit-b 19s ease-in-out infinite alternate;
+    }
+
+    @keyframes ml-lux-orbit-a {
+        from { transform: translate3d(0,0,0) rotateX(67deg) rotateZ(-7deg); }
+        to { transform: translate3d(-38px, 26px, 0) rotateX(72deg) rotateZ(9deg); }
+    }
+
+    @keyframes ml-lux-orbit-b {
+        from { transform: translate3d(0,0,0) rotateX(62deg) rotateZ(5deg); }
+        to { transform: translate3d(31px,-20px,0) rotateX(58deg) rotateZ(-8deg); }
+    }
+
+    .manage-list[data-premium-ready="true"] .ml-shell {
+        position: relative;
+        z-index: 2;
+    }
+
+    .ml-lux-scroll-progress {
+        position: fixed;
+        z-index: 80;
+        top: 0;
+        right: 0;
+        left: 0;
+        height: 3px;
+        background: rgba(255,255,255,.025);
+        pointer-events: none;
+    }
+
+    .ml-lux-scroll-progress__bar {
+        width: var(--lux-scroll-progress);
+        height: 100%;
+        background: linear-gradient(90deg, var(--lux-gold-100), var(--lux-gold-400), var(--lux-gold-600));
+        box-shadow: 0 0 14px rgba(232,190,87,.32), 0 0 28px rgba(255,255,255,.06);
+        transition: width 120ms linear;
+    }
+
+    .ml-breadcrumb {
+        margin-bottom: .72rem;
+        color: var(--ml-subtle);
+        font-size: .56rem;
+        letter-spacing: .02em;
+    }
+
+    .ml-breadcrumb a {
+        position: relative;
+        color: var(--lux-gold-200);
+        text-shadow: 0 0 14px rgba(232,190,87,.09);
+    }
+
+    .ml-breadcrumb a::after {
+        content: "";
+        position: absolute;
+        right: 50%;
+        bottom: -4px;
+        left: 50%;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--lux-gold-200), transparent);
+        transition: right 180ms var(--lux-ease), left 180ms var(--lux-ease);
+    }
+
+    .ml-breadcrumb a:hover::after {
+        right: 0;
+        left: 0;
+    }
+
+    .ml-header {
+        --ml-header-x: 84%;
+        --ml-header-y: 12%;
+        position: relative;
+        overflow: hidden;
+        padding: clamp(1rem, 2.4vw, 1.45rem);
+        border: 1px solid rgba(246,216,141,.18);
+        border-radius: 24px;
+        background:
+            radial-gradient(circle at var(--ml-header-x) var(--ml-header-y), rgba(255,255,255,.11), transparent 16rem),
+            radial-gradient(circle at 92% 6%, rgba(232,190,87,.12), transparent 20rem),
+            linear-gradient(145deg, #211a13 0%, #100d09 57%, #060504 100%);
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.07),
+            inset 0 -1px 0 rgba(0,0,0,.42),
+            var(--lux-shadow-white);
+        transform: perspective(1300px) rotateX(var(--lux-header-rx)) rotateY(var(--lux-header-ry));
+        transform-style: preserve-3d;
+        transition: transform 260ms var(--lux-ease), border-color 220ms ease, box-shadow 260ms ease;
+    }
+
+    .ml-header::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        right: 16%;
+        left: 16%;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,.22), rgba(232,190,87,.56), rgba(255,255,255,.22), transparent);
+        opacity: .62;
+        pointer-events: none;
+    }
+
+    .ml-header::after {
+        content: "";
+        position: absolute;
+        inset: -120% auto -120% -32%;
+        width: 24%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
+        transform: skewX(-19deg);
+        animation: ml-lux-header-sweep 9s ease-in-out infinite;
+        pointer-events: none;
+    }
+
+    @keyframes ml-lux-header-sweep {
+        0%, 72% { left: -38%; opacity: 0; }
+        79% { opacity: .8; }
+        100% { left: 118%; opacity: 0; }
+    }
+
+    .ml-header__main,
+    .ml-header__actions {
+        position: relative;
+        z-index: 2;
+        transform: translateZ(20px);
+    }
+
+    .ml-header__icon {
+        width: 58px;
+        height: 58px;
+        border: 1px solid rgba(246,216,141,.24);
+        border-radius: 17px;
+        background:
+            radial-gradient(circle at 32% 24%, rgba(255,255,255,.20), transparent 42%),
+            linear-gradient(145deg, #f5d784, #d8a13c 60%, #8e5b13);
+        color: #251708;
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.36),
+            0 5px 0 #6f430d,
+            0 16px 28px rgba(0,0,0,.25),
+            0 0 28px rgba(232,190,87,.12);
+        transform: translateZ(28px) rotate(-1deg);
+    }
+
+    .ml-header__icon svg {
+        width: 1.42rem;
+        height: 1.42rem;
+        stroke-width: 2;
+    }
+
+    .ml-header h1 {
+        color: var(--lux-ivory);
+        font-size: clamp(1.75rem, 3.8vw, 2.9rem);
+        font-weight: 950;
+        letter-spacing: -.055em;
+        text-shadow: 0 18px 42px rgba(0,0,0,.36), 0 0 24px rgba(255,255,255,.035);
+    }
+
+    .ml-header p {
+        max-width: 74ch;
+        margin-top: .42rem;
+        color: #b3aa9d;
+        font-size: .67rem;
+        line-height: 1.65;
+    }
+
+    .ml-header__actions {
+        gap: .48rem;
+    }
+
+    .ml-button,
+    .ml-action {
+        position: relative;
+        overflow: hidden;
+        border-radius: 11px;
+        letter-spacing: .01em;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.035), 0 10px 22px rgba(0,0,0,.16);
+        transition:
+            transform 190ms var(--lux-ease),
+            border-color 190ms ease,
+            background 190ms ease,
+            color 190ms ease,
+            box-shadow 190ms ease,
+            opacity 190ms ease;
+    }
+
+    .ml-button::after,
+    .ml-action::after {
+        content: "";
+        position: absolute;
+        inset: 0 auto 0 -120%;
+        width: 58%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,.24), transparent);
+        transform: skewX(-24deg);
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .ml-button:hover:not(:disabled)::after,
+    .ml-action:hover:not(:disabled)::after {
+        animation: ml-lux-button-shine .9s ease;
+    }
+
+    @keyframes ml-lux-button-shine {
+        0% { left: -120%; opacity: 0; }
+        15% { opacity: .45; }
+        100% { left: 135%; opacity: 0; }
+    }
+
+    .ml-button:hover:not(:disabled),
+    .ml-action:hover:not(:disabled) {
+        transform: translateY(-2px);
+    }
+
+    .ml-button--primary,
+    .ml-action--primary {
+        border-color: rgba(255,232,175,.42);
+        background:
+            radial-gradient(circle at 30% 20%, rgba(255,255,255,.27), transparent 38%),
+            linear-gradient(135deg, #f6d87f 0%, #d69d35 60%, #9b6115 100%);
+        color: #201405;
+        text-shadow: 0 1px 0 rgba(255,255,255,.26);
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.38),
+            inset 0 -1px 0 rgba(77,42,3,.22),
+            0 4px 0 #76470c,
+            0 14px 28px rgba(0,0,0,.24),
+            0 0 20px rgba(232,190,87,.08);
+    }
+
+    .ml-button--primary:hover:not(:disabled),
+    .ml-action--primary:hover:not(:disabled) {
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.44),
+            inset 0 -1px 0 rgba(77,42,3,.20),
+            0 3px 0 #76470c,
+            0 18px 34px rgba(0,0,0,.27),
+            0 0 30px rgba(232,190,87,.12);
+    }
+
+    .ml-button--secondary,
+    .ml-action--secondary,
+    .ml-action--neutral {
+        border-color: rgba(236,224,196,.13);
+        background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.012));
+        color: #e7dfd2;
+    }
+
+    .ml-button--secondary:hover:not(:disabled),
+    .ml-action--secondary:hover:not(:disabled),
+    .ml-action--neutral:hover:not(:disabled) {
+        border-color: rgba(246,216,141,.25);
+        background: rgba(232,190,87,.055);
+        color: var(--lux-gold-100);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.055), 0 14px 28px rgba(0,0,0,.22);
+    }
+
+    .ml-action--warning {
+        border-color: rgba(223,180,94,.28);
+        background: rgba(223,180,94,.075);
+        color: #ebc77e;
+    }
+
+    .ml-action--danger {
+        border-color: rgba(229,120,107,.30);
+        background: rgba(229,120,107,.075);
+        color: #f0a097;
+    }
+
+    .ml-alert {
+        position: relative;
+        overflow: hidden;
+        border-color: rgba(223,180,94,.25);
+        background: linear-gradient(135deg, rgba(223,180,94,.085), rgba(255,255,255,.015));
+        color: #e6c27c;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.035), 0 16px 32px rgba(0,0,0,.18);
+    }
+
+    .ml-alert--danger {
+        border-color: rgba(229,120,107,.28);
+        background: linear-gradient(135deg, rgba(229,120,107,.09), rgba(255,255,255,.014));
+        color: #f0a097;
+    }
+
+    .ml-panel {
+        --ml-panel-x: 84%;
+        --ml-panel-y: 5%;
+        position: relative;
+        overflow: visible;
+        margin-top: .9rem;
+        border: 1px solid rgba(246,216,141,.13);
+        border-radius: 20px;
+        background:
+            radial-gradient(circle at var(--ml-panel-x) var(--ml-panel-y), rgba(255,255,255,.06), transparent 18rem),
+            linear-gradient(145deg, rgba(255,255,255,.034), rgba(255,255,255,.006)),
+            #100e0b;
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.035),
+            inset 0 -1px 0 rgba(0,0,0,.30),
+            var(--lux-shadow-white);
+        transform: perspective(1500px) rotateX(var(--lux-panel-rx)) rotateY(var(--lux-panel-ry));
+        transform-style: preserve-3d;
+        transition: transform 250ms var(--lux-ease), border-color 200ms ease, box-shadow 250ms ease;
+    }
+
+    .ml-panel::before {
+        content: "";
+        position: absolute;
+        z-index: 2;
+        top: 0;
+        right: 14%;
+        left: 14%;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,.16), rgba(232,190,87,.38), rgba(255,255,255,.16), transparent);
+        pointer-events: none;
+    }
+
+    .ml-toolbar {
+        position: relative;
+        border-bottom-color: rgba(246,216,141,.10);
+        border-radius: 19px 19px 0 0;
+        background:
+            radial-gradient(circle at 88% 0%, rgba(255,255,255,.055), transparent 15rem),
+            linear-gradient(180deg, rgba(255,255,255,.024), rgba(255,255,255,.007));
+    }
+
+    .ml-field label,
+    .ml-field__label {
+        color: #b4ab9f;
+        font-size: .51rem;
+        letter-spacing: .045em;
+        text-transform: uppercase;
+    }
+
+    .ml-input,
+    .ml-select,
+    .ml-textarea {
+        border-color: rgba(232,190,87,.12);
+        background:
+            linear-gradient(180deg, rgba(255,255,255,.025), rgba(255,255,255,.008)),
+            #0b0a08;
+        color: #eee6da;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.018);
+        transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease, transform 180ms var(--lux-ease);
+    }
+
+    .ml-input::placeholder,
+    .ml-textarea::placeholder {
+        color: rgba(181,170,156,.53);
+    }
+
+    .ml-input:hover,
+    .ml-select:hover,
+    .ml-textarea:hover {
+        border-color: rgba(246,216,141,.22);
+    }
+
+    .ml-input:focus,
+    .ml-select:focus,
+    .ml-textarea:focus {
+        border-color: rgba(246,216,141,.44);
+        background: #0e0c09;
+        box-shadow:
+            0 0 0 3px rgba(232,190,87,.055),
+            0 0 22px rgba(255,255,255,.025),
+            inset 0 1px 0 rgba(255,255,255,.025);
+        transform: translateY(-1px);
+    }
+
+    .ml-search__box svg {
+        color: var(--lux-gold-300);
+    }
+
+    .ml-clear-search {
+        border-radius: 8px;
+        transition: background 180ms ease, color 180ms ease, transform 180ms var(--lux-ease);
+    }
+
+    .ml-clear-search:hover {
+        background: rgba(232,190,87,.07);
+        color: var(--lux-gold-100);
+        transform: translateY(-50%) scale(1.05);
+    }
+
+    .ml-filter-chipbar {
+        border-bottom-color: rgba(246,216,141,.09);
+        background:
+            linear-gradient(90deg, rgba(255,255,255,.018), rgba(232,190,87,.025), rgba(255,255,255,.008));
+    }
+
+    .ml-filter-chip {
+        border-color: rgba(232,190,87,.12);
+        background: rgba(255,255,255,.02);
+        color: #ddd3c5;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.02);
+    }
+
+    .ml-filter-chip button:hover {
+        color: var(--lux-gold-100);
+    }
+
+    .ml-summarybar {
+        border-bottom-color: rgba(246,216,141,.09);
+        background: rgba(255,255,255,.008);
+    }
+
+    .ml-result-count strong {
+        color: var(--lux-gold-100);
+        text-shadow: 0 0 14px rgba(232,190,87,.08);
+    }
+
+    .ml-timezone {
+        color: #8f877d;
+    }
+
+    .ml-bulkbar {
+        position: relative;
+        border-bottom-color: rgba(246,216,141,.12);
+        background:
+            radial-gradient(circle at 90% 0%, rgba(255,255,255,.07), transparent 15rem),
+            linear-gradient(90deg, rgba(232,190,87,.11), rgba(232,190,87,.035));
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.035), inset 0 -1px 0 rgba(0,0,0,.18);
+    }
+
+    .ml-bulkbar:not([hidden]) {
+        animation: ml-lux-bulk-in 320ms var(--lux-ease-out) both;
+    }
+
+    @keyframes ml-lux-bulk-in {
+        from { opacity: 0; transform: translateY(-5px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .ml-bulkbar__count {
+        color: var(--lux-gold-100);
+    }
+
+    .ml-table-wrap {
+        position: relative;
+        border-radius: 0 0 19px 19px;
+        background: #0a0907;
+        scrollbar-color: rgba(232,190,87,.25) rgba(255,255,255,.025);
+    }
+
+    .ml-table {
+        color: #dbd3c7;
+    }
+
+    .ml-table th {
+        top: 0;
+        background:
+            linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.018)),
+            #17130f;
+        color: #c0b7aa;
+        border-bottom-color: rgba(246,216,141,.12);
+        box-shadow: 0 8px 20px rgba(0,0,0,.08);
+        backdrop-filter: blur(14px);
+    }
+
+    .ml-table td {
+        border-bottom-color: rgba(246,216,141,.075);
+        transition: background 180ms ease, box-shadow 180ms ease, transform 180ms var(--lux-ease);
+    }
+
+    .ml-table tbody tr {
+        --ml-row-x: 85%;
+        background:
+            radial-gradient(circle at var(--ml-row-x) 10%, rgba(255,255,255,.035), transparent 12rem),
+            #100e0b;
+        transition: background 180ms ease, filter 180ms ease, box-shadow 180ms ease;
+    }
+
+    .ml-table tbody tr:hover,
+    .ml-table tbody tr:focus-within {
+        background:
+            radial-gradient(circle at var(--ml-row-x) 10%, rgba(255,255,255,.065), transparent 14rem),
+            linear-gradient(90deg, rgba(232,190,87,.045), rgba(255,255,255,.012)),
+            #12100d;
+        box-shadow: inset 3px 0 0 rgba(232,190,87,.46), inset 0 1px 0 rgba(255,255,255,.02);
+    }
+
+    .ml-table tbody tr.is-selected {
+        background:
+            linear-gradient(90deg, rgba(232,190,87,.095), rgba(255,255,255,.014)),
+            #14110d;
+        box-shadow: inset 3px 0 0 var(--lux-gold-300);
+    }
+
+    .ml-table tbody tr.is-stale {
+        background: linear-gradient(90deg, rgba(223,180,94,.09), rgba(255,255,255,.01)), #15110b;
+    }
+
+    .ml-sort-button {
+        color: inherit;
+        transition: color 180ms ease, transform 180ms var(--lux-ease);
+    }
+
+    .ml-sort-button:hover {
+        color: var(--lux-gold-100);
+        transform: translateY(-1px);
+    }
+
+    .ml-checkbox {
+        width: 18px;
+        height: 18px;
+        accent-color: var(--lux-gold-400);
+        filter: drop-shadow(0 0 6px rgba(232,190,87,.12));
+    }
+
+    .ml-money__currency {
+        color: #9d9488;
+    }
+
+    .ml-money__amount {
+        color: var(--lux-gold-100);
+        text-shadow: 0 0 14px rgba(232,190,87,.07);
+    }
+
+    .ml-cell-link {
+        color: var(--lux-gold-200);
+        text-decoration-color: rgba(232,190,87,.34);
+    }
+
+    .ml-cell-link:hover {
+        color: var(--lux-gold-50);
+    }
+
+    .ml-rating > span {
+        color: rgba(216,212,204,.15);
+    }
+
+    .ml-rating .is-filled {
+        color: #e7b84f;
+        text-shadow: 0 0 10px rgba(232,190,87,.13);
+    }
+
+    .ml-status {
+        border-color: rgba(216,212,204,.10);
+        background: rgba(255,255,255,.02);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.018);
+    }
+
+    .ml-status__dot {
+        box-shadow: 0 0 8px currentColor;
+    }
+
+    .ml-status--success {
+        border-color: rgba(141,185,154,.25);
+        background: rgba(141,185,154,.065);
+        color: #a5ceaf;
+    }
+
+    .ml-status--warning {
+        border-color: rgba(223,180,94,.25);
+        background: rgba(223,180,94,.065);
+        color: #e8c273;
+    }
+
+    .ml-status--danger {
+        border-color: rgba(229,120,107,.26);
+        background: rgba(229,120,107,.065);
+        color: #f09d94;
+    }
+
+    .ml-status--info {
+        border-color: rgba(138,173,215,.24);
+        background: rgba(138,173,215,.06);
+        color: #a8c2df;
+    }
+
+    .ml-status--neutral {
+        border-color: rgba(216,212,204,.10);
+        background: rgba(255,255,255,.018);
+        color: #aaa196;
+    }
+
+    .ml-thumb {
+        width: 48px;
+        height: 48px;
+        border-color: rgba(246,216,141,.12);
+        border-radius: 11px;
+        background:
+            radial-gradient(circle at 70% 18%, rgba(232,190,87,.10), transparent 50%),
+            #17130f;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.025), 0 8px 18px rgba(0,0,0,.17);
+        transform: translateZ(0);
+        transition: transform 220ms var(--lux-ease), border-color 180ms ease, box-shadow 220ms ease;
+    }
+
+    .ml-thumb:hover {
+        transform: translateY(-2px) scale(1.035);
+        border-color: rgba(246,216,141,.24);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 14px 26px rgba(0,0,0,.23);
+    }
+
+    .ml-thumb img {
+        transition: transform 480ms var(--lux-ease-out), filter 220ms ease;
+    }
+
+    .ml-thumb:hover img {
+        transform: scale(1.10);
+        filter: saturate(1.06) contrast(1.04) brightness(1.02);
+    }
+
+    .ml-row-actions {
+        gap: .34rem;
+    }
+
+    .ml-menu__panel {
+        border-color: rgba(246,216,141,.17);
+        border-radius: 13px;
+        background:
+            radial-gradient(circle at 90% 0%, rgba(255,255,255,.06), transparent 12rem),
+            linear-gradient(145deg, #1a1611, #0d0b08);
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.05),
+            0 22px 54px rgba(0,0,0,.38),
+            0 0 28px rgba(255,255,255,.02);
+        backdrop-filter: blur(16px);
+    }
+
+    .ml-empty {
+        position: relative;
+        overflow: hidden;
+        padding: clamp(2.4rem, 7vw, 4.4rem) 1rem;
+        border-radius: 18px;
+        background:
+            radial-gradient(circle at 50% 0%, rgba(255,255,255,.055), transparent 18rem),
+            linear-gradient(145deg, rgba(255,255,255,.025), rgba(255,255,255,.006));
+    }
+
+    .ml-empty__icon {
+        width: 66px;
+        height: 66px;
+        border: 1px solid rgba(246,216,141,.16);
+        border-radius: 20px;
+        background:
+            radial-gradient(circle at 30% 24%, rgba(255,255,255,.16), transparent 42%),
+            linear-gradient(145deg, #2a2118, #120f0b);
+        color: var(--lux-gold-100);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 18px 34px rgba(0,0,0,.24), 0 0 26px rgba(232,190,87,.07);
+    }
+
+    .ml-empty h2 {
+        color: var(--lux-ivory);
+        font-size: 1.02rem;
+    }
+
+    .ml-empty p {
+        color: #aaa196;
+        font-size: .62rem;
+    }
+
+    .ml-pagination {
+        border-top-color: rgba(246,216,141,.10);
+        background: linear-gradient(180deg, rgba(255,255,255,.008), rgba(255,255,255,.016));
+        border-radius: 0 0 19px 19px;
+    }
+
+    .ml-dialog {
+        overflow: hidden;
+        border-color: rgba(246,216,141,.20);
+        border-radius: 20px;
+        background:
+            radial-gradient(circle at 88% 0%, rgba(255,255,255,.08), transparent 14rem),
+            linear-gradient(145deg, #1b1712, #0c0a08 70%);
+        color: #ded7ca;
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.06),
+            0 36px 90px rgba(0,0,0,.52),
+            0 0 0 1px rgba(255,255,255,.025),
+            0 0 50px rgba(255,255,255,.025);
+    }
+
+    .ml-dialog::backdrop {
+        background: rgba(2,2,2,.76);
+        backdrop-filter: blur(7px) saturate(.8);
+    }
+
+    .ml-dialog__head,
+    .ml-dialog__footer {
+        border-color: rgba(246,216,141,.10);
+    }
+
+    .ml-dialog__head h2 {
+        color: var(--lux-ivory);
+        font-size: .95rem;
+    }
+
+    .ml-dialog__close {
+        border-color: rgba(246,216,141,.13);
+        background: rgba(255,255,255,.025);
+        color: #c2b9ac;
+    }
+
+    .ml-dialog__close:hover {
+        border-color: rgba(246,216,141,.25);
+        background: rgba(232,190,87,.06);
+        color: var(--lux-gold-100);
+    }
+
+    .ml-dialog__message {
+        color: #b1a89c;
+        font-size: .62rem;
+        line-height: 1.65;
+    }
+
+    .manage-list--finance .ml-header__icon {
+        background: linear-gradient(145deg, #f4d68a, #c59638 58%, #7c4a0c);
+    }
+
+    .manage-list--kitchen .ml-header__icon {
+        background: linear-gradient(145deg, #f0d8a4, #d39748 56%, #8d5514);
+    }
+
+    .manage-list--moderation .ml-header__icon,
+    .manage-list--operations .ml-header__icon {
+        background: linear-gradient(145deg, #f5dda6, #d5a44d 58%, #8c5b17);
+    }
+
+    .ml-lux-ripple {
+        position: absolute;
+        z-index: 9;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: rgba(255,255,255,.34);
+        pointer-events: none;
+        transform: translate(-50%, -50%) scale(0);
+        animation: ml-lux-ripple 650ms ease-out forwards;
+    }
+
+    @keyframes ml-lux-ripple {
+        to { opacity: 0; transform: translate(-50%, -50%) scale(26); }
+    }
+
+    .ml-lux-reveal {
+        opacity: 0;
+        filter: blur(5px);
+        transform: translateY(14px) scale(.995);
+        transition:
+            opacity 620ms var(--lux-ease-out),
+            filter 620ms var(--lux-ease-out),
+            transform 620ms var(--lux-ease-out);
+    }
+
+    .ml-lux-reveal.is-lux-visible {
+        opacity: 1;
+        filter: none;
+        transform: none;
+    }
+
+    .manage-list[data-search-active="true"] .ml-panel {
+        border-color: rgba(246,216,141,.22);
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.042),
+            0 0 0 1px rgba(232,190,87,.025),
+            0 28px 62px rgba(0,0,0,.31),
+            0 0 40px rgba(255,255,255,.025);
+    }
+
+    .manage-list a:focus-visible,
+    .manage-list button:focus-visible,
+    .manage-list input:focus-visible,
+    .manage-list select:focus-visible,
+    .manage-list textarea:focus-visible {
+        outline: 3px solid rgba(246,216,141,.19);
+        outline-offset: 3px;
+    }
+
+    @media (max-width: 1150px) {
+        .ml-header h1 {
+            font-size: clamp(1.6rem, 4vw, 2.55rem);
+        }
+
+        .ml-header__icon {
+            width: 54px;
+            height: 54px;
+        }
+    }
+
+    @media (max-width: 760px) {
+        .manage-list::before,
+        .manage-list::after {
+            opacity: .58;
+        }
+
+        .ml-header {
+            border-radius: 19px;
+            transform: none !important;
+        }
+
+        .ml-panel {
+            transform: none !important;
+        }
+
+        .ml-table tbody {
+            background: #090806;
+        }
+
+        .ml-table tbody tr {
+            border-color: rgba(246,216,141,.12);
+            border-radius: 14px;
+            background:
+                radial-gradient(circle at 90% 0%, rgba(255,255,255,.04), transparent 12rem),
+                #11100d;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,.025), 0 14px 28px rgba(0,0,0,.18);
+        }
+
+        .ml-table td {
+            border-bottom-color: rgba(246,216,141,.075);
+        }
+
+        .ml-table td::before {
+            color: #948c81;
+        }
+    }
+
+    @media (max-width: 520px) {
+        .manage-list {
+            padding-top: .75rem;
+        }
+
+        .ml-lux-scroll-progress {
+            height: 2px;
+        }
+
+        .ml-header__main {
+            gap: .8rem;
+        }
+
+        .ml-header__icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 15px;
+        }
+
+        .ml-header h1 {
+            font-size: 1.65rem;
+        }
+
+        .ml-header p {
+            font-size: .62rem;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .manage-list::before,
+        .manage-list::after,
+        .ml-header::after,
+        .ml-lux-ripple,
+        .ml-bulkbar:not([hidden]) {
+            animation: none !important;
+        }
+
+        .ml-lux-reveal,
+        .ml-lux-reveal.is-lux-visible {
+            opacity: 1 !important;
+            filter: none !important;
+            transform: none !important;
+            transition: none !important;
+        }
+
+        .ml-header,
+        .ml-panel {
+            transform: none !important;
+        }
+    }
+
+    @media print {
+        .manage-list {
+            background: #fff !important;
+            color: #111 !important;
+        }
+
+        .ml-lux-scroll-progress,
+        .ml-header::after,
+        .manage-list::before,
+        .manage-list::after {
+            display: none !important;
+        }
+
+        .ml-header,
+        .ml-panel {
+            transform: none !important;
+            box-shadow: none !important;
+            background: #fff !important;
+            color: #111 !important;
+        }
+    }
+
+    /* =====================================================================
+       END PREMIUM PROTECTED MANAGEMENT LIST V2
+       ===================================================================== */
+
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="manage-list manage-list--{{ resource_mode }}" id="manage-list-root" data-id-key="{{ id_key }}" data-max-bulk="{{ resource_data.get('max_bulk_selection', 100) }}">
+  <span class="visually-hidden" id="manage-list-live" role="status" aria-live="polite" aria-atomic="true"></span>
+
+  <div class="ml-shell">
+    <nav class="ml-breadcrumb" aria-label="Breadcrumb">
+      <a href="{{ dashboard_url }}">Dashboard</a><span aria-hidden="true">/</span><span aria-current="page">{{ resource_title }}</span>
+    </nav>
+
+    <header class="ml-header">
+      <div class="ml-header__main">
+        <span class="ml-header__icon" aria-hidden="true">{{ icon_for(resource_data.get("icon", resource_data.get("key", "records"))) }}</span>
+        <div>
+          <h1>{{ resource_title }}</h1>
+          {% if resource_description %}<p>{{ resource_description }}</p>{% endif %}
+        </div>
+      </div>
+
+      <div class="ml-header__actions">
+        <button class="ml-button ml-button--secondary" type="button" id="ml-refresh-button">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M20 7v5h-5"></path><path d="M19 12a7 7 0 1 0-2 5"></path></svg><span>Refresh</span>
+        </button>
+
+        {% set export_url = safe_internal_href(export_action.get("url", ""))|trim %}
+        {% if export_url and export_action.get("label") %}
+          <a class="ml-button ml-button--secondary" href="{{ export_url }}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4"></path><path d="M5 19h14"></path></svg>{{ export_action.get("label") }}</a>
+        {% endif %}
+
+        {% set create_url = safe_internal_href(create_action.get("url", ""))|trim %}
+        {% if create_url and create_action.get("label") %}
+          <a class="ml-button ml-button--primary" href="{{ create_url }}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>{{ create_action.get("label") }}</a>
+        {% endif %}
+      </div>
+    </header>
+
+    <div class="ml-alert ml-alert--danger" id="ml-critical-alert" hidden>
+      <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3 2.8 20h18.4L12 3Z"></path><path d="M12 9v5M12 17h.01"></path></svg>
+      <div><strong id="ml-critical-title">Management list unavailable</strong><div id="ml-critical-message"></div></div>
+    </div>
+
+    <div class="ml-alert" id="ml-offline-alert" hidden>
+      <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 8a12 12 0 0 1 16 0M7 12a8 8 0 0 1 10 0M10 16a4 4 0 0 1 4 0"></path><path d="M3 3l18 18"></path></svg>
+      <div>You are offline. Existing rows remain visible, but protected actions require a connection.</div>
+    </div>
+
+    {% if not resource_authorized %}
+      <section class="ml-panel ml-empty" aria-labelledby="ml-denied-title">
+        <span class="ml-empty__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg></span>
+        <h2 id="ml-denied-title">Access is not available</h2>
+        <p>This protected management resource must be authorized by the server before records are rendered.</p>
+        <div class="ml-empty__actions"><a class="ml-button ml-button--secondary" href="{{ dashboard_url }}">Back to Dashboard</a></div>
+      </section>
+    {% else %}
+      <section class="ml-panel" aria-labelledby="ml-list-title">
+        <h2 class="visually-hidden" id="ml-list-title">{{ resource_title }} records</h2>
+
+        {% if search_enabled or filters or sort_options %}
+          <form class="ml-toolbar" id="ml-query-form" method="get" action="">
+            <div class="ml-search">
+              {% if search_enabled %}
+                <div class="ml-field">
+                  <label for="ml-search-input">Search</label>
+                  <div class="ml-search__box">
+                    <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m16 16 4 4"></path></svg>
+                    <input class="ml-input" id="ml-search-input" type="search" name="{{ search_param }}" value="{{ search_value }}" placeholder="{{ search_placeholder }}" autocomplete="off">
+                    <button class="ml-clear-search" type="button" id="ml-clear-search" aria-label="Clear search" {% if not search_value %}hidden{% endif %}><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7 7 17"></path></svg></button>
+                  </div>
+                </div>
+              {% endif %}
+            </div>
+
+            <div class="ml-filters">
+              {% for filter in filters %}
+                {% if filter is mapping %}
+                  {% set filter_name = filter.get("name", "")|default("", true)|string %}
+                  {% set filter_type = filter.get("type", "select")|default("select", true)|string|lower %}
+                  {% set filter_value = filter.get("value", request.args.get(filter_name, "")) %}
+                  {% if filter_name and filter_type in ["select","boolean","date","text"] %}
+                    <div class="ml-field">
+                      <label for="ml-filter-{{ loop.index }}">{{ filter.get("label", filter_name|replace("_", " ")|title) }}</label>
+                      {% if filter_type in ["select","boolean"] %}
+                        <select class="ml-select" id="ml-filter-{{ loop.index }}" name="{{ filter_name }}" data-managed-filter>
+                          <option value="">{{ filter.get("empty_label", "All") }}</option>
+                          {% set options = filter.get("options", []) %}
+                          {% if options is sequence and options is not string %}
+                            {% for option in options %}
+                              {% if option is mapping %}<option value="{{ option.get('value', '') }}" {% if option.get('value')|string == filter_value|string %}selected{% endif %}>{{ option.get("label", option.get("value", "")) }}</option>{% endif %}
+                            {% endfor %}
+                          {% endif %}
+                        </select>
+                      {% else %}
+                        <input class="ml-input" id="ml-filter-{{ loop.index }}" type="{{ 'date' if filter_type == 'date' else 'text' }}" name="{{ filter_name }}" value="{{ filter_value }}" data-managed-filter>
+                      {% endif %}
+                    </div>
+                  {% endif %}
+                {% endif %}
+              {% endfor %}
+            </div>
+
+            <div class="ml-toolbar__right">
+              {% if sort_options %}
+                <div class="ml-field">
+                  <label for="ml-sort-select">Sort</label>
+                  <select class="ml-select" id="ml-sort-select" name="{{ sort_param }}">
+                    {% for option in sort_options %}{% if option is mapping %}<option value="{{ option.get('key', '') }}" {% if option.get('key')|string == current_sort %}selected{% endif %}>{{ option.get("label", option.get("key", "")) }}</option>{% endif %}{% endfor %}
+                  </select>
+                </div>
+                <div class="ml-field">
+                  <label for="ml-direction-select">Direction</label>
+                  <select class="ml-select" id="ml-direction-select" name="{{ direction_param }}"><option value="desc" {% if current_direction == "desc" %}selected{% endif %}>Descending</option><option value="asc" {% if current_direction == "asc" %}selected{% endif %}>Ascending</option></select>
+                </div>
+              {% endif %}
+              <button class="ml-button ml-button--primary" type="submit">Apply</button>
+              {% if has_active_filters.value %}<button class="ml-button ml-button--secondary" type="button" id="ml-clear-filters">Clear Filters</button>{% endif %}
+            </div>
+          </form>
+        {% endif %}
+
+        {% if has_active_filters.value %}
+          <div class="ml-filter-chipbar" aria-label="Active filters">
+            {% if search_enabled and search_value %}
+              <span class="ml-filter-chip">Search: {{ search_value }}<button type="button" data-remove-query-key="{{ search_param }}" aria-label="Remove search filter"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7 7 17"></path></svg></button></span>
+            {% endif %}
+            {% for filter in filters %}
+              {% if filter is mapping %}
+                {% set filter_name = filter.get("name", "")|default("", true)|string %}
+                {% set filter_value = filter.get("value", request.args.get(filter_name, "")) %}
+                {% if filter_name and filter_value not in [none, "", [], ()] %}
+                  <span class="ml-filter-chip">{{ filter.get("label", filter_name|replace("_", " ")|title) }}: {{ filter.get("display_value", filter_value) }}<button type="button" data-remove-query-key="{{ filter_name }}" aria-label="Remove {{ filter.get('label', filter_name) }} filter"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7 7 17"></path></svg></button></span>
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        <div class="ml-summarybar">
+          <p class="ml-result-count" id="ml-result-count">
+            {% if total_count is not none %}<strong>{{ total_count }}</strong> total results{% else %}Showing <strong>{{ result_count }}</strong> result{{ '' if result_count == 1 else 's' }}{% endif %}
+          </p>
+          {% if timezone_label %}<span class="ml-timezone">Times shown in {{ timezone_label }}</span>{% endif %}
+        </div>
+
+        {% if bulk_actions %}
+          <div class="ml-bulkbar" id="ml-bulkbar" hidden>
+            <span class="ml-bulkbar__count"><span id="ml-selected-count">0</span> selected on this page</span>
+            <div class="ml-bulkbar__actions">
+              {% for action in bulk_actions %}
+                {% if action is mapping %}
+                  {% set bulk_url = safe_internal_href(action.get("url", ""))|trim %}
+                  {% set bulk_method = action.get("method", "POST")|default("POST", true)|string|upper %}
+                  {% set bulk_style = action_style(action.get("style", "neutral"))|trim %}
+                  {% set bulk_confirm = action.get("confirm", {}) %}
+                  {% if bulk_confirm is not mapping %}{% set bulk_confirm = {} %}{% endif %}
+                  {% if bulk_url and bulk_method in ["POST","PATCH","PUT","DELETE"] %}
+                    <span class="ml-action-definition">
+                      {{ action_payload_fields(action) }}
+                      <button
+                        class="ml-action ml-action--{{ bulk_style }} ml-action--compact"
+                        type="button"
+                        data-bulk-action
+                        data-action-url="{{ bulk_url }}"
+                        data-action-method="{{ bulk_method }}"
+                        data-action-label="{{ action.get('label', 'Apply') }}"
+                        data-selection-field="{{ action.get('selection_field', 'ids') }}"
+                        data-confirm-title="{{ bulk_confirm.get('title', '') }}"
+                        data-confirm-message="{{ bulk_confirm.get('message', '') }}"
+                        data-confirm-label="{{ bulk_confirm.get('confirm_label', action.get('label', 'Apply')) }}"
+                      >{{ action.get("label", "Apply") }}</button>
+                    </span>
+                  {% endif %}
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
+
+        <div class="ml-table-wrap" id="ml-table-wrap" aria-busy="false">
+          {% if columns and rows_data %}
+            <table class="ml-table">
+              <caption>{{ resource_title }} management records</caption>
+              <thead>
+                <tr>
+                  {% if bulk_actions %}
+                    <th class="ml-select-cell" scope="col">
+                      <input class="ml-checkbox" id="ml-select-all" type="checkbox" aria-label="Select all records on this page">
+                    </th>
+                  {% endif %}
+
+                  {% for column in columns %}
+                    {% if column is mapping %}
+                      {% set column_key = column.get("key", "")|default("", true)|string %}
+                      {% set sort_key = column.get("sort_key", column_key)|default(column_key, true)|string %}
+                      {% set is_sorted = current_sort and sort_key == current_sort %}
+                      <th scope="col" {% if column.get("sortable") and is_sorted %}aria-sort="{{ 'ascending' if current_direction == 'asc' else 'descending' }}"{% endif %}>
+                        {% if column.get("sortable") and sort_options %}
+                          <button class="ml-sort-button" type="button" data-sort-key="{{ sort_key }}" data-sort-current="{{ 'true' if is_sorted else 'false' }}">
+                            <span>{{ column.get("label", column_key|replace("_", " ")|title) }}</span>
+                            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M8 9l4-4 4 4M16 15l-4 4-4-4"></path></svg>
+                          </button>
+                        {% else %}
+                          {{ column.get("label", column_key|replace("_", " ")|title) }}
+                        {% endif %}
+                      </th>
+                    {% endif %}
+                  {% endfor %}
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+
+              <tbody id="ml-table-body">
+                {% for row in rows_data %}
+                  {% if row is mapping %}
+                    {% set row_id = row.get(id_key, "")|default("", true)|string %}
+                    {% set row_label = row.get(display_key, row.get("order_reference", row.get("reference", "record")))|default("record", true) %}
+                    <tr data-record-row data-record-id="{{ row_id }}">
+                      {% if bulk_actions %}
+                        <td class="ml-select-cell" data-label="Select">
+                          {% if row.get("selectable", true) and row_id %}
+                            <input class="ml-checkbox" type="checkbox" data-row-select value="{{ row_id }}" aria-label="Select {{ row_label }}">
+                          {% else %}
+                            <span class="ml-muted">—</span>
+                          {% endif %}
+                        </td>
+                      {% endif %}
+
+                      {% for column in columns %}
+                        {% if column is mapping %}
+                          <td data-label="{{ column.get('label', column.get('key', '')|replace('_',' ')|title) }}">{{ render_cell(row, column) }}</td>
+                        {% endif %}
+                      {% endfor %}
+
+                      <td data-label="Actions">{{ render_row_actions(row) }}</td>
+                    </tr>
+                  {% endif %}
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <div class="ml-empty" id="ml-empty-state">
+              <span class="ml-empty__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5z"></path><path d="M8 8h8M8 12h8M8 16h5"></path></svg></span>
+              <h2>{{ resource_data.get("empty_title", "No records found") }}</h2>
+              <p>
+                {% if has_active_filters.value %}
+                  {{ resource_data.get("filtered_empty_message", "No records match the current filters.") }}
+                {% else %}
+                  {{ resource_data.get("empty_message", "There are no records to display yet.") }}
+                {% endif %}
+              </p>
+              <div class="ml-empty__actions">
+                {% if has_active_filters.value %}<button class="ml-button ml-button--secondary" type="button" id="ml-empty-clear-filters">Clear Filters</button>{% endif %}
+                {% if create_url %}<a class="ml-button ml-button--primary" href="{{ create_url }}">{{ create_action.get("label", "Create Record") }}</a>{% endif %}
+              </div>
+            </div>
+          {% endif %}
+        </div>
+
+        {% set previous_url = safe_internal_href(pagination.get("previous_url", ""))|trim %}
+        {% set next_url = safe_internal_href(pagination.get("next_url", ""))|trim %}
+        {% set next_cursor = pagination.get("next_cursor", "")|default("", true)|string %}
+        {% if previous_url or next_url or next_cursor or pagination.get("page_label") %}
+          <nav class="ml-pagination" aria-label="Management list pagination">
+            <span class="ml-pagination__meta">{{ pagination.get("page_label", "Current result page") }}</span>
+            <div class="ml-pagination__actions">
+              {% if previous_url %}<a class="ml-button ml-button--secondary" href="{{ previous_url }}">Previous</a>{% endif %}
+              {% if next_url %}
+                <a class="ml-button ml-button--secondary" href="{{ next_url }}">Next</a>
+              {% elif next_cursor %}
+                <button class="ml-button ml-button--secondary" type="button" id="ml-next-cursor" data-next-cursor="{{ next_cursor }}">Next</button>
+              {% endif %}
+            </div>
+          </nav>
+        {% endif %}
+      </section>
+    {% endif %}
+  </div>
+
+  <dialog class="ml-dialog" id="ml-confirm-dialog" aria-labelledby="ml-confirm-title">
+    <div class="ml-dialog__head">
+      <h2 id="ml-confirm-title">Confirm action</h2>
+      <button class="ml-dialog__close" type="button" id="ml-confirm-close" aria-label="Close confirmation"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7 7 17"></path></svg></button>
+    </div>
+    <div class="ml-dialog__body">
+      <p class="ml-dialog__message" id="ml-confirm-message">Confirm this action.</p>
+      <div class="ml-dialog__note" id="ml-confirm-note-wrap" hidden>
+        <label for="ml-confirm-note" id="ml-confirm-note-label">Note</label>
+        <textarea class="ml-textarea" id="ml-confirm-note" maxlength="500"></textarea>
+      </div>
+    </div>
+    <div class="ml-dialog__footer">
+      <button class="ml-button ml-button--secondary" type="button" id="ml-confirm-cancel">Cancel</button>
+      <button class="ml-action ml-action--danger" type="button" id="ml-confirm-submit">Confirm</button>
+    </div>
+  </dialog>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    "use strict";
+
+    const root = document.getElementById("manage-list-root");
+    if (!root) return;
+
+    const elements = {
+        live: document.getElementById("manage-list-live"),
+        queryForm: document.getElementById("ml-query-form"),
+        searchInput: document.getElementById("ml-search-input"),
+        clearSearch: document.getElementById("ml-clear-search"),
+        clearFilters: document.getElementById("ml-clear-filters"),
+        emptyClearFilters: document.getElementById("ml-empty-clear-filters"),
+        sortSelect: document.getElementById("ml-sort-select"),
+        directionSelect: document.getElementById("ml-direction-select"),
+        refreshButton: document.getElementById("ml-refresh-button"),
+        tableWrap: document.getElementById("ml-table-wrap"),
+        selectAll: document.getElementById("ml-select-all"),
+        bulkBar: document.getElementById("ml-bulkbar"),
+        selectedCount: document.getElementById("ml-selected-count"),
+        criticalAlert: document.getElementById("ml-critical-alert"),
+        criticalTitle: document.getElementById("ml-critical-title"),
+        criticalMessage: document.getElementById("ml-critical-message"),
+        offlineAlert: document.getElementById("ml-offline-alert"),
+        nextCursor: document.getElementById("ml-next-cursor"),
+        dialog: document.getElementById("ml-confirm-dialog"),
+        dialogTitle: document.getElementById("ml-confirm-title"),
+        dialogMessage: document.getElementById("ml-confirm-message"),
+        dialogClose: document.getElementById("ml-confirm-close"),
+        dialogCancel: document.getElementById("ml-confirm-cancel"),
+        dialogSubmit: document.getElementById("ml-confirm-submit"),
+        noteWrap: document.getElementById("ml-confirm-note-wrap"),
+        noteLabel: document.getElementById("ml-confirm-note-label"),
+        note: document.getElementById("ml-confirm-note")
+    };
+
+    const state = {
+        rowLocks: new Set(),
+        bulkLocked: false,
+        protectedRequestsStopped: false,
+        pendingAction: null,
+        returnFocus: null
+    };
+
+    function announce(message) {
+        if (window.AppUI && typeof window.AppUI.announce === "function") {
+            window.AppUI.announce(message);
+        }
+        if (!elements.live) return;
+        elements.live.textContent = "";
+        window.setTimeout(function () {
+            elements.live.textContent = String(message || "");
+        }, 30);
+    }
+
+    function toast(message, type) {
+        if (window.AppUI && typeof window.AppUI.showToast === "function") {
+            window.AppUI.showToast(message, type || "info");
+            return;
+        }
+        if (typeof window.showToast === "function") {
+            window.showToast(message, type || "info");
+        }
+    }
+
+    async function secureFetch(url, options) {
+        if (window.AppUI && typeof window.AppUI.csrfFetch === "function") {
+            return window.AppUI.csrfFetch(url, options || {});
+        }
+        throw new Error("CSRF helper unavailable");
+    }
+
+    async function safeJson(response) {
+        try {
+            return await response.json();
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function internalUrl(value) {
+        const raw = String(value || "").trim();
+        return raw.startsWith("/") && !raw.startsWith("//") ? raw : "";
+    }
+
+    function setBusy(busy) {
+        if (elements.tableWrap) {
+            elements.tableWrap.setAttribute("aria-busy", busy ? "true" : "false");
+        }
+    }
+
+    function showCritical(title, message) {
+        if (!elements.criticalAlert) return;
+        if (elements.criticalTitle) elements.criticalTitle.textContent = String(title || "Management list unavailable");
+        if (elements.criticalMessage) elements.criticalMessage.textContent = String(message || "");
+        elements.criticalAlert.hidden = false;
+    }
+
+    function stopProtectedUI(title, message) {
+        state.protectedRequestsStopped = true;
+        showCritical(title, message);
+        if (elements.tableWrap) elements.tableWrap.hidden = true;
+        if (elements.bulkBar) elements.bulkBar.hidden = true;
+        document.querySelectorAll("[data-row-action],[data-bulk-action]").forEach(function (button) {
+            button.disabled = true;
+        });
+        announce(message);
+    }
+
+    function handleResponseStatus(response) {
+        if (response.status === 401) {
+            stopProtectedUI("Session expired", "Your staff session has expired. Please sign in again.");
+            toast("Session expired. Please sign in again.", "warning");
+            return false;
+        }
+        if (response.status === 403) {
+            stopProtectedUI("Access changed", "Your permission to view or change this resource is no longer available. Refresh through the protected staff navigation.");
+            toast("Your management permissions changed.", "warning");
+            return false;
+        }
+        return true;
+    }
+
+    function currentUrlWithout(keys) {
+        const url = new URL(window.location.href);
+        keys.forEach(function (key) {
+            if (key) url.searchParams.delete(key);
+        });
+        url.searchParams.delete("cursor");
+        return url;
+    }
+
+    function submitQueryForm() {
+        if (!elements.queryForm) return;
+        elements.queryForm.requestSubmit();
+    }
+
+    function initializeQueryControls() {
+        if (elements.searchInput && elements.clearSearch) {
+            elements.searchInput.addEventListener("input", function () {
+                elements.clearSearch.hidden = !elements.searchInput.value;
+            });
+            elements.clearSearch.addEventListener("click", function () {
+                elements.searchInput.value = "";
+                elements.clearSearch.hidden = true;
+                elements.searchInput.focus();
+            });
+        }
+
+        document.querySelectorAll("[data-remove-query-key]").forEach(function (button) {
+            button.addEventListener("click", function () {
+                const key = button.dataset.removeQueryKey;
+                if (!key) return;
+                window.location.assign(currentUrlWithout([key]).toString());
+            });
+        });
+
+        function clearAllManagedFilters() {
+            const keys = [];
+            if (elements.searchInput && elements.searchInput.name) keys.push(elements.searchInput.name);
+            document.querySelectorAll("[data-managed-filter]").forEach(function (control) {
+                if (control.name) keys.push(control.name);
+            });
+            window.location.assign(currentUrlWithout(keys).toString());
+        }
+
+        if (elements.clearFilters) elements.clearFilters.addEventListener("click", clearAllManagedFilters);
+        if (elements.emptyClearFilters) elements.emptyClearFilters.addEventListener("click", clearAllManagedFilters);
+
+        document.querySelectorAll("[data-sort-key]").forEach(function (button) {
+            button.addEventListener("click", function () {
+                if (!elements.sortSelect || !elements.directionSelect) return;
+                const key = button.dataset.sortKey || "";
+                if (!key) return;
+                const isCurrent = button.dataset.sortCurrent === "true";
+                elements.sortSelect.value = key;
+                elements.directionSelect.value = isCurrent && elements.directionSelect.value === "asc" ? "desc" : "asc";
+                submitQueryForm();
+            });
+        });
+    }
+
+    function selectedCheckboxes() {
+        return Array.from(document.querySelectorAll("[data-row-select]:checked"));
+    }
+
+    function maxBulkSelection() {
+        const raw = Number(root.dataset.maxBulk || "100");
+        if (!Number.isFinite(raw)) return 100;
+        return Math.max(1, Math.min(100, Math.floor(raw)));
+    }
+
+    function updateSelectionUI() {
+        const all = Array.from(document.querySelectorAll("[data-row-select]"));
+        const selected = selectedCheckboxes();
+
+        if (elements.selectedCount) elements.selectedCount.textContent = String(selected.length);
+        if (elements.bulkBar) elements.bulkBar.hidden = selected.length === 0;
+
+        if (elements.selectAll) {
+            elements.selectAll.checked = all.length > 0 && selected.length === all.length;
+            elements.selectAll.indeterminate = selected.length > 0 && selected.length < all.length;
+        }
+    }
+
+    function initializeBulkSelection() {
+        if (elements.selectAll) {
+            elements.selectAll.addEventListener("change", function () {
+                const limit = maxBulkSelection();
+                const boxes = Array.from(document.querySelectorAll("[data-row-select]"));
+                boxes.forEach(function (box, index) {
+                    box.checked = elements.selectAll.checked && index < limit;
+                });
+                if (elements.selectAll.checked && boxes.length > limit) {
+                    toast("Selection is limited to " + limit + " records per request.", "warning");
+                }
+                updateSelectionUI();
+            });
+        }
+
+        document.addEventListener("change", function (event) {
+            if (!event.target.matches("[data-row-select]")) return;
+            const selected = selectedCheckboxes();
+            const limit = maxBulkSelection();
+            if (selected.length > limit) {
+                event.target.checked = false;
+                toast("Selection is limited to " + limit + " records per request.", "warning");
+            }
+            updateSelectionUI();
+        });
+
+        updateSelectionUI();
+    }
+
+    function closeAllMenus(exceptMenu) {
+        document.querySelectorAll("[data-action-menu]").forEach(function (menu) {
+            if (menu === exceptMenu) return;
+            const toggle = menu.querySelector("[data-action-menu-toggle]");
+            const panel = menu.querySelector("[data-action-menu-panel]");
+            if (toggle) toggle.setAttribute("aria-expanded", "false");
+            if (panel) panel.hidden = true;
+        });
+    }
+
+    function menuItems(panel) {
+        if (!panel) return [];
+        return Array.from(panel.querySelectorAll('[role="menuitem"]')).filter(function (item) {
+            return !item.disabled && !item.hidden;
+        });
+    }
+
+    function initializeActionMenus() {
+        document.addEventListener("click", function (event) {
+            const toggle = event.target.closest("[data-action-menu-toggle]");
+            if (toggle) {
+                const menu = toggle.closest("[data-action-menu]");
+                const panel = menu ? menu.querySelector("[data-action-menu-panel]") : null;
+                if (!menu || !panel) return;
+                const opening = panel.hidden;
+                closeAllMenus(opening ? menu : null);
+                panel.hidden = !opening;
+                toggle.setAttribute("aria-expanded", opening ? "true" : "false");
+                if (opening) {
+                    const items = menuItems(panel);
+                    if (items.length) items[0].focus();
+                }
+                return;
+            }
+
+            if (!event.target.closest("[data-action-menu]")) closeAllMenus();
+        });
+
+        document.addEventListener("keydown", function (event) {
+            const panel = event.target.closest("[data-action-menu-panel]");
+            if (!panel) {
+                if (event.key === "Escape") closeAllMenus();
+                return;
+            }
+
+            const menu = panel.closest("[data-action-menu]");
+            const toggle = menu ? menu.querySelector("[data-action-menu-toggle]") : null;
+            const items = menuItems(panel);
+            const index = items.indexOf(document.activeElement);
+
+            if (event.key === "Escape") {
+                event.preventDefault();
+                panel.hidden = true;
+                if (toggle) {
+                    toggle.setAttribute("aria-expanded", "false");
+                    toggle.focus();
+                }
+            } else if (event.key === "ArrowDown" && items.length) {
+                event.preventDefault();
+                items[(index + 1 + items.length) % items.length].focus();
+            } else if (event.key === "ArrowUp" && items.length) {
+                event.preventDefault();
+                items[(index - 1 + items.length) % items.length].focus();
+            }
+        });
+    }
+
+    function readPrimitivePayload(button) {
+        const payload = {};
+        const definition = button.closest(".ml-action-definition");
+        if (!definition) return payload;
+
+        definition.querySelectorAll("[data-action-field]").forEach(function (field) {
+            const key = String(field.name || "").trim();
+            if (!key || ["actor_uid", "actor_role", "permissions", "permission", "outlet_scope"].includes(key)) return;
+            payload[key] = field.value;
+        });
+        return payload;
+    }
+
+    function rowForButton(button) {
+        return button.closest("[data-record-row]");
+    }
+
+    function setRowError(button, message) {
+        const row = rowForButton(button);
+        if (!row) return;
+        const error = row.querySelector("[data-row-error]");
+        if (!error) return;
+        error.textContent = String(message || "");
+        error.hidden = !message;
+    }
+
+    function markRowStale(button) {
+        const row = rowForButton(button);
+        if (row) row.classList.add("is-stale");
+    }
+
+    function setActionLoading(button, loading) {
+        if (!button) return;
+        if (loading) {
+            button.dataset.originalText = button.textContent.trim();
+            button.textContent = "Updating...";
+            button.disabled = true;
+        } else {
+            button.textContent = button.dataset.originalText || button.dataset.actionLabel || "Action";
+            button.disabled = false;
+            delete button.dataset.originalText;
+        }
+    }
+
+    function closeDialog() {
+        if (!elements.dialog || !elements.dialog.open) return;
+        elements.dialog.close();
+    }
+
+    function resetDialog() {
+        if (elements.note) {
+            elements.note.value = "";
+            elements.note.required = false;
+            elements.note.maxLength = 500;
+        }
+        if (elements.noteWrap) elements.noteWrap.hidden = true;
+    }
+
+    function openConfirmation(button, kind) {
+        if (!elements.dialog || typeof elements.dialog.showModal !== "function") {
+            toast("This browser cannot open the required confirmation safely.", "error");
+            return;
+        }
+
+        const title = button.dataset.confirmTitle || "Confirm action";
+        const message = button.dataset.confirmMessage || "Please confirm this protected action.";
+        const confirmLabel = button.dataset.confirmLabel || button.dataset.actionLabel || "Confirm";
+        const noteField = button.dataset.noteField || "";
+        const noteLabel = button.dataset.noteLabel || "Note";
+        const noteRequired = button.dataset.noteRequired === "true";
+        const noteMaxRaw = Number(button.dataset.noteMax || "500");
+        const noteMax = Number.isFinite(noteMaxRaw) ? Math.max(1, Math.min(2000, Math.floor(noteMaxRaw))) : 500;
+
+        state.returnFocus = button;
+        state.pendingAction = { button: button, kind: kind };
+        resetDialog();
+
+        if (elements.dialogTitle) elements.dialogTitle.textContent = title;
+        if (elements.dialogMessage) elements.dialogMessage.textContent = message;
+        if (elements.dialogSubmit) elements.dialogSubmit.textContent = confirmLabel;
+
+        if (noteField && elements.noteWrap && elements.note && elements.noteLabel) {
+            elements.noteWrap.hidden = false;
+            elements.noteLabel.textContent = noteLabel;
+            elements.note.required = noteRequired;
+            elements.note.maxLength = noteMax;
+            elements.note.dataset.fieldName = noteField;
+        } else if (elements.note) {
+            delete elements.note.dataset.fieldName;
+        }
+
+        elements.dialog.showModal();
+        window.setTimeout(function () {
+            if (noteField && elements.note) elements.note.focus();
+            else if (elements.dialogSubmit) elements.dialogSubmit.focus();
+        }, 0);
+    }
+
+    function initializeDialog() {
+        if (!elements.dialog) return;
+
+        [elements.dialogClose, elements.dialogCancel].forEach(function (button) {
+            if (button) button.addEventListener("click", closeDialog);
+        });
+
+        elements.dialog.addEventListener("close", function () {
+            const returnFocus = state.returnFocus;
+            state.pendingAction = null;
+            state.returnFocus = null;
+            resetDialog();
+            if (returnFocus && document.contains(returnFocus)) returnFocus.focus();
+        });
+
+        if (elements.dialogSubmit) {
+            elements.dialogSubmit.addEventListener("click", async function () {
+                const pending = state.pendingAction;
+                if (!pending) return;
+
+                if (elements.note && !elements.noteWrap.hidden && elements.note.required && !elements.note.value.trim()) {
+                    elements.note.focus();
+                    toast("A note is required for this action.", "warning");
+                    return;
+                }
+
+                const note = elements.note && !elements.noteWrap.hidden ? elements.note.value.trim() : "";
+                const noteField = elements.note ? elements.note.dataset.fieldName || "" : "";
+                closeDialog();
+
+                if (pending.kind === "bulk") await performBulkAction(pending.button, noteField, note);
+                else await performRowAction(pending.button, noteField, note);
+            });
+        }
+    }
+
+    async function performRowAction(button, noteField, note) {
+        if (!button || state.protectedRequestsStopped) return;
+
+        const url = internalUrl(button.dataset.actionUrl);
+        const method = String(button.dataset.actionMethod || "POST").toUpperCase();
+        const rowId = String(button.dataset.rowId || "").trim();
+        const lockKey = rowId || url;
+
+        if (!url || !["POST", "PATCH", "PUT", "DELETE"].includes(method)) return;
+        if (state.rowLocks.has(lockKey)) return;
+        if (navigator.onLine === false) {
+            toast("You are offline. The record was not changed.", "warning");
+            return;
+        }
+
+        state.rowLocks.add(lockKey);
+        setRowError(button, "");
+        setActionLoading(button, true);
+
+        const payload = readPrimitivePayload(button);
+        if (noteField && !["actor_uid", "actor_role", "permissions", "permission", "outlet_scope"].includes(noteField)) {
+            payload[noteField] = note;
+        }
+
+        try {
+            const response = await secureFetch(url, {
+                method: method,
+                credentials: "same-origin",
+                headers: {
+                    Accept: "application/json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await safeJson(response);
+            if (!handleResponseStatus(response)) return;
+
+            if (response.status === 409) {
+                markRowStale(button);
+                setRowError(button, "This record changed on the server. Refresh before trying again.");
+                toast("This record changed before your action could be applied.", "warning");
+                announce("Record conflict. Refresh the list.");
+                return;
+            }
+
+            if (response.status === 429) {
+                setRowError(button, "This action is temporarily rate limited.");
+                toast("Too many requests. Please wait before trying again.", "warning");
+                return;
+            }
+
+            if (!response.ok || !data || data.success !== true) {
+                setRowError(button, "The action could not be completed.");
+                toast("The record could not be updated.", "error");
+                return;
+            }
+
+            toast((button.dataset.actionLabel || "Record action") + " completed.", "success");
+            announce("Record updated successfully.");
+
+            /*
+             * The current management APIs return authoritative server state,
+             * but this generic page may have resource-specific columns/actions.
+             * Reloading preserves the validated query string and avoids stale
+             * client reconstruction or optimistic privilege mistakes.
+             */
+            window.location.reload();
+        } catch (error) {
+            setRowError(button, "A connection problem prevented this action.");
+            toast("Unable to update this record right now.", "error");
+        } finally {
+            state.rowLocks.delete(lockKey);
+            if (document.contains(button)) setActionLoading(button, false);
+        }
+    }
+
+    async function performBulkAction(button, noteField, note) {
+        if (!button || state.bulkLocked || state.protectedRequestsStopped) return;
+
+        const selected = selectedCheckboxes();
+        const ids = selected.map(function (box) { return box.value; }).filter(Boolean);
+        const limit = maxBulkSelection();
+
+        if (!ids.length) {
+            toast("Select at least one record on this page.", "warning");
+            return;
+        }
+
+        if (ids.length > limit) {
+            toast("Too many records are selected for one request.", "warning");
+            return;
+        }
+
+        const url = internalUrl(button.dataset.actionUrl);
+        const method = String(button.dataset.actionMethod || "POST").toUpperCase();
+        const selectionField = String(button.dataset.selectionField || "ids").trim();
+
+        if (!url || !selectionField || ["actor_uid", "actor_role", "permissions", "permission", "outlet_scope"].includes(selectionField) || !["POST", "PATCH", "PUT", "DELETE"].includes(method)) return;
+        if (navigator.onLine === false) {
+            toast("You are offline. No records were changed.", "warning");
+            return;
+        }
+
+        state.bulkLocked = true;
+        setActionLoading(button, true);
+
+        const payload = readPrimitivePayload(button);
+        payload[selectionField] = ids;
+        if (noteField && !["actor_uid", "actor_role", "permissions", "permission", "outlet_scope"].includes(noteField)) {
+            payload[noteField] = note;
+        }
+
+        try {
+            const response = await secureFetch(url, {
+                method: method,
+                credentials: "same-origin",
+                headers: {
+                    Accept: "application/json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await safeJson(response);
+            if (!handleResponseStatus(response)) return;
+
+            if (response.status === 409) {
+                toast("Some selected records changed. Refresh the list before retrying.", "warning");
+                announce("Bulk action conflict. Refresh the list.");
+                return;
+            }
+
+            if (response.status === 429) {
+                toast("This bulk action is temporarily rate limited.", "warning");
+                return;
+            }
+
+            if (!response.ok || !data || data.success !== true) {
+                toast("The bulk action could not be completed.", "error");
+                return;
+            }
+
+            selected.forEach(function (box) { box.checked = false; });
+            updateSelectionUI();
+            toast((button.dataset.actionLabel || "Bulk action") + " completed.", "success");
+            announce("Bulk action completed successfully.");
+            window.location.reload();
+        } catch (error) {
+            toast("A connection problem prevented the bulk action.", "error");
+        } finally {
+            state.bulkLocked = false;
+            if (document.contains(button)) setActionLoading(button, false);
+        }
+    }
+
+    function actionNeedsConfirmation(button) {
+        return Boolean(
+            button.classList.contains("ml-action--danger") ||
+            String(button.dataset.confirmTitle || "").trim() ||
+            String(button.dataset.confirmMessage || "").trim() ||
+            String(button.dataset.noteField || "").trim()
+        );
+    }
+
+    function initializeActions() {
+        document.addEventListener("click", function (event) {
+            const rowButton = event.target.closest("[data-row-action]");
+            if (rowButton) {
+                event.preventDefault();
+                closeAllMenus();
+                if (actionNeedsConfirmation(rowButton)) openConfirmation(rowButton, "row");
+                else performRowAction(rowButton, "", "");
+                return;
+            }
+
+            const bulkButton = event.target.closest("[data-bulk-action]");
+            if (bulkButton) {
+                event.preventDefault();
+                if (!selectedCheckboxes().length) {
+                    toast("Select at least one record on this page.", "warning");
+                    return;
+                }
+                if (actionNeedsConfirmation(bulkButton)) openConfirmation(bulkButton, "bulk");
+                else performBulkAction(bulkButton, "", "");
+            }
+        });
+    }
+
+    function initializeRefresh() {
+        if (!elements.refreshButton) return;
+        elements.refreshButton.addEventListener("click", function () {
+            if (state.protectedRequestsStopped) return;
+            elements.refreshButton.disabled = true;
+            elements.refreshButton.querySelector("span").textContent = "Refreshing...";
+            window.location.reload();
+        });
+    }
+
+    function initializeCursorPagination() {
+        if (!elements.nextCursor) return;
+        elements.nextCursor.addEventListener("click", function () {
+            const cursor = String(elements.nextCursor.dataset.nextCursor || "").trim();
+            if (!cursor) return;
+            const url = new URL(window.location.href);
+            url.searchParams.set("cursor", cursor);
+            window.location.assign(url.toString());
+        });
+    }
+
+    function initializeNetworkState() {
+        function apply() {
+            const offline = navigator.onLine === false;
+            if (elements.offlineAlert) elements.offlineAlert.hidden = !offline;
+            document.querySelectorAll("[data-row-action],[data-bulk-action]").forEach(function (button) {
+                if (!state.protectedRequestsStopped) button.disabled = offline;
+            });
+        }
+        window.addEventListener("offline", apply);
+        window.addEventListener("online", function () {
+            apply();
+            toast("Connection restored.", "info");
+        });
+        apply();
+    }
+
+    function initializeImages() {
+        document.addEventListener("error", function (event) {
+            const image = event.target;
+            if (!(image instanceof HTMLImageElement) || !image.matches("[data-list-image]")) return;
+            image.hidden = true;
+        }, true);
+    }
+
+    function initializeManageList() {
+        initializeQueryControls();
+        initializeBulkSelection();
+        initializeActionMenus();
+        initializeDialog();
+        initializeActions();
+        initializeRefresh();
+        initializeCursorPagination();
+        initializeNetworkState();
+        initializeImages();
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initializeManageList, { once: true });
+    } else {
+        initializeManageList();
+    }
+}());
+
+
+(function () {
+    "use strict";
+
+    /* =====================================================================
+       PREMIUM MANAGEMENT LIST — PRESENTATION-ONLY MICRO INTERACTIONS
+       Does not change RBAC, query semantics, payloads, protected mutations,
+       confirmation requirements, CSRF behavior or server-authoritative state.
+       ===================================================================== */
+
+    const root = document.getElementById("manage-list-root");
+    if (!root || root.dataset.premiumReady === "true") return;
+
+    root.dataset.premiumReady = "true";
+
+    const reducedMedia = window.matchMedia
+        ? window.matchMedia("(prefers-reduced-motion: reduce)")
+        : null;
+
+    const fineMedia = window.matchMedia
+        ? window.matchMedia("(hover: hover) and (pointer: fine)")
+        : null;
+
+    const isReduced = () => Boolean(reducedMedia && reducedMedia.matches);
+    const isFine = () => Boolean(fineMedia && fineMedia.matches);
+
+    function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+    }
+
+    function point(event, rect) {
+        return {
+            x: clamp(((event.clientX - rect.left) / Math.max(rect.width, 1)) * 100, 0, 100),
+            y: clamp(((event.clientY - rect.top) / Math.max(rect.height, 1)) * 100, 0, 100)
+        };
+    }
+
+    function initializeScrollProgress() {
+        if (root.querySelector(".ml-lux-scroll-progress")) return;
+
+        const progress = document.createElement("span");
+        progress.className = "ml-lux-scroll-progress";
+        progress.setAttribute("aria-hidden", "true");
+        progress.innerHTML = '<span class="ml-lux-scroll-progress__bar"></span>';
+        root.prepend(progress);
+
+        let frame = 0;
+
+        function paint() {
+            frame = 0;
+            const doc = document.documentElement;
+            const max = Math.max(1, doc.scrollHeight - window.innerHeight);
+            const value = clamp((window.scrollY || 0) / max, 0, 1) * 100;
+            root.style.setProperty("--lux-scroll-progress", value.toFixed(2) + "%");
+        }
+
+        function requestPaint() {
+            if (frame) return;
+            frame = requestAnimationFrame(paint);
+        }
+
+        window.addEventListener("scroll", requestPaint, { passive: true });
+        window.addEventListener("resize", requestPaint);
+        paint();
+    }
+
+    function initializeAmbientPointer() {
+        if (!isFine() || isReduced()) return;
+
+        let frame = 0;
+        let latestX = window.innerWidth / 2;
+        let latestY = window.innerHeight / 6;
+
+        function paint() {
+            frame = 0;
+            const x = clamp((latestX / Math.max(window.innerWidth, 1)) * 100, 0, 100);
+            const y = clamp((latestY / Math.max(window.innerHeight, 1)) * 100, 0, 100);
+            root.style.setProperty("--lux-pointer-x", x.toFixed(2) + "%");
+            root.style.setProperty("--lux-pointer-y", y.toFixed(2) + "%");
+        }
+
+        root.addEventListener("pointermove", function (event) {
+            latestX = event.clientX;
+            latestY = event.clientY;
+            if (!frame) frame = requestAnimationFrame(paint);
+        }, { passive: true });
+    }
+
+    function wireTilt(target, type) {
+        if (!target || !isFine() || isReduced()) return;
+        const flag = type === "header" ? "premiumHeaderReady" : "premiumPanelReady";
+        if (target.dataset[flag] === "true") return;
+        target.dataset[flag] = "true";
+
+        target.addEventListener("pointermove", function (event) {
+            const p = point(event, target.getBoundingClientRect());
+            const nx = (p.x - 50) / 50;
+            const ny = (p.y - 50) / 50;
+
+            if (type === "header") {
+                root.style.setProperty("--lux-header-rx", (ny * -0.65).toFixed(2) + "deg");
+                root.style.setProperty("--lux-header-ry", (nx * 0.85).toFixed(2) + "deg");
+                target.style.setProperty("--ml-header-x", p.x.toFixed(2) + "%");
+                target.style.setProperty("--ml-header-y", p.y.toFixed(2) + "%");
+            } else {
+                root.style.setProperty("--lux-panel-rx", (ny * -0.28).toFixed(2) + "deg");
+                root.style.setProperty("--lux-panel-ry", (nx * 0.34).toFixed(2) + "deg");
+                target.style.setProperty("--ml-panel-x", p.x.toFixed(2) + "%");
+                target.style.setProperty("--ml-panel-y", p.y.toFixed(2) + "%");
+            }
+        }, { passive: true });
+
+        target.addEventListener("pointerleave", function () {
+            if (type === "header") {
+                root.style.setProperty("--lux-header-rx", "0deg");
+                root.style.setProperty("--lux-header-ry", "0deg");
+                target.style.setProperty("--ml-header-x", "84%");
+                target.style.setProperty("--ml-header-y", "12%");
+            } else {
+                root.style.setProperty("--lux-panel-rx", "0deg");
+                root.style.setProperty("--lux-panel-ry", "0deg");
+                target.style.setProperty("--ml-panel-x", "84%");
+                target.style.setProperty("--ml-panel-y", "5%");
+            }
+        });
+    }
+
+    function initializeDepth() {
+        wireTilt(root.querySelector(".ml-header"), "header");
+        wireTilt(root.querySelector(".ml-panel"), "panel");
+    }
+
+    function wireRow(row) {
+        if (!row || row.dataset.premiumRowReady === "true") return;
+        row.dataset.premiumRowReady = "true";
+
+        row.addEventListener("pointermove", function (event) {
+            if (!isFine() || isReduced()) return;
+            const p = point(event, row.getBoundingClientRect());
+            row.style.setProperty("--ml-row-x", p.x.toFixed(2) + "%");
+        }, { passive: true });
+
+        row.addEventListener("pointerleave", function () {
+            row.style.setProperty("--ml-row-x", "85%");
+        });
+    }
+
+    function initializeRows() {
+        document.querySelectorAll("[data-record-row]").forEach(wireRow);
+        synchronizeSelectedRows();
+    }
+
+    function synchronizeSelectedRows() {
+        document.querySelectorAll("[data-record-row]").forEach(function (row) {
+            const checkbox = row.querySelector("[data-row-select]");
+            row.classList.toggle("is-selected", Boolean(checkbox && checkbox.checked));
+        });
+    }
+
+    function initializeSelectionVisuals() {
+        document.addEventListener("change", function (event) {
+            if (!event.target.matches("[data-row-select], #ml-select-all")) return;
+            requestAnimationFrame(synchronizeSelectedRows);
+        });
+    }
+
+    function addRipple(button, event) {
+        if (!button || button.disabled || isReduced()) return;
+
+        const rect = button.getBoundingClientRect();
+        const ripple = document.createElement("span");
+        ripple.className = "ml-lux-ripple";
+        ripple.style.left = (event.clientX - rect.left) + "px";
+        ripple.style.top = (event.clientY - rect.top) + "px";
+        button.appendChild(ripple);
+        window.setTimeout(() => ripple.remove(), 700);
+    }
+
+    function initializeRipples() {
+        const selector = [
+            ".ml-button",
+            ".ml-action",
+            ".ml-clear-search",
+            ".ml-filter-chip button",
+            ".ml-sort-button",
+            ".ml-dialog__close"
+        ].join(",");
+
+        document.querySelectorAll(selector).forEach(function (button) {
+            if (button.dataset.premiumRippleReady === "true") return;
+            button.dataset.premiumRippleReady = "true";
+            button.addEventListener("pointerdown", function (event) {
+                addRipple(button, event);
+            });
+        });
+    }
+
+    function initializeReveals() {
+        const targets = Array.from(document.querySelectorAll([
+            ".ml-breadcrumb",
+            ".ml-header",
+            ".ml-alert",
+            ".ml-panel",
+            ".ml-toolbar",
+            ".ml-filter-chipbar",
+            ".ml-summarybar",
+            ".ml-bulkbar",
+            ".ml-empty",
+            ".ml-pagination"
+        ].join(",")));
+
+        targets.forEach(function (target, index) {
+            if (target.dataset.premiumRevealReady === "true") return;
+            target.dataset.premiumRevealReady = "true";
+            target.classList.add("ml-lux-reveal");
+            target.style.transitionDelay = Math.min((index % 7) * 45, 220) + "ms";
+        });
+
+        if (isReduced() || !("IntersectionObserver" in window)) {
+            targets.forEach(target => target.classList.add("is-lux-visible"));
+            return;
+        }
+
+        const observer = new IntersectionObserver(function (entries, instance) {
+            entries.forEach(function (entry) {
+                if (!entry.isIntersecting) return;
+                entry.target.classList.add("is-lux-visible");
+                instance.unobserve(entry.target);
+            });
+        }, { threshold: .06, rootMargin: "0px 0px -5% 0px" });
+
+        targets.forEach(target => observer.observe(target));
+    }
+
+    function initializeSearchFocus() {
+        const input = document.getElementById("ml-search-input");
+        if (!input) return;
+
+        input.addEventListener("focus", function () {
+            root.dataset.searchActive = "true";
+        });
+
+        input.addEventListener("blur", function () {
+            root.dataset.searchActive = "false";
+        });
+    }
+
+    function initializeDialogFeedback() {
+        const dialog = document.getElementById("ml-confirm-dialog");
+        if (!dialog || !("MutationObserver" in window)) return;
+
+        const observer = new MutationObserver(function () {
+            if (!dialog.open || isReduced()) return;
+            dialog.animate([
+                { opacity: .65, transform: "translateY(10px) scale(.985)" },
+                { opacity: 1, transform: "translateY(0) scale(1)" }
+            ], { duration: 280, easing: "cubic-bezier(.16,1,.3,1)" });
+        });
+
+        observer.observe(dialog, { attributes: true, attributeFilter: ["open"] });
+    }
+
+    function initializeRefreshFeedback() {
+        const button = document.getElementById("ml-refresh-button");
+        if (!button) return;
+
+        button.addEventListener("click", function () {
+            if (isReduced()) return;
+            root.animate([
+                { filter: "brightness(1)" },
+                { filter: "brightness(1.02)" },
+                { filter: "brightness(1)" }
+            ], { duration: 520, easing: "ease-out" });
+        });
+    }
+
+    function initializeNetworkFeedback() {
+        const offline = document.getElementById("ml-offline-alert");
+        if (!offline) return;
+
+        function animate() {
+            if (isReduced() || offline.hidden) return;
+            offline.animate([
+                { transform: "translateY(-3px)", opacity: .75 },
+                { transform: "translateY(0)", opacity: 1 }
+            ], { duration: 320, easing: "cubic-bezier(.16,1,.3,1)" });
+        }
+
+        window.addEventListener("offline", animate);
+        window.addEventListener("online", function () {
+            if (isReduced()) return;
+            root.animate([
+                { filter: "brightness(1)" },
+                { filter: "brightness(1.018)" },
+                { filter: "brightness(1)" }
+            ], { duration: 380, easing: "ease-out" });
+        });
+    }
+
+    function initializeDynamicSupport() {
+        const body = document.getElementById("ml-table-body");
+        if (!body || !("MutationObserver" in window)) return;
+
+        const observer = new MutationObserver(function (records) {
+            const changed = records.some(record => record.addedNodes && record.addedNodes.length);
+            if (!changed) return;
+            requestAnimationFrame(function () {
+                initializeRows();
+                initializeRipples();
+            });
+        });
+
+        observer.observe(body, { childList: true, subtree: true });
+    }
+
+    function initializeThemeSync() {
+        const html = document.documentElement;
+        root.dataset.premiumTheme = html.dataset.theme || "dark";
+        if (!("MutationObserver" in window)) return;
+
+        const observer = new MutationObserver(function () {
+            root.dataset.premiumTheme = html.dataset.theme || "dark";
+        });
+
+        observer.observe(html, { attributes: true, attributeFilter: ["data-theme"] });
+    }
+
+    function initializePremiumLayer() {
+        initializeScrollProgress();
+        initializeAmbientPointer();
+        initializeDepth();
+        initializeRows();
+        initializeSelectionVisuals();
+        initializeRipples();
+        initializeReveals();
+        initializeSearchFocus();
+        initializeDialogFeedback();
+        initializeRefreshFeedback();
+        initializeNetworkFeedback();
+        initializeDynamicSupport();
+        initializeThemeSync();
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initializePremiumLayer, { once: true });
+    } else {
+        initializePremiumLayer();
+    }
+}());
+
+</script>
+{% endblock %}

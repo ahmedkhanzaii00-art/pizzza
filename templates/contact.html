@@ -1,0 +1,3538 @@
+{% extends "base.html" %}
+
+{# =========================================================
+   CONTACT PAGE — SOURCE-OF-TRUTH NORMALIZATION
+
+   Current main.py provides:
+   - business_name
+   - business_phone
+   - principal
+   - GET/POST /contact via endpoint contact_page
+
+   Current write_inquiry("contact", ...) accepts/stores:
+   - name
+   - email
+   - phone
+   - subject
+   - message
+
+   It derives authenticated customer_uid server-side, assigns status
+   server-side, and uses server timestamps.
+
+   Inquiry categories, order-reference storage, honeypot/CAPTCHA,
+   public email/address/support hours are not currently implemented
+   by main.py, so they render only if a future backend explicitly
+   enables/passes them.
+========================================================= #}
+
+{% set principal_data = principal|default({}, true) %}
+{% if principal_data is not mapping %}
+    {% set principal_data = {} %}
+{% endif %}
+
+{% set form_state = form_data|default({}, true) %}
+{% if form_state is not mapping %}
+    {% set form_state = {} %}
+{% endif %}
+
+{% set initial_errors = field_errors|default({}, true) %}
+{% if initial_errors is not mapping %}
+    {% set initial_errors = {} %}
+{% endif %}
+
+{% set contact_seo_data = contact_seo|default({}, true) %}
+{% if contact_seo_data is not mapping %}
+    {% set contact_seo_data = {} %}
+{% endif %}
+
+{% set public_contact_person = (contact_person|default("", true)) or "Ahmed Raza Zai" %}
+{% set public_contact_phone = (contact_phone|default("", true)) or (business_phone|default("", true)) or "03101332098" %}
+{% set public_contact_email = (contact_email|default("", true)) or (business_email|default("", true)) %}
+{% set public_contact_address = contact_address|default("", true) %}
+{% set public_contact_hours = contact_hours|default("", true) %}
+{% set public_whatsapp_url = contact_whatsapp_url|default("", true) %}
+
+{% set prefill_name = form_state.get("name", principal_data.get("name", ""))|default("", true) %}
+{% set prefill_email = form_state.get("email", principal_data.get("email", ""))|default("", true) %}
+{% set prefill_phone = form_state.get("phone", "")|default("", true) %}
+{% set prefill_subject = form_state.get("subject", "")|default("", true) %}
+{% set prefill_message = form_state.get("message", "")|default("", true) %}
+
+{% set configured_inquiry_types = inquiry_types|default([], true) %}
+{% set category_supported = contact_category_supported|default(false) %}
+{% set category_enabled = category_supported and configured_inquiry_types is sequence and configured_inquiry_types is not string and configured_inquiry_types %}
+{% set preselected_category = form_state.get("category", preselected_inquiry_type|default("", true))|default("", true) %}
+
+{% set order_reference_supported = contact_order_reference_supported|default(false) %}
+{% set prefill_order_reference = form_state.get("order_reference", preselected_order_reference|default("", true))|default("", true) %}
+{% set order_reference_max = contact_order_reference_max|default(120, true)|int %}
+
+{% set current_role = principal_data.get("role", "")|default("", true) %}
+{% set is_customer = current_role == "customer" %}
+
+{% set page_title = contact_seo_data.get("title", "Contact Us")|default("Contact Us", true) %}
+{% set meta_description = contact_seo_data.get(
+    "description",
+    "Contact " ~ (business_name|default("our restaurant", true)) ~ " for general inquiries, order support and restaurant information."
+)|default("", true) %}
+
+{% block title %}{{ page_title }} | {{ business_name|default("Restaurant", true) }}{% endblock %}
+
+{% block meta_description %}{{ meta_description }}{% endblock %}
+
+{% block head %}
+    {{ super() }}
+
+    {% if contact_seo_data.get("og_title") %}
+        <meta
+            property="og:title"
+            content="{{ contact_seo_data.get('og_title') }}"
+        >
+    {% endif %}
+
+    {% if contact_seo_data.get("og_description") %}
+        <meta
+            property="og:description"
+            content="{{ contact_seo_data.get('og_description') }}"
+        >
+    {% endif %}
+{% endblock %}
+
+{% block styles %}
+<style>
+    .contact-page {
+        --ct-primary: var(--primary-color, #b83222);
+        --ct-primary-hover: var(--primary-color-hover, #98281b);
+        --ct-primary-soft: var(--primary-color-soft, #fff0eb);
+        --ct-primary-contrast: var(--primary-contrast, #fff);
+
+        --ct-bg: var(--background-color, #fffaf4);
+        --ct-bg-soft: var(--background-subtle, #f8f2ea);
+        --ct-surface: var(--surface-color, #fff);
+        --ct-surface-raised: var(--surface-elevated, #fff);
+        --ct-surface-muted: var(--surface-muted, #f5eee5);
+
+        --ct-text: var(--text-color, #201c19);
+        --ct-strong: var(--text-strong, #151210);
+        --ct-muted: var(--muted-text, #6f6760);
+        --ct-subtle: var(--subtle-text, #8c8279);
+
+        --ct-border: var(--border-color, #e7ded4);
+        --ct-border-strong: var(--border-strong, #d3c6b9);
+
+        --ct-success: var(--success-color, #247a4a);
+        --ct-success-soft: var(--success-soft, #eaf7ef);
+        --ct-warning: var(--warning-color, #9a6510);
+        --ct-warning-soft: var(--warning-soft, #fff5dc);
+        --ct-error: var(--error-color, #b42318);
+        --ct-error-soft: var(--error-soft, #fff0ee);
+        --ct-info: var(--info-color, #285ea8);
+        --ct-info-soft: var(--info-soft, #edf4ff);
+
+        --ct-radius-sm: var(--radius-sm, 8px);
+        --ct-radius-md: var(--radius-md, 12px);
+        --ct-radius-lg: var(--radius-lg, 18px);
+        --ct-radius-xl: var(--radius-xl, 26px);
+
+        --ct-shadow-sm:
+            var(
+                --shadow-sm,
+                0 6px 18px rgba(31, 24, 19, .08)
+            );
+
+        --ct-shadow-md:
+            var(
+                --shadow-md,
+                0 16px 36px rgba(31, 24, 19, .12)
+            );
+
+        --ct-transition:
+            var(
+                --transition-fast,
+                160ms ease
+            );
+
+        min-height: 72vh;
+        padding:
+            clamp(.9rem, 2.5vw, 1.6rem)
+            0
+            clamp(4rem, 7vw, 5.5rem);
+
+        color: var(--ct-text);
+
+        background:
+            radial-gradient(
+                circle at 0 5%,
+                color-mix(
+                    in srgb,
+                    var(--ct-primary) 5%,
+                    transparent
+                ),
+                transparent 29rem
+            ),
+            radial-gradient(
+                circle at 100% 48%,
+                color-mix(
+                    in srgb,
+                    var(--accent-color, #d99b35) 4%,
+                    transparent
+                ),
+                transparent 24rem
+            );
+    }
+
+    .contact-page,
+    .contact-page *,
+    .contact-page *::before,
+    .contact-page *::after {
+        box-sizing: border-box;
+    }
+
+    .contact-page [hidden] {
+        display: none !important;
+    }
+
+    .contact-page svg {
+        display: block;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+
+    .contact-shell {
+        width: min(100% - 2rem, 1180px);
+        margin-inline: auto;
+    }
+
+    /* =====================================================
+       BREADCRUMBS
+    ====================================================== */
+
+    .contact-breadcrumbs {
+        margin-bottom: .82rem;
+    }
+
+    .contact-breadcrumbs ol {
+        display: flex;
+        align-items: center;
+        gap: .34rem;
+        flex-wrap: wrap;
+
+        margin: 0;
+        padding: 0;
+
+        list-style: none;
+    }
+
+    .contact-breadcrumbs li {
+        display: inline-flex;
+        align-items: center;
+        gap: .34rem;
+
+        color: var(--ct-muted);
+
+        font-size: .58rem;
+        line-height: 1.35;
+    }
+
+    .contact-breadcrumbs li:not(:last-child)::after {
+        content: "/";
+        color: var(--ct-subtle);
+    }
+
+    .contact-breadcrumbs a {
+        color: var(--ct-muted);
+        text-decoration: none;
+    }
+
+    .contact-breadcrumbs a:hover {
+        color: var(--ct-primary);
+        text-decoration: underline;
+        text-underline-offset: .18em;
+    }
+
+    .contact-breadcrumbs [aria-current="page"] {
+        color: var(--ct-text);
+        font-weight: 780;
+    }
+
+    /* =====================================================
+       COMPACT HERO
+    ====================================================== */
+
+    .contact-hero {
+        position: relative;
+
+        overflow: hidden;
+
+        margin-bottom: 1rem;
+        padding:
+            clamp(1rem, 3vw, 1.55rem);
+
+        border: 1px solid var(--ct-border);
+        border-radius: var(--ct-radius-xl);
+
+        background:
+            linear-gradient(
+                145deg,
+                color-mix(
+                    in srgb,
+                    var(--ct-primary-soft) 52%,
+                    var(--ct-surface)
+                ),
+                var(--ct-surface)
+            );
+
+        box-shadow: var(--ct-shadow-sm);
+    }
+
+    .contact-hero::after {
+        content: "";
+
+        position: absolute;
+        top: -50px;
+        right: -50px;
+
+        width: 180px;
+        height: 180px;
+
+        border: 1px solid
+            color-mix(
+                in srgb,
+                var(--ct-primary) 12%,
+                transparent
+            );
+
+        border-radius: 50%;
+
+        pointer-events: none;
+    }
+
+    .contact-hero__grid {
+        position: relative;
+        z-index: 1;
+
+        display: grid;
+        grid-template-columns:
+            minmax(0, 1fr)
+            auto;
+
+        gap: 1rem;
+        align-items: center;
+    }
+
+    .contact-eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+
+        margin: 0 0 .4rem;
+
+        color: var(--ct-primary);
+
+        font-size: .62rem;
+        font-weight: 860;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+    }
+
+    .contact-eyebrow::before {
+        content: "";
+
+        width: 22px;
+        height: 2px;
+
+        border-radius: 999px;
+
+        background: currentColor;
+    }
+
+    .contact-hero h1 {
+        margin: 0;
+
+        color: var(--ct-strong);
+
+        font-size:
+            clamp(
+                1.85rem,
+                4.7vw,
+                3.15rem
+            );
+
+        line-height: 1;
+        letter-spacing: -.048em;
+        text-wrap: balance;
+    }
+
+    .contact-hero__copy {
+        max-width: 62ch;
+
+        margin: .58rem 0 0;
+
+        color: var(--ct-muted);
+
+        font-size: .76rem;
+        line-height: 1.6;
+    }
+
+    .contact-hero__icon {
+        width: 70px;
+        height: 70px;
+
+        display: grid;
+        place-items: center;
+
+        border: 1px solid
+            color-mix(
+                in srgb,
+                var(--ct-primary) 16%,
+                var(--ct-border)
+            );
+
+        border-radius: 20px;
+
+        background: var(--ct-surface);
+        color: var(--ct-primary);
+
+        box-shadow: var(--ct-shadow-sm);
+    }
+
+    .contact-hero__icon svg {
+        width: 1.75rem;
+        height: 1.75rem;
+    }
+
+    /* =====================================================
+       LAYOUT
+    ====================================================== */
+
+    .contact-layout {
+        display: grid;
+        grid-template-columns:
+            minmax(260px, .7fr)
+            minmax(0, 1.3fr);
+
+        gap:
+            clamp(.75rem, 2.5vw, 1.2rem);
+
+        align-items: start;
+    }
+
+    .contact-sidebar {
+        display: grid;
+        gap: .7rem;
+    }
+
+    .contact-panel {
+        border: 1px solid var(--ct-border);
+        border-radius: 16px;
+
+        background: var(--ct-surface);
+
+        box-shadow: var(--ct-shadow-sm);
+    }
+
+    .contact-panel__head {
+        padding: .78rem .82rem .68rem;
+
+        border-bottom:
+            1px solid var(--ct-border);
+    }
+
+    .contact-panel__head h2 {
+        margin: 0;
+
+        color: var(--ct-strong);
+
+        font-size: .78rem;
+        font-weight: 860;
+        line-height: 1.3;
+    }
+
+    .contact-panel__head p {
+        margin: .2rem 0 0;
+
+        color: var(--ct-muted);
+
+        font-size: .57rem;
+        line-height: 1.45;
+    }
+
+    .contact-panel__body {
+        padding: .78rem .82rem;
+    }
+
+    /* =====================================================
+       CONTACT CARDS
+    ====================================================== */
+
+    .contact-card-list {
+        display: grid;
+        gap: .5rem;
+    }
+
+    .contact-card {
+        display: grid;
+        grid-template-columns:
+            auto
+            minmax(0, 1fr);
+
+        gap: .55rem;
+        align-items: start;
+
+        padding: .65rem;
+
+        border: 1px solid var(--ct-border);
+        border-radius: 12px;
+
+        background: var(--ct-bg-soft);
+    }
+
+    .contact-card__icon {
+        width: 35px;
+        height: 35px;
+
+        display: grid;
+        place-items: center;
+
+        border-radius: 10px;
+
+        background: var(--ct-primary-soft);
+        color: var(--ct-primary);
+    }
+
+    .contact-card__icon svg {
+        width: .95rem;
+        height: .95rem;
+    }
+
+    .contact-card__label {
+        margin: 0;
+
+        color: var(--ct-subtle);
+
+        font-size: .5rem;
+        font-weight: 780;
+        letter-spacing: .045em;
+        text-transform: uppercase;
+    }
+
+    .contact-card__value {
+        margin: .12rem 0 0;
+
+        color: var(--ct-strong);
+
+        font-size: .65rem;
+        font-weight: 840;
+        line-height: 1.4;
+
+        overflow-wrap: anywhere;
+    }
+
+    .contact-card__meta {
+        margin: .14rem 0 0;
+
+        color: var(--ct-muted);
+
+        font-size: .54rem;
+        line-height: 1.4;
+    }
+
+    .contact-card__actions {
+        display: flex;
+        gap: .35rem;
+        flex-wrap: wrap;
+
+        margin-top: .42rem;
+    }
+
+    /* =====================================================
+       QUICK LINKS
+    ====================================================== */
+
+    .contact-quick-links {
+        display: grid;
+        gap: .38rem;
+    }
+
+    .contact-quick-link {
+        min-height: 44px;
+
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .55rem;
+
+        padding: .55rem .62rem;
+
+        border: 1px solid var(--ct-border);
+        border-radius: 10px;
+
+        background: var(--ct-bg-soft);
+        color: var(--ct-text);
+
+        font-size: .58rem;
+        font-weight: 780;
+        line-height: 1.3;
+
+        text-decoration: none;
+
+        transition:
+            transform var(--ct-transition),
+            border-color var(--ct-transition),
+            background var(--ct-transition);
+    }
+
+    .contact-quick-link:hover,
+    .contact-quick-link:focus-visible {
+        transform: translateY(-1px);
+        border-color: var(--ct-border-strong);
+        background: var(--ct-surface-muted);
+    }
+
+    .contact-quick-link__main {
+        display: flex;
+        align-items: center;
+        gap: .45rem;
+    }
+
+    .contact-quick-link__main svg,
+    .contact-quick-link > svg {
+        width: .78rem;
+        height: .78rem;
+
+        flex: 0 0 .78rem;
+
+        color: var(--ct-primary);
+    }
+
+    /* =====================================================
+       FORM
+    ====================================================== */
+
+    .contact-form-card {
+        overflow: hidden;
+
+        border: 1px solid var(--ct-border);
+        border-radius: 16px;
+
+        background: var(--ct-surface);
+
+        box-shadow: var(--ct-shadow-md);
+    }
+
+    .contact-form-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: .8rem;
+
+        padding:
+            clamp(.8rem, 2.4vw, 1rem);
+
+        border-bottom:
+            1px solid var(--ct-border);
+
+        background:
+            linear-gradient(
+                180deg,
+                var(--ct-surface),
+                color-mix(
+                    in srgb,
+                    var(--ct-bg-soft) 45%,
+                    var(--ct-surface)
+                )
+            );
+    }
+
+    .contact-form-head h2 {
+        margin: 0;
+
+        color: var(--ct-strong);
+
+        font-size: .86rem;
+        font-weight: 880;
+    }
+
+    .contact-form-head p {
+        max-width: 58ch;
+
+        margin: .2rem 0 0;
+
+        color: var(--ct-muted);
+
+        font-size: .58rem;
+        line-height: 1.48;
+    }
+
+    .contact-form-head__badge {
+        flex: 0 0 auto;
+
+        display: inline-flex;
+        align-items: center;
+        gap: .28rem;
+
+        padding: .34rem .45rem;
+
+        border: 1px solid
+            color-mix(
+                in srgb,
+                var(--ct-success) 20%,
+                var(--ct-border)
+            );
+
+        border-radius: 999px;
+
+        background: var(--ct-success-soft);
+        color: var(--ct-success);
+
+        font-size: .5rem;
+        font-weight: 820;
+        white-space: nowrap;
+    }
+
+    .contact-form-head__badge svg {
+        width: .68rem;
+        height: .68rem;
+    }
+
+    .contact-form {
+        padding:
+            clamp(.82rem, 2.6vw, 1.05rem);
+    }
+
+    .contact-required-note {
+        margin: 0 0 .72rem;
+
+        color: var(--ct-muted);
+
+        font-size: .55rem;
+        line-height: 1.45;
+    }
+
+    .contact-required-note strong {
+        color: var(--ct-text);
+    }
+
+    .contact-form-grid {
+        display: grid;
+        grid-template-columns:
+            repeat(2, minmax(0, 1fr));
+
+        gap: .62rem;
+    }
+
+    .contact-field {
+        min-width: 0;
+
+        display: grid;
+        gap: .28rem;
+    }
+
+    .contact-field--full {
+        grid-column: 1 / -1;
+    }
+
+    .contact-label {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: .45rem;
+
+        color: var(--ct-text);
+
+        font-size: .57rem;
+        font-weight: 820;
+        line-height: 1.35;
+    }
+
+    .contact-label__optional {
+        color: var(--ct-subtle);
+
+        font-size: .49rem;
+        font-weight: 680;
+    }
+
+    .contact-input,
+    .contact-select,
+    .contact-textarea {
+        width: 100%;
+
+        border: 1px solid var(--ct-border);
+        outline: 0;
+
+        border-radius: 10px;
+
+        background: var(--ct-bg);
+        color: var(--ct-text);
+
+        font: inherit;
+        font-size: .66rem;
+
+        transition:
+            border-color var(--ct-transition),
+            box-shadow var(--ct-transition),
+            background var(--ct-transition);
+    }
+
+    .contact-input,
+    .contact-select {
+        min-height: 44px;
+
+        padding: .61rem .66rem;
+    }
+
+    .contact-textarea {
+        min-height: 150px;
+
+        padding: .65rem .68rem;
+
+        line-height: 1.55;
+
+        resize: vertical;
+    }
+
+    .contact-input:hover,
+    .contact-select:hover,
+    .contact-textarea:hover {
+        border-color: var(--ct-border-strong);
+    }
+
+    .contact-input:focus,
+    .contact-select:focus,
+    .contact-textarea:focus {
+        border-color: var(--ct-primary);
+
+        background: var(--ct-surface);
+
+        box-shadow:
+            0 0 0 4px
+            color-mix(
+                in srgb,
+                var(--ct-primary) 11%,
+                transparent
+            );
+    }
+
+    .contact-input[aria-invalid="true"],
+    .contact-select[aria-invalid="true"],
+    .contact-textarea[aria-invalid="true"] {
+        border-color: var(--ct-error);
+
+        box-shadow:
+            0 0 0 3px
+            color-mix(
+                in srgb,
+                var(--ct-error) 9%,
+                transparent
+            );
+    }
+
+    .contact-help {
+        margin: 0;
+
+        color: var(--ct-subtle);
+
+        font-size: .51rem;
+        line-height: 1.42;
+    }
+
+    .contact-field-error {
+        margin: 0;
+
+        color: var(--ct-error);
+
+        font-size: .51rem;
+        font-weight: 700;
+        line-height: 1.42;
+    }
+
+    .contact-field-error:empty {
+        display: none;
+    }
+
+    .contact-counter-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: .7rem;
+    }
+
+    .contact-counter {
+        flex: 0 0 auto;
+
+        color: var(--ct-subtle);
+
+        font-size: .5rem;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+
+    .contact-security-note {
+        display: grid;
+        grid-template-columns:
+            auto
+            minmax(0, 1fr);
+
+        gap: .45rem;
+
+        margin-top: .68rem;
+        padding: .62rem;
+
+        border: 1px solid
+            color-mix(
+                in srgb,
+                var(--ct-warning) 22%,
+                var(--ct-border)
+            );
+
+        border-radius: 10px;
+
+        background: var(--ct-warning-soft);
+        color: var(--ct-warning);
+    }
+
+    .contact-security-note svg {
+        width: .86rem;
+        height: .86rem;
+
+        margin-top: .02rem;
+
+        flex: 0 0 .86rem;
+    }
+
+    .contact-security-note strong {
+        display: block;
+
+        font-size: .56rem;
+    }
+
+    .contact-security-note p {
+        margin: .08rem 0 0;
+
+        color:
+            color-mix(
+                in srgb,
+                var(--ct-warning) 80%,
+                var(--ct-text)
+            );
+
+        font-size: .53rem;
+        line-height: 1.45;
+    }
+
+    .contact-account-note {
+        display: flex;
+        align-items: flex-start;
+        gap: .4rem;
+
+        margin: 0 0 .7rem;
+        padding: .56rem .6rem;
+
+        border: 1px solid
+            color-mix(
+                in srgb,
+                var(--ct-info) 20%,
+                var(--ct-border)
+            );
+
+        border-radius: 10px;
+
+        background: var(--ct-info-soft);
+        color: var(--ct-info);
+
+        font-size: .53rem;
+        line-height: 1.45;
+    }
+
+    .contact-account-note svg {
+        width: .78rem;
+        height: .78rem;
+
+        flex: 0 0 .78rem;
+
+        margin-top: .02rem;
+    }
+
+    /* =====================================================
+       FORM SUMMARY / SUCCESS
+    ====================================================== */
+
+    .contact-form-error {
+        margin: 0 0 .7rem;
+        padding: .62rem .66rem;
+
+        border: 1px solid
+            color-mix(
+                in srgb,
+                var(--ct-error) 28%,
+                var(--ct-border)
+            );
+
+        border-radius: 10px;
+
+        background: var(--ct-error-soft);
+        color: var(--ct-error);
+
+        font-size: .56rem;
+        font-weight: 700;
+        line-height: 1.45;
+    }
+
+    .contact-form-error:empty {
+        display: none;
+    }
+
+    .contact-form-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .7rem;
+        flex-wrap: wrap;
+
+        margin-top: .78rem;
+        padding-top: .72rem;
+
+        border-top: 1px solid var(--ct-border);
+    }
+
+    .contact-privacy-note {
+        max-width: 58ch;
+
+        margin: 0;
+
+        color: var(--ct-subtle);
+
+        font-size: .5rem;
+        line-height: 1.45;
+    }
+
+    .contact-privacy-note a {
+        color: var(--ct-primary);
+        text-decoration: underline;
+        text-underline-offset: .15em;
+    }
+
+    .contact-submit {
+        flex: 0 0 auto;
+    }
+
+    .contact-spinner {
+        width: .78rem;
+        height: .78rem;
+
+        border: 2px solid
+            color-mix(
+                in srgb,
+                currentColor 30%,
+                transparent
+            );
+
+        border-top-color: currentColor;
+        border-radius: 50%;
+
+        animation:
+            contact-spin
+            .8s
+            linear
+            infinite;
+    }
+
+    @keyframes contact-spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    .contact-success {
+        padding:
+            clamp(1rem, 3vw, 1.45rem);
+
+        text-align: center;
+    }
+
+    .contact-success__icon {
+        width: 54px;
+        height: 54px;
+
+        display: grid;
+        place-items: center;
+
+        margin: 0 auto .68rem;
+
+        border-radius: 15px;
+
+        background: var(--ct-success-soft);
+        color: var(--ct-success);
+    }
+
+    .contact-success__icon svg {
+        width: 1.45rem;
+        height: 1.45rem;
+    }
+
+    .contact-success h2 {
+        margin: 0;
+
+        color: var(--ct-strong);
+
+        font-size: .94rem;
+        font-weight: 880;
+    }
+
+    .contact-success__message {
+        max-width: 52ch;
+
+        margin: .3rem auto 0;
+
+        color: var(--ct-muted);
+
+        font-size: .61rem;
+        line-height: 1.5;
+    }
+
+    .contact-success__reference {
+        width: fit-content;
+
+        display: flex;
+        align-items: center;
+        gap: .45rem;
+
+        margin: .62rem auto 0;
+        padding: .48rem .55rem;
+
+        border: 1px solid var(--ct-border);
+        border-radius: 10px;
+
+        background: var(--ct-bg-soft);
+    }
+
+    .contact-success__reference span {
+        color: var(--ct-subtle);
+
+        font-size: .49rem;
+        font-weight: 760;
+        text-transform: uppercase;
+    }
+
+    .contact-success__reference code {
+        color: var(--ct-text);
+
+        font-family:
+            ui-monospace,
+            SFMono-Regular,
+            Menlo,
+            Consolas,
+            monospace;
+
+        font-size: .54rem;
+        font-weight: 760;
+
+        overflow-wrap: anywhere;
+    }
+
+    .contact-success__actions {
+        display: flex;
+        justify-content: center;
+        gap: .42rem;
+        flex-wrap: wrap;
+
+        margin-top: .78rem;
+    }
+
+    /* =====================================================
+       BUTTONS
+    ====================================================== */
+
+    .contact-btn {
+        min-height: 41px;
+
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: .36rem;
+
+        padding: .55rem .7rem;
+
+        border-radius: 9px;
+
+        font: inherit;
+        font-size: .58rem;
+        font-weight: 820;
+        line-height: 1;
+
+        text-decoration: none;
+
+        transition:
+            transform var(--ct-transition),
+            border-color var(--ct-transition),
+            background var(--ct-transition),
+            color var(--ct-transition),
+            opacity var(--ct-transition);
+    }
+
+    button.contact-btn {
+        cursor: pointer;
+    }
+
+    .contact-btn svg {
+        width: .8rem;
+        height: .8rem;
+    }
+
+    .contact-btn--primary {
+        border: 1px solid var(--ct-primary);
+
+        background: var(--ct-primary);
+        color: var(--ct-primary-contrast);
+    }
+
+    .contact-btn--primary:hover:not(:disabled) {
+        transform: translateY(-1px);
+
+        border-color: var(--ct-primary-hover);
+        background: var(--ct-primary-hover);
+    }
+
+    .contact-btn--secondary {
+        border: 1px solid var(--ct-border);
+
+        background: var(--ct-bg);
+        color: var(--ct-text);
+    }
+
+    .contact-btn--secondary:hover:not(:disabled) {
+        transform: translateY(-1px);
+
+        border-color: var(--ct-border-strong);
+        background: var(--ct-surface-muted);
+    }
+
+    .contact-btn--ghost {
+        border: 1px solid transparent;
+
+        background: transparent;
+        color: var(--ct-primary);
+    }
+
+    .contact-btn--ghost:hover:not(:disabled) {
+        background: var(--ct-primary-soft);
+    }
+
+    .contact-btn--compact {
+        min-height: 34px;
+
+        padding: .43rem .52rem;
+
+        font-size: .52rem;
+    }
+
+    .contact-btn:disabled {
+        cursor: not-allowed;
+        opacity: .56;
+        transform: none !important;
+    }
+
+    /* =====================================================
+       AUTOFILL / FOCUS
+    ====================================================== */
+
+    .contact-page
+    input:-webkit-autofill,
+    .contact-page
+    input:-webkit-autofill:hover,
+    .contact-page
+    input:-webkit-autofill:focus,
+    .contact-page
+    textarea:-webkit-autofill,
+    .contact-page
+    select:-webkit-autofill {
+        -webkit-text-fill-color:
+            var(--ct-text);
+
+        caret-color:
+            var(--ct-text);
+
+        -webkit-box-shadow:
+            0 0 0 1000px
+            var(--ct-bg)
+            inset;
+
+        transition:
+            background-color
+            99999s
+            ease-in-out
+            0s;
+    }
+
+    .contact-page a:focus-visible,
+    .contact-page button:focus-visible,
+    .contact-page input:focus-visible,
+    .contact-page textarea:focus-visible,
+    .contact-page select:focus-visible {
+        outline:
+            3px solid
+            color-mix(
+                in srgb,
+                var(--ct-primary) 24%,
+                transparent
+            );
+
+        outline-offset: 2px;
+    }
+
+    /* =====================================================
+       RESPONSIVE
+    ====================================================== */
+
+    @media (max-width: 900px) {
+        .contact-layout {
+            grid-template-columns: 1fr;
+        }
+
+        .contact-sidebar {
+            grid-template-columns:
+                repeat(2, minmax(0, 1fr));
+        }
+
+        .contact-sidebar
+        .contact-panel:last-child {
+            grid-column: 1 / -1;
+        }
+    }
+
+    @media (max-width: 680px) {
+        .contact-shell {
+            width: min(100% - 1.1rem, 760px);
+        }
+
+        .contact-hero__grid {
+            grid-template-columns: 1fr;
+        }
+
+        .contact-hero__icon {
+            display: none;
+        }
+
+        .contact-sidebar {
+            grid-template-columns: 1fr;
+        }
+
+        .contact-sidebar
+        .contact-panel:last-child {
+            grid-column: auto;
+        }
+
+        .contact-form-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .contact-field--full {
+            grid-column: auto;
+        }
+
+        .contact-form-head {
+            flex-direction: column;
+        }
+
+        .contact-form-actions {
+            align-items: stretch;
+            flex-direction: column;
+        }
+
+        .contact-submit {
+            width: 100%;
+        }
+    }
+
+    @media (max-width: 420px) {
+        .contact-page {
+            padding-top: .72rem;
+        }
+
+        .contact-shell {
+            width: min(100% - .82rem, 760px);
+        }
+
+        .contact-hero {
+            border-radius: 18px;
+        }
+
+        .contact-hero h1 {
+            font-size:
+                clamp(
+                    1.7rem,
+                    10vw,
+                    2.25rem
+                );
+        }
+
+        .contact-card__actions
+        .contact-btn {
+            flex: 1 1 auto;
+        }
+
+        .contact-success__actions {
+            flex-direction: column;
+        }
+
+        .contact-success__actions
+        .contact-btn {
+            width: 100%;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .contact-page *,
+        .contact-page *::before,
+        .contact-page *::after {
+            scroll-behavior: auto !important;
+            transition-duration: .01ms !important;
+            animation-iteration-count: 1 !important;
+        }
+
+        .contact-spinner {
+            animation-duration: 1.35s;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<main
+    class="contact-page"
+    id="contact-page-root"
+    data-contact-endpoint="{{ url_for('contact_page') }}"
+    data-public-phone="{{ public_contact_phone }}"
+>
+    <span
+        class="visually-hidden"
+        id="contact-live-region"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+    ></span>
+
+    <div class="contact-shell">
+        <nav
+            class="contact-breadcrumbs"
+            aria-label="Breadcrumb"
+        >
+            <ol>
+                <li>
+                    <a href="{{ url_for('home_page') }}">
+                        Home
+                    </a>
+                </li>
+
+                <li>
+                    <span aria-current="page">
+                        Contact Us
+                    </span>
+                </li>
+            </ol>
+        </nav>
+
+        <header class="contact-hero">
+            <div class="contact-hero__grid">
+                <div>
+                    <p class="contact-eyebrow">
+                        Customer Contact
+                    </p>
+
+                    <h1>
+                        Contact Us
+                    </h1>
+
+                    <p class="contact-hero__copy">
+                        Have a question or need help?
+                        Call us or send a message using the secure contact form below.
+                    </p>
+                </div>
+
+                <span
+                    class="contact-hero__icon"
+                    aria-hidden="true"
+                >
+                    <svg viewBox="0 0 24 24">
+                        <path d="M4 5h16v12H8l-4 4V5Z"></path>
+                        <path d="M8 9h8M8 13h5"></path>
+                    </svg>
+                </span>
+            </div>
+        </header>
+
+        <div class="contact-layout">
+            <aside
+                class="contact-sidebar"
+                aria-label="Contact information and help"
+            >
+                <section
+                    class="contact-panel"
+                    aria-labelledby="contact-details-title"
+                >
+                    <header class="contact-panel__head">
+                        <h2 id="contact-details-title">
+                            Contact Information
+                        </h2>
+
+                        <p>
+                            Public contact details for customer inquiries.
+                        </p>
+                    </header>
+
+                    <div class="contact-panel__body">
+                        <div class="contact-card-list">
+                            <article class="contact-card">
+                                <span
+                                    class="contact-card__icon"
+                                    aria-hidden="true"
+                                >
+                                    <svg viewBox="0 0 24 24">
+                                        <path d="M5 4h4l2 5-2.5 1.5a15 15 0 0 0 5 5L15 13l5 2v4c0 1-1 2-2 2C10 20 4 14 3 6c0-1 1-2 2-2Z"></path>
+                                    </svg>
+                                </span>
+
+                                <div>
+                                    <p class="contact-card__label">
+                                        Call Us
+                                    </p>
+
+                                    <p class="contact-card__value">
+                                        {{ public_contact_phone }}
+                                    </p>
+
+                                    <div class="contact-card__actions">
+                                        <a
+                                            class="contact-btn contact-btn--primary contact-btn--compact"
+                                            href="tel:{{ public_contact_phone }}"
+                                        >
+                                            <svg
+                                                aria-hidden="true"
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <path d="M5 4h4l2 5-2.5 1.5a15 15 0 0 0 5 5L15 13l5 2v4c0 1-1 2-2 2C10 20 4 14 3 6c0-1 1-2 2-2Z"></path>
+                                            </svg>
+
+                                            Call {{ public_contact_phone }}
+                                        </a>
+
+                                        <button
+                                            class="contact-btn contact-btn--secondary contact-btn--compact"
+                                            id="contact-copy-phone"
+                                            type="button"
+                                        >
+                                            <svg
+                                                aria-hidden="true"
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <rect x="8" y="8" width="11" height="11" rx="2"></rect>
+                                                <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"></path>
+                                            </svg>
+
+                                            Copy Number
+                                        </button>
+                                    </div>
+                                </div>
+                            </article>
+
+                            <article class="contact-card">
+                                <span
+                                    class="contact-card__icon"
+                                    aria-hidden="true"
+                                >
+                                    <svg viewBox="0 0 24 24">
+                                        <circle cx="12" cy="8" r="3"></circle>
+                                        <path d="M5 20c.6-4.2 3-6.4 7-6.4s6.4 2.2 7 6.4"></path>
+                                    </svg>
+                                </span>
+
+                                <div>
+                                    <p class="contact-card__label">
+                                        Contact Person
+                                    </p>
+
+                                    <p class="contact-card__value">
+                                        {{ public_contact_person }}
+                                    </p>
+                                </div>
+                            </article>
+
+                            {% if public_contact_email %}
+                                <article class="contact-card">
+                                    <span
+                                        class="contact-card__icon"
+                                        aria-hidden="true"
+                                    >
+                                        <svg viewBox="0 0 24 24">
+                                            <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+                                            <path d="m4 7 8 6 8-6"></path>
+                                        </svg>
+                                    </span>
+
+                                    <div>
+                                        <p class="contact-card__label">
+                                            Email
+                                        </p>
+
+                                        <p class="contact-card__value">
+                                            <a href="mailto:{{ public_contact_email }}">
+                                                {{ public_contact_email }}
+                                            </a>
+                                        </p>
+                                    </div>
+                                </article>
+                            {% endif %}
+
+                            {% if public_contact_address %}
+                                <article class="contact-card">
+                                    <span
+                                        class="contact-card__icon"
+                                        aria-hidden="true"
+                                    >
+                                        <svg viewBox="0 0 24 24">
+                                            <path d="M12 21s6-5.3 6-11a6 6 0 1 0-12 0c0 5.7 6 11 6 11Z"></path>
+                                            <circle cx="12" cy="10" r="2"></circle>
+                                        </svg>
+                                    </span>
+
+                                    <div>
+                                        <p class="contact-card__label">
+                                            Address
+                                        </p>
+
+                                        <p class="contact-card__value">
+                                            {{ public_contact_address }}
+                                        </p>
+                                    </div>
+                                </article>
+                            {% endif %}
+
+                            {% if public_contact_hours %}
+                                <article class="contact-card">
+                                    <span
+                                        class="contact-card__icon"
+                                        aria-hidden="true"
+                                    >
+                                        <svg viewBox="0 0 24 24">
+                                            <circle cx="12" cy="12" r="9"></circle>
+                                            <path d="M12 7v5l3 2"></path>
+                                        </svg>
+                                    </span>
+
+                                    <div>
+                                        <p class="contact-card__label">
+                                            Contact Hours
+                                        </p>
+
+                                        <p class="contact-card__value">
+                                            {{ public_contact_hours }}
+                                        </p>
+                                    </div>
+                                </article>
+                            {% endif %}
+
+                            {% if public_whatsapp_url %}
+                                <article class="contact-card">
+                                    <span
+                                        class="contact-card__icon"
+                                        aria-hidden="true"
+                                    >
+                                        <svg viewBox="0 0 24 24">
+                                            <path d="M20 11.5a8 8 0 0 1-11.9 7L4 20l1.4-4A8 8 0 1 1 20 11.5Z"></path>
+                                            <path d="M9 8.5c.4 2.8 2.1 4.7 5 5.6"></path>
+                                        </svg>
+                                    </span>
+
+                                    <div>
+                                        <p class="contact-card__label">
+                                            WhatsApp
+                                        </p>
+
+                                        <p class="contact-card__meta">
+                                            Available through the configured business contact link.
+                                        </p>
+
+                                        <div class="contact-card__actions">
+                                            <a
+                                                class="contact-btn contact-btn--secondary contact-btn--compact"
+                                                href="{{ public_whatsapp_url }}"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                            >
+                                                Open WhatsApp
+                                            </a>
+                                        </div>
+                                    </div>
+                                </article>
+                            {% endif %}
+                        </div>
+                    </div>
+                </section>
+
+                <section
+                    class="contact-panel"
+                    aria-labelledby="contact-help-title"
+                >
+                    <header class="contact-panel__head">
+                        <h2 id="contact-help-title">
+                            Quick Help
+                        </h2>
+
+                        <p>
+                            Use the right page when you need more specific information.
+                        </p>
+                    </header>
+
+                    <div class="contact-panel__body">
+                        <div class="contact-quick-links">
+                            <a
+                                class="contact-quick-link"
+                                href="{{ url_for('locations_page') }}"
+                            >
+                                <span class="contact-quick-link__main">
+                                    <svg
+                                        aria-hidden="true"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path d="M12 21s6-5.3 6-11a6 6 0 1 0-12 0c0 5.7 6 11 6 11Z"></path>
+                                        <circle cx="12" cy="10" r="2"></circle>
+                                    </svg>
+
+                                    Find a Location
+                                </span>
+
+                                <svg
+                                    aria-hidden="true"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path d="M5 12h14M14 7l5 5-5 5"></path>
+                                </svg>
+                            </a>
+
+                            <a
+                                class="contact-quick-link"
+                                href="{{ url_for('support_page') }}"
+                            >
+                                <span class="contact-quick-link__main">
+                                    <svg
+                                        aria-hidden="true"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <circle cx="12" cy="12" r="9"></circle>
+                                        <path d="M9.7 9a2.5 2.5 0 0 1 4.8.8c0 1.8-2.5 2.2-2.5 3.7"></path>
+                                        <path d="M12 17h.01"></path>
+                                    </svg>
+
+                                    Visit Support
+                                </span>
+
+                                <svg
+                                    aria-hidden="true"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path d="M5 12h14M14 7l5 5-5 5"></path>
+                                </svg>
+                            </a>
+
+                            <a
+                                class="contact-quick-link"
+                                href="{{ url_for('faq_page') }}"
+                            >
+                                <span class="contact-quick-link__main">
+                                    <svg
+                                        aria-hidden="true"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path d="M5 4h14v16H5z"></path>
+                                        <path d="M8 8h8M8 12h6M8 16h4"></path>
+                                    </svg>
+
+                                    View FAQs
+                                </span>
+
+                                <svg
+                                    aria-hidden="true"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path d="M5 12h14M14 7l5 5-5 5"></path>
+                                </svg>
+                            </a>
+
+                            {% if is_customer %}
+                                <a
+                                    class="contact-quick-link"
+                                    href="{{ url_for('orders_page') }}"
+                                >
+                                    <span class="contact-quick-link__main">
+                                        <svg
+                                            aria-hidden="true"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path d="M5 4h14v16H5z"></path>
+                                            <path d="M8 8h8M8 12h8M8 16h5"></path>
+                                        </svg>
+
+                                        My Orders
+                                    </span>
+
+                                    <svg
+                                        aria-hidden="true"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path d="M5 12h14M14 7l5 5-5 5"></path>
+                                    </svg>
+                                </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </section>
+            </aside>
+
+            <section
+                class="contact-form-card"
+                aria-labelledby="contact-form-title"
+            >
+                <header class="contact-form-head">
+                    <div>
+                        <h2 id="contact-form-title">
+                            Send a Message
+                        </h2>
+
+                        <p>
+                            Tell us how we can help. Your message is submitted directly to the server for validation and storage.
+                        </p>
+                    </div>
+
+                    <span class="contact-form-head__badge">
+                        <svg
+                            aria-hidden="true"
+                            viewBox="0 0 24 24"
+                        >
+                            <path d="M12 3 5 6v5.4c0 4.3 2.8 7.5 7 9.1 4.2-1.6 7-4.8 7-9.1V6l-7-3Z"></path>
+                            <path d="m9 12 2 2 4-4"></path>
+                        </svg>
+
+                        Server validated
+                    </span>
+                </header>
+
+                <form
+                    class="contact-form"
+                    id="contact-form"
+                    action="{{ url_for('contact_page') }}"
+                    method="post"
+                    novalidate
+                    aria-busy="false"
+                >
+                    <input
+                        type="hidden"
+                        name="csrf_token"
+                        value="{{ csrf_token() }}"
+                    >
+
+                    <p
+                        class="contact-form-error"
+                        id="contact-form-error"
+                        role="alert"
+                    >{{ form_error|default("", true) }}</p>
+
+                    {% if principal_data %}
+                        <p class="contact-account-note">
+                            <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <circle cx="12" cy="8" r="3"></circle>
+                                <path d="M5 20c.6-4.2 3-6.4 7-6.4s6.4 2.2 7 6.4"></path>
+                            </svg>
+
+                            <span>
+                                You are signed in. The server can securely associate this message with your authenticated account; no UID is submitted by this form.
+                            </span>
+                        </p>
+                    {% endif %}
+
+                    <p class="contact-required-note">
+                        Fields marked <strong>Required</strong> must be completed.
+                        Provide at least an email address or a phone number so the business has a way to respond.
+                    </p>
+
+                    <div class="contact-form-grid">
+                        <div class="contact-field">
+                            <label
+                                class="contact-label"
+                                for="contact-name"
+                            >
+                                <span>Full Name</span>
+                                <span>Required</span>
+                            </label>
+
+                            <input
+                                class="contact-input"
+                                id="contact-name"
+                                name="name"
+                                type="text"
+                                autocomplete="name"
+                                minlength="2"
+                                maxlength="120"
+                                value="{{ prefill_name }}"
+                                required
+                                aria-invalid="{{ 'true' if initial_errors.get('name') else 'false' }}"
+                                aria-describedby="contact-name-help contact-name-error"
+                            >
+
+                            <p
+                                class="contact-help"
+                                id="contact-name-help"
+                            >
+                                Enter the name you want us to use when replying.
+                            </p>
+
+                            <p
+                                class="contact-field-error"
+                                id="contact-name-error"
+                            >{{ initial_errors.get("name", "") }}</p>
+                        </div>
+
+                        {% if category_enabled %}
+                            <div class="contact-field">
+                                <label
+                                    class="contact-label"
+                                    for="contact-category"
+                                >
+                                    <span>Inquiry Type</span>
+                                    <span>Required</span>
+                                </label>
+
+                                <select
+                                    class="contact-select"
+                                    id="contact-category"
+                                    name="category"
+                                    required
+                                    aria-invalid="{{ 'true' if initial_errors.get('category') else 'false' }}"
+                                    aria-describedby="contact-category-help contact-category-error"
+                                >
+                                    <option value="">
+                                        Select an inquiry type
+                                    </option>
+
+                                    {% for inquiry in configured_inquiry_types %}
+                                        {% if inquiry is mapping %}
+                                            {% set inquiry_key = inquiry.get("key", inquiry.get("value", ""))|default("", true) %}
+                                            {% set inquiry_label = inquiry.get("label", inquiry.get("title", inquiry_key))|default("", true) %}
+                                            {% set inquiry_order_related = inquiry.get("order_reference", inquiry.get("order_related", false)) %}
+
+                                            {% if inquiry_key and inquiry_label %}
+                                                {% if inquiry_key == preselected_category %}
+                                                    {% if inquiry_order_related %}
+                                                        <option
+                                                            value="{{ inquiry_key }}"
+                                                            data-order-reference="true"
+                                                            selected
+                                                        >
+                                                            {{ inquiry_label }}
+                                                        </option>
+                                                    {% else %}
+                                                        <option
+                                                            value="{{ inquiry_key }}"
+                                                            selected
+                                                        >
+                                                            {{ inquiry_label }}
+                                                        </option>
+                                                    {% endif %}
+                                                {% else %}
+                                                    {% if inquiry_order_related %}
+                                                        <option
+                                                            value="{{ inquiry_key }}"
+                                                            data-order-reference="true"
+                                                        >
+                                                            {{ inquiry_label }}
+                                                        </option>
+                                                    {% else %}
+                                                        <option value="{{ inquiry_key }}">
+                                                            {{ inquiry_label }}
+                                                        </option>
+                                                    {% endif %}
+                                                {% endif %}
+                                            {% endif %}
+
+                                        {% elif inquiry is string and inquiry|trim %}
+                                            {% if inquiry == preselected_category %}
+                                                <option
+                                                    value="{{ inquiry }}"
+                                                    selected
+                                                >
+                                                    {{ inquiry }}
+                                                </option>
+                                            {% else %}
+                                                <option value="{{ inquiry }}">
+                                                    {{ inquiry }}
+                                                </option>
+                                            {% endif %}
+                                        {% endif %}
+                                    {% endfor %}
+                                </select>
+
+                                <p
+                                    class="contact-help"
+                                    id="contact-category-help"
+                                >
+                                    Choose the backend-approved category that best matches your question.
+                                </p>
+
+                                <p
+                                    class="contact-field-error"
+                                    id="contact-category-error"
+                                >{{ initial_errors.get("category", "") }}</p>
+                            </div>
+                        {% endif %}
+
+                        <div class="contact-field">
+                            <label
+                                class="contact-label"
+                                for="contact-email"
+                            >
+                                <span>Email</span>
+                                <span class="contact-label__optional">
+                                    Email or phone required
+                                </span>
+                            </label>
+
+                            <input
+                                class="contact-input"
+                                id="contact-email"
+                                name="email"
+                                type="email"
+                                autocomplete="email"
+                                maxlength="254"
+                                value="{{ prefill_email }}"
+                                aria-invalid="{{ 'true' if initial_errors.get('email') else 'false' }}"
+                                aria-describedby="contact-contact-help contact-email-error"
+                            >
+
+                            <p
+                                class="contact-field-error"
+                                id="contact-email-error"
+                            >{{ initial_errors.get("email", "") }}</p>
+                        </div>
+
+                        <div class="contact-field">
+                            <label
+                                class="contact-label"
+                                for="contact-phone"
+                            >
+                                <span>Phone Number</span>
+                                <span class="contact-label__optional">
+                                    Email or phone required
+                                </span>
+                            </label>
+
+                            <input
+                                class="contact-input"
+                                id="contact-phone"
+                                name="phone"
+                                type="tel"
+                                inputmode="tel"
+                                autocomplete="tel"
+                                maxlength="22"
+                                value="{{ prefill_phone }}"
+                                aria-invalid="{{ 'true' if initial_errors.get('phone') else 'false' }}"
+                                aria-describedby="contact-contact-help contact-phone-error"
+                            >
+
+                            <p
+                                class="contact-field-error"
+                                id="contact-phone-error"
+                            >{{ initial_errors.get("phone", "") }}</p>
+                        </div>
+
+                        <div
+                            class="contact-field contact-field--full"
+                            id="contact-contact-method-help"
+                        >
+                            <p
+                                class="contact-help"
+                                id="contact-contact-help"
+                            >
+                                At least one valid contact method is required. These details are for this inquiry and do not prove account identity or automatically update your Profile.
+                            </p>
+                        </div>
+
+                        <div class="contact-field contact-field--full">
+                            <label
+                                class="contact-label"
+                                for="contact-subject"
+                            >
+                                <span>Subject</span>
+                                <span>Required</span>
+                            </label>
+
+                            <input
+                                class="contact-input"
+                                id="contact-subject"
+                                name="subject"
+                                type="text"
+                                maxlength="120"
+                                value="{{ prefill_subject }}"
+                                required
+                                aria-invalid="{{ 'true' if initial_errors.get('subject') else 'false' }}"
+                                aria-describedby="contact-subject-help contact-subject-error"
+                            >
+
+                            <p
+                                class="contact-help"
+                                id="contact-subject-help"
+                            >
+                                Keep the subject concise so your inquiry is easy to understand.
+                            </p>
+
+                            <p
+                                class="contact-field-error"
+                                id="contact-subject-error"
+                            >{{ initial_errors.get("subject", "") }}</p>
+                        </div>
+
+                        {% if order_reference_supported %}
+                            <div
+                                class="contact-field contact-field--full"
+                                id="contact-order-reference-field"
+                            >
+                                <label
+                                    class="contact-label"
+                                    for="contact-order-reference"
+                                >
+                                    <span>Order Reference</span>
+                                    <span class="contact-label__optional">
+                                        Optional
+                                    </span>
+                                </label>
+
+                                <input
+                                    class="contact-input"
+                                    id="contact-order-reference"
+                                    name="order_reference"
+                                    type="text"
+                                    maxlength="{{ order_reference_max }}"
+                                    value="{{ prefill_order_reference }}"
+                                    aria-invalid="{{ 'true' if initial_errors.get('order_reference') else 'false' }}"
+                                    aria-describedby="contact-order-reference-help contact-order-reference-error"
+                                >
+
+                                <p
+                                    class="contact-help"
+                                    id="contact-order-reference-help"
+                                >
+                                    A reference helps staff understand the inquiry; it does not authorize access to an order or reveal private order details.
+                                </p>
+
+                                <p
+                                    class="contact-field-error"
+                                    id="contact-order-reference-error"
+                                >{{ initial_errors.get("order_reference", "") }}</p>
+                            </div>
+                        {% endif %}
+
+                        <div class="contact-field contact-field--full">
+                            <label
+                                class="contact-label"
+                                for="contact-message"
+                            >
+                                <span>Message</span>
+                                <span>Required</span>
+                            </label>
+
+                            <textarea
+                                class="contact-textarea"
+                                id="contact-message"
+                                name="message"
+                                minlength="5"
+                                maxlength="3000"
+                                required
+                                aria-invalid="{{ 'true' if initial_errors.get('message') else 'false' }}"
+                                aria-describedby="contact-message-help contact-message-error"
+                            >{{ prefill_message }}</textarea>
+
+                            <div class="contact-counter-row">
+                                <p
+                                    class="contact-help"
+                                    id="contact-message-help"
+                                >
+                                    Explain the question or problem using plain text.
+                                </p>
+
+                                <span
+                                    class="contact-counter"
+                                    id="contact-message-counter"
+                                    aria-live="off"
+                                >
+                                    0 / 3000
+                                </span>
+                            </div>
+
+                            <p
+                                class="contact-field-error"
+                                id="contact-message-error"
+                            >{{ initial_errors.get("message", "") }}</p>
+                        </div>
+                    </div>
+
+                    <div class="contact-security-note">
+                        <svg
+                            aria-hidden="true"
+                            viewBox="0 0 24 24"
+                        >
+                            <path d="M12 3 5 6v5.4c0 4.3 2.8 7.5 7 9.1 4.2-1.6 7-4.8 7-9.1V6l-7-3Z"></path>
+                            <path d="M12 8v5M12 16.5h.01"></path>
+                        </svg>
+
+                        <div>
+                            <strong>
+                                Protect sensitive information
+                            </strong>
+
+                            <p>
+                                Please do not include passwords, PINs, OTP codes, CVVs, full card numbers, bank passwords or other sensitive payment credentials.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="contact-form-actions">
+                        <p class="contact-privacy-note">
+                            For information about how submitted information is handled,
+                            see the
+                            <a href="{{ url_for('privacy_page') }}">
+                                Privacy Policy
+                            </a>.
+                        </p>
+
+                        <button
+                            class="contact-btn contact-btn--primary contact-submit"
+                            id="contact-submit"
+                            type="submit"
+                        >
+                            <span
+                                class="contact-spinner"
+                                id="contact-submit-spinner"
+                                aria-hidden="true"
+                                hidden
+                            ></span>
+
+                            <svg
+                                id="contact-submit-icon"
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                            >
+                                <path d="m4 5 16 7-16 7 3-7-3-7Z"></path>
+                                <path d="M7 12h13"></path>
+                            </svg>
+
+                            <span id="contact-submit-label">
+                                Send Message
+                            </span>
+                        </button>
+                    </div>
+                </form>
+
+                <section
+                    class="contact-success"
+                    id="contact-success"
+                    role="status"
+                    aria-live="polite"
+                    aria-atomic="true"
+                    hidden
+                >
+                    <span
+                        class="contact-success__icon"
+                        aria-hidden="true"
+                    >
+                        <svg viewBox="0 0 24 24">
+                            <circle cx="12" cy="12" r="9"></circle>
+                            <path d="m8 12 2.7 2.7L16.5 9"></path>
+                        </svg>
+                    </span>
+
+                    <h2>
+                        Message Sent
+                    </h2>
+
+                    <p
+                        class="contact-success__message"
+                        id="contact-success-message"
+                    >
+                        We've received your message.
+                    </p>
+
+                    <div
+                        class="contact-success__reference"
+                        id="contact-success-reference-wrap"
+                        hidden
+                    >
+                        <span>Reference</span>
+
+                        <code id="contact-success-reference"></code>
+
+                        <button
+                            class="contact-btn contact-btn--ghost contact-btn--compact"
+                            id="contact-copy-reference"
+                            type="button"
+                        >
+                            Copy
+                        </button>
+                    </div>
+
+                    <div class="contact-success__actions">
+                        <button
+                            class="contact-btn contact-btn--secondary"
+                            id="contact-send-another"
+                            type="button"
+                        >
+                            Send Another Message
+                        </button>
+
+                        <a
+                            class="contact-btn contact-btn--primary"
+                            href="{{ url_for('menu_page') }}"
+                        >
+                            Browse Menu
+                        </a>
+                    </div>
+                </section>
+            </section>
+        </div>
+    </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    "use strict";
+
+    const root =
+        document.getElementById(
+            "contact-page-root"
+        );
+
+    if (!root) {
+        return;
+    }
+
+    const form =
+        document.getElementById(
+            "contact-form"
+        );
+
+    if (!form) {
+        return;
+    }
+
+    const fields = {
+        name:
+            document.getElementById(
+                "contact-name"
+            ),
+
+        email:
+            document.getElementById(
+                "contact-email"
+            ),
+
+        phone:
+            document.getElementById(
+                "contact-phone"
+            ),
+
+        category:
+            document.getElementById(
+                "contact-category"
+            ),
+
+        subject:
+            document.getElementById(
+                "contact-subject"
+            ),
+
+        order_reference:
+            document.getElementById(
+                "contact-order-reference"
+            ),
+
+        message:
+            document.getElementById(
+                "contact-message"
+            )
+    };
+
+    const elements = {
+        live:
+            document.getElementById(
+                "contact-live-region"
+            ),
+
+        formError:
+            document.getElementById(
+                "contact-form-error"
+            ),
+
+        submit:
+            document.getElementById(
+                "contact-submit"
+            ),
+
+        submitSpinner:
+            document.getElementById(
+                "contact-submit-spinner"
+            ),
+
+        submitIcon:
+            document.getElementById(
+                "contact-submit-icon"
+            ),
+
+        submitLabel:
+            document.getElementById(
+                "contact-submit-label"
+            ),
+
+        messageCounter:
+            document.getElementById(
+                "contact-message-counter"
+            ),
+
+        orderReferenceField:
+            document.getElementById(
+                "contact-order-reference-field"
+            ),
+
+        success:
+            document.getElementById(
+                "contact-success"
+            ),
+
+        successMessage:
+            document.getElementById(
+                "contact-success-message"
+            ),
+
+        successReferenceWrap:
+            document.getElementById(
+                "contact-success-reference-wrap"
+            ),
+
+        successReference:
+            document.getElementById(
+                "contact-success-reference"
+            ),
+
+        copyReference:
+            document.getElementById(
+                "contact-copy-reference"
+            ),
+
+        sendAnother:
+            document.getElementById(
+                "contact-send-another"
+            ),
+
+        copyPhone:
+            document.getElementById(
+                "contact-copy-phone"
+            )
+    };
+
+    const errorElements = {
+        name:
+            document.getElementById(
+                "contact-name-error"
+            ),
+
+        email:
+            document.getElementById(
+                "contact-email-error"
+            ),
+
+        phone:
+            document.getElementById(
+                "contact-phone-error"
+            ),
+
+        category:
+            document.getElementById(
+                "contact-category-error"
+            ),
+
+        subject:
+            document.getElementById(
+                "contact-subject-error"
+            ),
+
+        order_reference:
+            document.getElementById(
+                "contact-order-reference-error"
+            ),
+
+        message:
+            document.getElementById(
+                "contact-message-error"
+            )
+    };
+
+    const state = {
+        submitting:
+            false,
+
+        successfulReference:
+            "",
+
+        initialValues: {
+            name:
+                fields.name
+                    ? fields.name.value
+                    : "",
+
+            email:
+                fields.email
+                    ? fields.email.value
+                    : "",
+
+            phone:
+                fields.phone
+                    ? fields.phone.value
+                    : ""
+        }
+    };
+
+    function announce(message) {
+        if (
+            window.AppUI &&
+            typeof window.AppUI.announce ===
+                "function"
+        ) {
+            window.AppUI.announce(
+                message
+            );
+        }
+
+        if (!elements.live) {
+            return;
+        }
+
+        elements.live.textContent =
+            "";
+
+        window.setTimeout(
+            function () {
+                elements.live.textContent =
+                    String(
+                        message ||
+                        ""
+                    );
+            },
+            30
+        );
+    }
+
+    function toast(message, type) {
+        if (
+            window.AppUI &&
+            typeof window.AppUI.showToast ===
+                "function"
+        ) {
+            window.AppUI.showToast(
+                message,
+                type ||
+                "info"
+            );
+
+            return;
+        }
+
+        if (
+            typeof window.showToast ===
+                "function"
+        ) {
+            window.showToast(
+                message,
+                type ||
+                "info"
+            );
+        }
+    }
+
+    async function secureFetch(url, options) {
+        if (
+            window.AppUI &&
+            typeof window.AppUI.csrfFetch ===
+                "function"
+        ) {
+            return window.AppUI.csrfFetch(
+                url,
+                options ||
+                {}
+            );
+        }
+
+        throw new Error(
+            "CSRF helper unavailable"
+        );
+    }
+
+    async function parseJson(response) {
+        try {
+            return await response.json();
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function trimValue(field) {
+        if (!field) {
+            return "";
+        }
+
+        return String(
+            field.value ||
+            ""
+        ).trim();
+    }
+
+    function setFieldError(
+        fieldName,
+        message
+    ) {
+        const field =
+            fields[fieldName];
+
+        const errorNode =
+            errorElements[fieldName];
+
+        if (field) {
+            field.setAttribute(
+                "aria-invalid",
+                message
+                    ? "true"
+                    : "false"
+            );
+        }
+
+        if (errorNode) {
+            errorNode.textContent =
+                String(
+                    message ||
+                    ""
+                );
+        }
+    }
+
+    function clearFieldErrors() {
+        Object.keys(
+            errorElements
+        ).forEach(
+            function (fieldName) {
+                setFieldError(
+                    fieldName,
+                    ""
+                );
+            }
+        );
+    }
+
+    function showFormError(message) {
+        if (elements.formError) {
+            elements.formError.textContent =
+                String(
+                    message ||
+                    ""
+                );
+        }
+
+        if (message) {
+            announce(
+                message
+            );
+        }
+    }
+
+    function clearFormError() {
+        showFormError(
+            ""
+        );
+    }
+
+    function focusFirstInvalid() {
+        const first =
+            Object.keys(fields)
+                .map(
+                    function (key) {
+                        return fields[key];
+                    }
+                )
+                .find(
+                    function (field) {
+                        return Boolean(
+                            field &&
+                            !field.hidden &&
+                            field.getAttribute(
+                                "aria-invalid"
+                            ) ===
+                                "true"
+                        );
+                    }
+                );
+
+        if (
+            first &&
+            typeof first.focus ===
+                "function"
+        ) {
+            first.focus();
+        }
+    }
+
+    function validPhone(value) {
+        if (!value) {
+            return true;
+        }
+
+        return /^\+?[0-9][0-9\-\s()]{6,20}$/.test(
+            value
+        );
+    }
+
+    function validateContactForm() {
+        clearFieldErrors();
+        clearFormError();
+
+        let valid =
+            true;
+
+        const name =
+            trimValue(
+                fields.name
+            );
+
+        const email =
+            trimValue(
+                fields.email
+            );
+
+        const phone =
+            trimValue(
+                fields.phone
+            );
+
+        const category =
+            trimValue(
+                fields.category
+            );
+
+        const subject =
+            trimValue(
+                fields.subject
+            );
+
+        const message =
+            trimValue(
+                fields.message
+            );
+
+        if (
+            name.length <
+            2
+        ) {
+            setFieldError(
+                "name",
+                "Enter your full name."
+            );
+
+            valid =
+                false;
+        } else if (
+            name.length >
+            120
+        ) {
+            setFieldError(
+                "name",
+                "Full name is too long."
+            );
+
+            valid =
+                false;
+        }
+
+        if (
+            !email &&
+            !phone
+        ) {
+            setFieldError(
+                "email",
+                "Provide an email address or phone number."
+            );
+
+            setFieldError(
+                "phone",
+                "Provide an email address or phone number."
+            );
+
+            valid =
+                false;
+        }
+
+        if (
+            email &&
+            fields.email &&
+            !fields.email.checkValidity()
+        ) {
+            setFieldError(
+                "email",
+                "Enter a valid email address."
+            );
+
+            valid =
+                false;
+        }
+
+        if (
+            phone &&
+            !validPhone(
+                phone
+            )
+        ) {
+            setFieldError(
+                "phone",
+                "Enter a valid phone number."
+            );
+
+            valid =
+                false;
+        }
+
+        if (
+            fields.category &&
+            !category
+        ) {
+            setFieldError(
+                "category",
+                "Select an inquiry type."
+            );
+
+            valid =
+                false;
+        }
+
+        if (!subject) {
+            setFieldError(
+                "subject",
+                "Enter a subject."
+            );
+
+            valid =
+                false;
+        } else if (
+            subject.length >
+            120
+        ) {
+            setFieldError(
+                "subject",
+                "Subject is too long."
+            );
+
+            valid =
+                false;
+        }
+
+        if (
+            message.length <
+            5
+        ) {
+            setFieldError(
+                "message",
+                "Enter a little more detail in your message."
+            );
+
+            valid =
+                false;
+        } else if (
+            message.length >
+            3000
+        ) {
+            setFieldError(
+                "message",
+                "Message is too long."
+            );
+
+            valid =
+                false;
+        }
+
+        if (!valid) {
+            showFormError(
+                "Please review the highlighted fields and try again."
+            );
+
+            focusFirstInvalid();
+        }
+
+        return valid;
+    }
+
+    function updateMessageCounter() {
+        if (
+            !fields.message ||
+            !elements.messageCounter
+        ) {
+            return;
+        }
+
+        const count =
+            fields.message.value.length;
+
+        elements.messageCounter.textContent =
+            count +
+            " / 3000";
+    }
+
+    function updateInquiryFields() {
+        if (
+            !fields.category ||
+            !elements.orderReferenceField ||
+            !fields.order_reference
+        ) {
+            return;
+        }
+
+        const selected =
+            fields.category.selectedOptions
+                ? fields.category.selectedOptions[0]
+                : null;
+
+        const orderRelated =
+            Boolean(
+                selected &&
+                selected.dataset.orderReference ===
+                    "true"
+            );
+
+        elements.orderReferenceField.hidden =
+            !orderRelated;
+
+        fields.order_reference.disabled =
+            !orderRelated;
+
+        fields.order_reference.required =
+            false;
+
+        if (!orderRelated) {
+            setFieldError(
+                "order_reference",
+                ""
+            );
+        }
+    }
+
+    function setLoadingState(loading) {
+        state.submitting =
+            Boolean(
+                loading
+            );
+
+        form.setAttribute(
+            "aria-busy",
+            loading
+                ? "true"
+                : "false"
+        );
+
+        if (elements.submit) {
+            elements.submit.disabled =
+                state.submitting;
+        }
+
+        if (elements.submitSpinner) {
+            elements.submitSpinner.hidden =
+                !state.submitting;
+        }
+
+        if (elements.submitIcon) {
+            elements.submitIcon.hidden =
+                state.submitting;
+        }
+
+        if (elements.submitLabel) {
+            elements.submitLabel.textContent =
+                state.submitting
+                    ? "Sending..."
+                    : "Send Message";
+        }
+    }
+
+    function buildPayload() {
+        const payload = {
+            name:
+                trimValue(
+                    fields.name
+                ),
+
+            email:
+                trimValue(
+                    fields.email
+                ),
+
+            phone:
+                trimValue(
+                    fields.phone
+                ),
+
+            subject:
+                trimValue(
+                    fields.subject
+                ),
+
+            message:
+                trimValue(
+                    fields.message
+                )
+        };
+
+        if (fields.category) {
+            payload.category =
+                trimValue(
+                    fields.category
+                );
+        }
+
+        if (
+            fields.order_reference &&
+            !fields.order_reference.disabled
+        ) {
+            const orderReference =
+                trimValue(
+                    fields.order_reference
+                );
+
+            if (orderReference) {
+                payload.order_reference =
+                    orderReference;
+            }
+        }
+
+        return payload;
+    }
+
+    function backendFieldName(payload) {
+        if (
+            !payload ||
+            !payload.error ||
+            !payload.error.details
+        ) {
+            return "";
+        }
+
+        const field =
+            payload.error.details.field;
+
+        return typeof field ===
+            "string"
+            ? field
+            : "";
+    }
+
+    function safeServerMessage(
+        response,
+        payload
+    ) {
+        if (
+            response.status ===
+            429
+        ) {
+            return "Too many messages have been submitted. Please wait before trying again.";
+        }
+
+        if (
+            response.status ===
+            400
+        ) {
+            return "The security token may be invalid or expired. Refresh the page and try again.";
+        }
+
+        if (
+            response.status >=
+            500
+        ) {
+            return "We couldn't send your message right now. Please try again later.";
+        }
+
+        if (
+            payload &&
+            payload.error &&
+            typeof payload.error.message ===
+                "string" &&
+            payload.error.message
+        ) {
+            return payload.error.message;
+        }
+
+        return "We couldn't send your message. Please review the form and try again.";
+    }
+
+    function applyServerError(
+        response,
+        payload
+    ) {
+        const message =
+            safeServerMessage(
+                response,
+                payload
+            );
+
+        const fieldName =
+            backendFieldName(
+                payload
+            );
+
+        const knownField =
+            Object.prototype.hasOwnProperty.call(
+                fields,
+                fieldName
+            )
+            &&
+            fields[fieldName];
+
+        if (knownField) {
+            setFieldError(
+                fieldName,
+                message
+            );
+
+            showFormError(
+                "Please review the highlighted field and try again."
+            );
+
+            focusFirstInvalid();
+        } else {
+            showFormError(
+                message
+            );
+        }
+
+        toast(
+            message,
+            response.status ===
+                429
+                ? "warning"
+                : "error"
+        );
+    }
+
+    function resetAfterSuccess() {
+        form.reset();
+
+        if (fields.name) {
+            fields.name.value =
+                state.initialValues.name;
+        }
+
+        if (fields.email) {
+            fields.email.value =
+                state.initialValues.email;
+        }
+
+        if (fields.phone) {
+            fields.phone.value =
+                state.initialValues.phone;
+        }
+
+        clearFieldErrors();
+        clearFormError();
+        updateMessageCounter();
+        updateInquiryFields();
+    }
+
+    function showSuccess(payload) {
+        const data =
+            payload &&
+            payload.data &&
+            typeof payload.data ===
+                "object"
+                ? payload.data
+                : {};
+
+        const successMessage =
+            typeof data.message ===
+                "string" &&
+            data.message
+                ? data.message
+                : "We've received your message.";
+
+        const reference =
+            typeof data.inquiry_id ===
+                "string"
+                ? data.inquiry_id.trim()
+                : "";
+
+        state.successfulReference =
+            reference;
+
+        resetAfterSuccess();
+
+        form.hidden =
+            true;
+
+        if (elements.success) {
+            elements.success.hidden =
+                false;
+        }
+
+        if (elements.successMessage) {
+            elements.successMessage.textContent =
+                successMessage;
+        }
+
+        if (
+            elements.successReferenceWrap &&
+            elements.successReference
+        ) {
+            elements.successReferenceWrap.hidden =
+                !reference;
+
+            elements.successReference.textContent =
+                reference;
+        }
+
+        announce(
+            "Message sent. " +
+            successMessage
+        );
+
+        toast(
+            "Message sent.",
+            "success"
+        );
+
+        if (
+            elements.success &&
+            typeof elements.success.scrollIntoView ===
+                "function"
+        ) {
+            elements.success.scrollIntoView(
+                {
+                    behavior:
+                        window.matchMedia &&
+                        window.matchMedia(
+                            "(prefers-reduced-motion: reduce)"
+                        ).matches
+                            ? "auto"
+                            : "smooth",
+
+                    block:
+                        "nearest"
+                }
+            );
+        }
+    }
+
+    async function submitContactForm() {
+        if (
+            state.submitting
+        ) {
+            return;
+        }
+
+        if (
+            navigator.onLine ===
+            false
+        ) {
+            const message =
+                "We couldn't send your message because of a connection problem. Please try again.";
+
+            showFormError(
+                message
+            );
+
+            toast(
+                message,
+                "warning"
+            );
+
+            return;
+        }
+
+        if (
+            !validateContactForm()
+        ) {
+            return;
+        }
+
+        setLoadingState(
+            true
+        );
+
+        try {
+            const response =
+                await secureFetch(
+                    String(
+                        root.dataset.contactEndpoint ||
+                        form.action
+                    ),
+                    {
+                        method:
+                            "POST",
+
+                        credentials:
+                            "same-origin",
+
+                        headers: {
+                            Accept:
+                                "application/json",
+
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body:
+                            JSON.stringify(
+                                buildPayload()
+                            )
+                    }
+                );
+
+            const payload =
+                await parseJson(
+                    response
+                );
+
+            if (
+                response.ok &&
+                payload &&
+                payload.success ===
+                    true
+            ) {
+                showSuccess(
+                    payload
+                );
+
+                return;
+            }
+
+            applyServerError(
+                response,
+                payload
+            );
+        } catch (error) {
+            const message =
+                "We couldn't send your message because of a connection problem. Please try again.";
+
+            showFormError(
+                message
+            );
+
+            toast(
+                message,
+                "error"
+            );
+        } finally {
+            setLoadingState(
+                false
+            );
+        }
+    }
+
+    async function copyText(
+        value,
+        successMessage
+    ) {
+        const text =
+            String(
+                value ||
+                ""
+            ).trim();
+
+        if (!text) {
+            return;
+        }
+
+        if (
+            !navigator.clipboard ||
+            typeof navigator.clipboard.writeText !==
+                "function"
+        ) {
+            toast(
+                "Copy is not available in this browser. You can select the text manually.",
+                "info"
+            );
+
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(
+                text
+            );
+
+            toast(
+                successMessage,
+                "success"
+            );
+
+            announce(
+                successMessage
+            );
+        } catch (error) {
+            toast(
+                "Copy was not available. You can select the text manually.",
+                "info"
+            );
+        }
+    }
+
+    function initializeContactForm() {
+        form.addEventListener(
+            "submit",
+            function (event) {
+                event.preventDefault();
+
+                submitContactForm();
+            }
+        );
+
+        if (fields.message) {
+            fields.message.addEventListener(
+                "input",
+                updateMessageCounter
+            );
+
+            updateMessageCounter();
+        }
+
+        if (fields.category) {
+            fields.category.addEventListener(
+                "change",
+                updateInquiryFields
+            );
+
+            updateInquiryFields();
+        }
+
+        Object.keys(
+            fields
+        ).forEach(
+            function (fieldName) {
+                const field =
+                    fields[fieldName];
+
+                if (!field) {
+                    return;
+                }
+
+                field.addEventListener(
+                    "input",
+                    function () {
+                        if (
+                            field.getAttribute(
+                                "aria-invalid"
+                            ) ===
+                                "true"
+                        ) {
+                            setFieldError(
+                                fieldName,
+                                ""
+                            );
+                        }
+                    }
+                );
+            }
+        );
+    }
+
+    function initializePhoneCopy() {
+        if (!elements.copyPhone) {
+            return;
+        }
+
+        elements.copyPhone.addEventListener(
+            "click",
+            function () {
+                copyText(
+                    root.dataset.publicPhone,
+                    "Number copied."
+                );
+            }
+        );
+    }
+
+    function initializeSuccessActions() {
+        if (elements.copyReference) {
+            elements.copyReference.addEventListener(
+                "click",
+                function () {
+                    copyText(
+                        state.successfulReference,
+                        "Reference copied."
+                    );
+                }
+            );
+        }
+
+        if (elements.sendAnother) {
+            elements.sendAnother.addEventListener(
+                "click",
+                function () {
+                    if (elements.success) {
+                        elements.success.hidden =
+                            true;
+                    }
+
+                    form.hidden =
+                        false;
+
+                    if (fields.subject) {
+                        fields.subject.focus();
+                    }
+
+                    announce(
+                        "Contact form ready for another message."
+                    );
+                }
+            );
+        }
+    }
+
+    function initializeOfflineState() {
+        window.addEventListener(
+            "offline",
+            function () {
+                announce(
+                    "You are offline. Contact submission will wait until you try again after reconnecting."
+                );
+            }
+        );
+    }
+
+    function initializeContactPage() {
+        initializeContactForm();
+        initializePhoneCopy();
+        initializeSuccessActions();
+        initializeOfflineState();
+    }
+
+    if (
+        document.readyState ===
+        "loading"
+    ) {
+        document.addEventListener(
+            "DOMContentLoaded",
+            initializeContactPage,
+            {
+                once:
+                    true
+            }
+        );
+    } else {
+        initializeContactPage();
+    }
+}());
+</script>
+{% endblock %}

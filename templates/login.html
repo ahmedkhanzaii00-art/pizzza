@@ -1,0 +1,6495 @@
+{% extends "base.html" %}
+
+{% set supplied_auth_config = auth_config|default({}, true) %}
+{% set supplied_firebase_config = firebase_web_config|default(supplied_auth_config.get('firebase', {}), true) %}
+{% set supplied_provider_config = auth_providers|default(supplied_auth_config.get('providers', {}), true) %}
+
+{% block title %}Sign In | {{ business_name|default('Restaurant', true) }}{% endblock %}
+{% block meta_description %}Sign in securely to continue to your restaurant account.{% endblock %}
+
+{% block head %}
+<meta name="robots" content="noindex,nofollow">
+{% endblock %}
+
+{% block styles %}
+<style>
+    .login-page {
+        --login-primary: var(--primary-color, #b83222);
+        --login-primary-hover: var(--primary-color-hover, #98281b);
+        --login-primary-soft: var(--primary-color-soft, #fff0eb);
+        --login-primary-contrast: var(--primary-contrast, #ffffff);
+        --login-bg: var(--background-color, #fffaf4);
+        --login-bg-subtle: var(--background-subtle, #f8f2ea);
+        --login-surface: var(--surface-color, #ffffff);
+        --login-surface-elevated: var(--surface-elevated, #ffffff);
+        --login-surface-muted: var(--surface-muted, #f5eee5);
+        --login-text: var(--text-color, #201c19);
+        --login-text-strong: var(--text-strong, #151210);
+        --login-muted: var(--muted-text, #6f6760);
+        --login-subtle: var(--subtle-text, #8c8279);
+        --login-border: var(--border-color, #e7ded4);
+        --login-border-strong: var(--border-strong, #d3c6b9);
+        --login-success: var(--success-color, #247a4a);
+        --login-success-soft: var(--success-soft, #eaf7ef);
+        --login-warning: var(--warning-color, #9a6510);
+        --login-warning-soft: var(--warning-soft, #fff5dc);
+        --login-error: var(--error-color, #b42318);
+        --login-error-soft: var(--error-soft, #fff0ee);
+        --login-info: var(--info-color, #285ea8);
+        --login-info-soft: var(--info-soft, #edf4ff);
+        --login-radius-sm: var(--radius-sm, 8px);
+        --login-radius-md: var(--radius-md, 12px);
+        --login-radius-lg: var(--radius-lg, 18px);
+        --login-radius-xl: var(--radius-xl, 26px);
+        --login-shadow-sm: var(--shadow-sm, 0 6px 18px rgba(31, 24, 19, 0.08));
+        --login-shadow-md: var(--shadow-md, 0 16px 36px rgba(31, 24, 19, 0.12));
+        --login-transition: var(--transition-fast, 160ms ease);
+    }
+
+    .login-page,
+    .login-page *,
+    .login-page *::before,
+    .login-page *::after {
+        box-sizing: border-box;
+    }
+
+    .login-page [hidden] {
+        display: none !important;
+    }
+
+    .login-page svg {
+        display: block;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+
+    .login-shell {
+        width: min(100% - 2rem, 1120px);
+        margin-inline: auto;
+    }
+
+    .login-page {
+        min-height: clamp(620px, calc(100vh - var(--header-height, 106px)), 920px);
+        padding-block: clamp(1.5rem, 4vw, 3.25rem) clamp(3.5rem, 7vw, 5.5rem);
+        background:
+            radial-gradient(
+                circle at 8% 10%,
+                color-mix(in srgb, var(--login-primary) 7%, transparent),
+                transparent 28rem
+            ),
+            radial-gradient(
+                circle at 92% 35%,
+                color-mix(in srgb, var(--accent-color, #d99b35) 7%, transparent),
+                transparent 24rem
+            );
+    }
+
+    .login-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 0.84fr) minmax(420px, 0.72fr);
+        gap: clamp(1.4rem, 4vw, 4.5rem);
+        align-items: center;
+    }
+
+    /* =========================================================
+       INTRODUCTION
+    ========================================================== */
+
+    .login-intro {
+        max-width: 540px;
+        padding: clamp(0rem, 2vw, 1rem);
+    }
+
+    .login-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: .42rem;
+        margin: 0 0 .75rem;
+        color: var(--login-primary);
+        font-size: .7rem;
+        font-weight: 850;
+        letter-spacing: .09em;
+        text-transform: uppercase;
+    }
+
+    .login-kicker::before {
+        content: "";
+        width: 24px;
+        height: 2px;
+        border-radius: 999px;
+        background: currentColor;
+    }
+
+    .login-title {
+        margin: 0;
+        max-width: 12ch;
+        color: var(--login-text-strong);
+        font-size: clamp(2rem, 5vw, 4rem);
+        line-height: .98;
+        letter-spacing: -.055em;
+        text-wrap: balance;
+    }
+
+    .login-lead {
+        max-width: 48ch;
+        margin: 1rem 0 0;
+        color: var(--login-muted);
+        font-size: clamp(.86rem, 1.6vw, 1rem);
+        line-height: 1.7;
+    }
+
+    .login-trust-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .65rem;
+        margin: 1.35rem 0 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .login-trust-list li {
+        min-height: 64px;
+        display: flex;
+        align-items: flex-start;
+        gap: .55rem;
+        padding: .72rem;
+        border: 1px solid var(--login-border);
+        border-radius: var(--login-radius-md);
+        background: color-mix(in srgb, var(--login-surface) 84%, transparent);
+        color: var(--login-muted);
+        font-size: .69rem;
+        line-height: 1.48;
+    }
+
+    .login-trust-icon {
+        width: 30px;
+        height: 30px;
+        flex: 0 0 30px;
+        display: grid;
+        place-items: center;
+        border-radius: 9px;
+        background: var(--login-primary-soft);
+        color: var(--login-primary);
+    }
+
+    .login-trust-icon svg {
+        width: .92rem;
+        height: .92rem;
+    }
+
+    .login-trust-list strong {
+        display: block;
+        margin-bottom: .08rem;
+        color: var(--login-text);
+        font-size: .7rem;
+    }
+
+    /* =========================================================
+       AUTHENTICATION CARD
+    ========================================================== */
+
+    .login-card {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid var(--login-border);
+        border-radius: var(--login-radius-xl);
+        background: var(--login-surface-elevated);
+        box-shadow: var(--login-shadow-md);
+    }
+
+    .login-card::before {
+        content: "";
+        position: absolute;
+        inset: 0 0 auto;
+        height: 4px;
+        background: linear-gradient(
+            90deg,
+            var(--login-primary),
+            var(--accent-color, #d99b35)
+        );
+    }
+
+    .login-card-inner {
+        padding: clamp(1.1rem, 3.2vw, 1.65rem);
+    }
+
+    .login-card-header {
+        margin-bottom: 1.1rem;
+    }
+
+    .login-card-title {
+        margin: 0;
+        color: var(--login-text-strong);
+        font-size: clamp(1.28rem, 2.8vw, 1.65rem);
+        line-height: 1.15;
+        letter-spacing: -.025em;
+    }
+
+    .login-card-copy {
+        margin: .38rem 0 0;
+        color: var(--login-muted);
+        font-size: .75rem;
+        line-height: 1.55;
+    }
+
+    .login-config-note,
+    .login-error,
+    .login-verification-note,
+    .login-offline-note {
+        display: flex;
+        align-items: flex-start;
+        gap: .55rem;
+        margin-bottom: .85rem;
+        padding: .7rem .76rem;
+        border: 1px solid var(--login-border);
+        border-radius: 11px;
+        font-size: .68rem;
+        line-height: 1.48;
+    }
+
+    .login-config-note svg,
+    .login-error svg,
+    .login-verification-note svg,
+    .login-offline-note svg {
+        width: 1rem;
+        height: 1rem;
+        flex: 0 0 1rem;
+        margin-top: .05rem;
+    }
+
+    .login-config-note,
+    .login-offline-note {
+        border-color: color-mix(in srgb, var(--login-warning) 28%, var(--login-border));
+        background: var(--login-warning-soft);
+        color: var(--login-warning);
+    }
+
+    .login-error {
+        border-color: color-mix(in srgb, var(--login-error) 28%, var(--login-border));
+        background: var(--login-error-soft);
+        color: var(--login-error);
+    }
+
+    .login-verification-note {
+        border-color: color-mix(in srgb, var(--login-info) 28%, var(--login-border));
+        background: var(--login-info-soft);
+        color: var(--login-info);
+    }
+
+    .login-error strong,
+    .login-config-note strong,
+    .login-verification-note strong,
+    .login-offline-note strong {
+        display: block;
+        margin-bottom: .08rem;
+        color: currentColor;
+        font-size: .71rem;
+    }
+
+    .login-error a,
+    .login-config-note a,
+    .login-verification-note a,
+    .login-offline-note a {
+        color: inherit;
+        font-weight: 800;
+    }
+
+    /* =========================================================
+       FORM
+    ========================================================== */
+
+    .login-form {
+        display: grid;
+        gap: .82rem;
+    }
+
+    .login-field {
+        display: grid;
+        gap: .34rem;
+    }
+
+    .login-field-row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: .7rem;
+    }
+
+    .login-label {
+        color: var(--login-text);
+        font-size: .7rem;
+        font-weight: 820;
+    }
+
+    .login-forgot {
+        color: var(--login-primary);
+        font-size: .64rem;
+        font-weight: 790;
+        text-decoration: none;
+    }
+
+    .login-forgot:hover {
+        text-decoration: underline;
+    }
+
+    .login-input-wrap {
+        position: relative;
+    }
+
+    .login-input-icon {
+        position: absolute;
+        top: 50%;
+        left: .78rem;
+        width: 1rem;
+        height: 1rem;
+        color: var(--login-subtle);
+        transform: translateY(-50%);
+        pointer-events: none;
+    }
+
+    .login-input {
+        width: 100%;
+        min-height: 48px;
+        padding: .7rem .82rem .7rem 2.42rem;
+        border: 1px solid var(--login-border);
+        border-radius: 12px;
+        outline: 0;
+        background: var(--login-bg);
+        color: var(--login-text);
+        font: inherit;
+        font-size: .76rem;
+        line-height: 1.35;
+        transition:
+            border-color var(--login-transition),
+            box-shadow var(--login-transition),
+            background var(--login-transition);
+    }
+
+    .login-input.has-toggle {
+        padding-right: 3.25rem;
+    }
+
+    .login-input:hover {
+        border-color: var(--login-border-strong);
+    }
+
+    .login-input:focus {
+        border-color: var(--login-primary);
+        box-shadow: 0 0 0 4px color-mix(in srgb, var(--login-primary) 12%, transparent);
+        background: var(--login-surface);
+    }
+
+    .login-input[aria-invalid="true"] {
+        border-color: var(--login-error);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--login-error) 10%, transparent);
+    }
+
+    .login-input:disabled {
+        cursor: not-allowed;
+        opacity: .64;
+    }
+
+    .login-password-toggle {
+        position: absolute;
+        top: 50%;
+        right: .45rem;
+        width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+        border: 0;
+        border-radius: 10px;
+        background: transparent;
+        color: var(--login-muted);
+        transform: translateY(-50%);
+        cursor: pointer;
+    }
+
+    .login-password-toggle:hover {
+        background: var(--login-surface-muted);
+        color: var(--login-primary);
+    }
+
+    .login-password-toggle svg {
+        width: 1rem;
+        height: 1rem;
+    }
+
+    .login-field-hint {
+        margin: 0;
+        color: var(--login-subtle);
+        font-size: .6rem;
+        line-height: 1.4;
+    }
+
+    .login-caps-hint {
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        color: var(--login-warning);
+        font-size: .61rem;
+        font-weight: 730;
+    }
+
+    .login-caps-hint::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: currentColor;
+    }
+
+    .login-submit,
+    .login-social-button {
+        width: 100%;
+        min-height: 48px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: .55rem;
+        border-radius: 12px;
+        font: inherit;
+        font-size: .73rem;
+        font-weight: 850;
+        cursor: pointer;
+        transition:
+            transform var(--login-transition),
+            border-color var(--login-transition),
+            background var(--login-transition),
+            color var(--login-transition),
+            box-shadow var(--login-transition),
+            opacity var(--login-transition);
+    }
+
+    .login-submit {
+        margin-top: .15rem;
+        border: 1px solid var(--login-primary);
+        background: var(--login-primary);
+        color: var(--login-primary-contrast);
+        box-shadow: 0 10px 22px color-mix(in srgb, var(--login-primary) 20%, transparent);
+    }
+
+    .login-submit:hover:not(:disabled) {
+        border-color: var(--login-primary-hover);
+        background: var(--login-primary-hover);
+        transform: translateY(-1px);
+    }
+
+    .login-submit:disabled,
+    .login-social-button:disabled {
+        cursor: not-allowed;
+        opacity: .58;
+        transform: none;
+    }
+
+    .login-spinner {
+        width: .92rem;
+        height: .92rem;
+        border: 2px solid color-mix(in srgb, currentColor 30%, transparent);
+        border-top-color: currentColor;
+        border-radius: 50%;
+        animation: login-spin .8s linear infinite;
+    }
+
+    @keyframes login-spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    /* =========================================================
+       SOCIAL PROVIDERS
+    ========================================================== */
+
+    .login-social-section {
+        margin-top: 1rem;
+    }
+
+    .login-divider {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        gap: .65rem;
+        align-items: center;
+        margin: 1rem 0;
+        color: var(--login-subtle);
+        font-size: .58rem;
+        font-weight: 820;
+        letter-spacing: .09em;
+        text-transform: uppercase;
+    }
+
+    .login-divider::before,
+    .login-divider::after {
+        content: "";
+        height: 1px;
+        background: var(--login-border);
+    }
+
+    .login-social-grid {
+        display: grid;
+        gap: .6rem;
+    }
+
+    .login-social-button {
+        border: 1px solid var(--login-border);
+        background: var(--login-bg);
+        color: var(--login-text);
+        box-shadow: var(--shadow-xs, 0 1px 2px rgba(31, 24, 19, 0.06));
+    }
+
+    .login-social-button:hover:not(:disabled) {
+        border-color: var(--login-border-strong);
+        background: var(--login-surface-muted);
+        transform: translateY(-1px);
+    }
+
+    .login-provider-mark {
+        width: 22px;
+        height: 22px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--login-border);
+        border-radius: 7px;
+        background: var(--login-surface);
+        color: var(--login-text-strong);
+        font-size: .72rem;
+        font-weight: 900;
+        line-height: 1;
+    }
+
+    .login-provider-mark.facebook {
+        color: #1877f2;
+    }
+
+    /* =========================================================
+       FOOTER LINKS
+    ========================================================== */
+
+    .login-card-footer {
+        display: grid;
+        gap: .55rem;
+        margin-top: 1rem;
+        padding-top: .9rem;
+        border-top: 1px solid var(--login-border);
+        text-align: center;
+    }
+
+    .login-signup-copy {
+        margin: 0;
+        color: var(--login-muted);
+        font-size: .68rem;
+    }
+
+    .login-signup-copy a {
+        color: var(--login-primary);
+        font-weight: 850;
+        text-decoration: none;
+    }
+
+    .login-signup-copy a:hover {
+        text-decoration: underline;
+    }
+
+    .login-legal {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: .4rem .7rem;
+        flex-wrap: wrap;
+        color: var(--login-subtle);
+        font-size: .58rem;
+    }
+
+    .login-legal a {
+        color: inherit;
+        font-weight: 720;
+        text-decoration: none;
+    }
+
+    .login-legal a:hover {
+        color: var(--login-primary);
+        text-decoration: underline;
+    }
+
+    /* =========================================================
+       ACCESSIBILITY / AUTOFILL
+    ========================================================== */
+
+    .login-page button:focus-visible,
+    .login-page a:focus-visible,
+    .login-page input:focus-visible {
+        outline: 3px solid color-mix(in srgb, var(--login-primary) 24%, transparent);
+        outline-offset: 2px;
+    }
+
+    .login-input:-webkit-autofill,
+    .login-input:-webkit-autofill:hover,
+    .login-input:-webkit-autofill:focus {
+        -webkit-text-fill-color: var(--login-text);
+        caret-color: var(--login-text);
+        box-shadow: 0 0 0 1000px var(--login-bg) inset;
+        transition: background-color 9999s ease-out 0s;
+    }
+
+    html[data-theme="dark"] .login-provider-mark {
+        background: var(--login-surface-muted);
+    }
+
+    /* =========================================================
+       RESPONSIVE
+    ========================================================== */
+
+    @media (max-width: 900px) {
+        .login-layout {
+            grid-template-columns: minmax(0, 1fr) minmax(390px, .92fr);
+            gap: 1.4rem;
+        }
+
+        .login-trust-list {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (max-width: 760px) {
+        .login-shell {
+            width: min(100% - 1.3rem, 620px);
+        }
+
+        .login-page {
+            min-height: auto;
+            padding-top: 1rem;
+        }
+
+        .login-layout {
+            grid-template-columns: 1fr;
+        }
+
+        .login-intro {
+            max-width: none;
+            padding: 0 .15rem;
+        }
+
+        .login-title {
+            max-width: 15ch;
+            font-size: clamp(1.8rem, 8vw, 2.7rem);
+        }
+
+        .login-lead {
+            margin-top: .65rem;
+            font-size: .78rem;
+        }
+
+        .login-trust-list {
+            display: none;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .login-shell {
+            width: min(100% - 1rem, 620px);
+        }
+
+        .login-card {
+            border-radius: 17px;
+        }
+
+        .login-card-inner {
+            padding: .95rem;
+        }
+
+        .login-field-row {
+            gap: .45rem;
+        }
+
+        .login-input {
+            min-height: 50px;
+            font-size: .82rem;
+        }
+
+        .login-submit,
+        .login-social-button {
+            min-height: 50px;
+            font-size: .76rem;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .login-page *,
+        .login-page *::before,
+        .login-page *::after {
+            scroll-behavior: auto !important;
+            transition-duration: .01ms !important;
+            animation-iteration-count: 1 !important;
+        }
+
+        .login-spinner {
+            animation-duration: 1.4s;
+        }
+    }
+
+    /* =====================================================================
+       PREMIUM RESTAURANT LOGIN EXPERIENCE — VISUAL ENHANCEMENT LAYER
+       ---------------------------------------------------------------------
+       Design language inherited from the supplied landing-page direction:
+       - matte black / charcoal restaurant canvas
+       - controlled cheese-gold / antique-gold highlights
+       - warm ivory / cream touch for readable content surfaces
+       - subtle silver-grey separators and micro-contrast
+       - dimensional, tactile controls rather than flat dashboard UI
+       - restrained 3D perspective, pointer light and depth shadows
+       - responsive behavior tuned for desktop, tablet, mobile and zoom
+       ---------------------------------------------------------------------
+       IMPORTANT:
+       This layer intentionally does not rename, remove or replace any
+       existing Flask/Jinja/Firebase hooks, IDs, routes or auth behavior.
+       ===================================================================== */
+
+    .login-page {
+        --lux-black-000:
+            #020202;
+
+        --lux-black-010:
+            #050504;
+
+        --lux-black-020:
+            #080806;
+
+        --lux-black-030:
+            #0d0c09;
+
+        --lux-black-040:
+            #12100d;
+
+        --lux-black-050:
+            #17130f;
+
+        --lux-black-060:
+            #1e1914;
+
+        --lux-black-070:
+            #261f18;
+
+        --lux-gold-050:
+            #fff9e7;
+
+        --lux-gold-100:
+            #faedbf;
+
+        --lux-gold-200:
+            #f3d98b;
+
+        --lux-gold-300:
+            #eabf5d;
+
+        --lux-gold-400:
+            #d99b35;
+
+        --lux-gold-500:
+            #b7751c;
+
+        --lux-gold-600:
+            #85500e;
+
+        --lux-ivory:
+            #fffaf1;
+
+        --lux-cream:
+            #f7ead8;
+
+        --lux-cream-deep:
+            #ead6bb;
+
+        --lux-cream-muted:
+            #d7c4a9;
+
+        --lux-silver-050:
+            #f4f1eb;
+
+        --lux-silver-100:
+            #d8d4cd;
+
+        --lux-silver-200:
+            #aaa69f;
+
+        --lux-silver-300:
+            #77736d;
+
+        --lux-text:
+            #ded7cd;
+
+        --lux-text-strong:
+            #fffaf1;
+
+        --lux-muted:
+            #aca298;
+
+        --lux-subtle:
+            #7e766d;
+
+        --lux-success:
+            #93bea0;
+
+        --lux-warning:
+            #e5ba63;
+
+        --lux-error:
+            #ef897d;
+
+        --lux-info:
+            #99b6d4;
+
+        --lux-border:
+            rgba(229, 187, 88, .13);
+
+        --lux-border-strong:
+            rgba(244, 214, 142, .26);
+
+        --lux-border-silver:
+            rgba(216, 212, 205, .10);
+
+        --lux-gold-gradient:
+            linear-gradient(
+                135deg,
+                #ffe8a6 0%,
+                #f2cc70 28%,
+                #dca63e 61%,
+                #a96715 100%
+            );
+
+        --lux-gold-gradient-soft:
+            linear-gradient(
+                135deg,
+                rgba(255, 232, 166, .18),
+                rgba(220, 166, 62, .06)
+            );
+
+        --lux-card-gradient:
+            linear-gradient(
+                145deg,
+                rgba(255, 255, 255, .040),
+                rgba(255, 255, 255, .006)
+            );
+
+        --lux-cream-gradient:
+            linear-gradient(
+                145deg,
+                #fffaf1 0%,
+                #f7ead8 59%,
+                #ead6bb 100%
+            );
+
+        --lux-silver-line:
+            linear-gradient(
+                90deg,
+                transparent 0%,
+                rgba(244, 241, 235, .11) 20%,
+                rgba(234, 191, 93, .28) 50%,
+                rgba(244, 241, 235, .11) 80%,
+                transparent 100%
+            );
+
+        --lux-shadow-xs:
+            0 5px 14px
+            rgba(0, 0, 0, .16);
+
+        --lux-shadow-sm:
+            0 14px 30px
+            rgba(0, 0, 0, .22);
+
+        --lux-shadow-md:
+            0 24px 56px
+            rgba(0, 0, 0, .31);
+
+        --lux-shadow-lg:
+            0 42px 96px
+            rgba(0, 0, 0, .45);
+
+        --lux-ease:
+            cubic-bezier(
+                .2,
+                .72,
+                .2,
+                1
+            );
+
+        --lux-ease-out:
+            cubic-bezier(
+                .16,
+                1,
+                .3,
+                1
+            );
+
+        --lux-ease-spring:
+            cubic-bezier(
+                .2,
+                .9,
+                .25,
+                1.18
+            );
+
+        --lux-pointer-x:
+            78%;
+
+        --lux-pointer-y:
+            15%;
+
+        --lux-card-rx:
+            0deg;
+
+        --lux-card-ry:
+            0deg;
+
+        --lux-card-shine-x:
+            72%;
+
+        --lux-card-shine-y:
+            10%;
+
+        /* Remap original login tokens without touching the auth markup. */
+        --login-primary:
+            var(--lux-gold-400);
+
+        --login-primary-hover:
+            var(--lux-gold-300);
+
+        --login-primary-soft:
+            rgba(217, 155, 53, .075);
+
+        --login-primary-contrast:
+            #1a1007;
+
+        --login-bg:
+            #0b0a08;
+
+        --login-bg-subtle:
+            #0f0d0a;
+
+        --login-surface:
+            #11100d;
+
+        --login-surface-elevated:
+            #12110e;
+
+        --login-surface-muted:
+            #19150f;
+
+        --login-text:
+            var(--lux-text);
+
+        --login-text-strong:
+            var(--lux-ivory);
+
+        --login-muted:
+            var(--lux-muted);
+
+        --login-subtle:
+            var(--lux-subtle);
+
+        --login-border:
+            var(--lux-border);
+
+        --login-border-strong:
+            var(--lux-border-strong);
+
+        --login-success:
+            var(--lux-success);
+
+        --login-success-soft:
+            rgba(147, 190, 160, .075);
+
+        --login-warning:
+            var(--lux-warning);
+
+        --login-warning-soft:
+            rgba(229, 186, 99, .075);
+
+        --login-error:
+            var(--lux-error);
+
+        --login-error-soft:
+            rgba(239, 137, 125, .075);
+
+        --login-info:
+            var(--lux-info);
+
+        --login-info-soft:
+            rgba(153, 182, 212, .075);
+
+        --login-shadow-sm:
+            var(--lux-shadow-sm);
+
+        --login-shadow-md:
+            var(--lux-shadow-md);
+
+        --login-transition:
+            180ms
+            var(--lux-ease);
+
+        position:
+            relative;
+
+        isolation:
+            isolate;
+
+        overflow:
+            clip;
+
+        min-height:
+            clamp(
+                650px,
+                calc(100vh - var(--header-height, 106px)),
+                980px
+            );
+
+        padding-block:
+            clamp(
+                1.3rem,
+                3vw,
+                2.75rem
+            )
+            clamp(
+                3.5rem,
+                7vw,
+                5.4rem
+            );
+
+        background:
+            radial-gradient(
+                circle at
+                var(--lux-pointer-x)
+                var(--lux-pointer-y),
+                rgba(232, 189, 87, .060),
+                transparent 28rem
+            ),
+            radial-gradient(
+                circle at 95% 10%,
+                rgba(217, 155, 53, .070),
+                transparent 29rem
+            ),
+            radial-gradient(
+                circle at 2% 78%,
+                rgba(110, 78, 40, .055),
+                transparent 33rem
+            ),
+            linear-gradient(
+                180deg,
+                #090807 0%,
+                #050504 45%,
+                #090705 100%
+            );
+
+        color:
+            var(--lux-text);
+    }
+
+    .login-page::before {
+        content:
+            "";
+
+        position:
+            absolute;
+
+        z-index:
+            -4;
+
+        inset:
+            0;
+
+        pointer-events:
+            none;
+
+        background:
+            linear-gradient(
+                90deg,
+                rgba(255, 255, 255, .012) 1px,
+                transparent 1px
+            ),
+            linear-gradient(
+                rgba(255, 255, 255, .009) 1px,
+                transparent 1px
+            );
+
+        background-size:
+            46px 46px;
+
+        mask-image:
+            linear-gradient(
+                180deg,
+                rgba(0, 0, 0, .28),
+                transparent 78%
+            );
+
+        opacity:
+            .74;
+    }
+
+    .login-page::after {
+        content:
+            "";
+
+        position:
+            absolute;
+
+        z-index:
+            -3;
+
+        top:
+            1.8rem;
+
+        right:
+            -13rem;
+
+        width:
+            35rem;
+
+        height:
+            35rem;
+
+        border:
+            1px solid
+            rgba(241, 210, 127, .07);
+
+        border-radius:
+            50%;
+
+        box-shadow:
+            0 0 0 44px
+            rgba(217, 155, 53, .011),
+            0 0 0 88px
+            rgba(217, 155, 53, .006);
+
+        transform:
+            rotateX(67deg)
+            rotateZ(-5deg);
+
+        animation:
+            login-lux-orbit
+            17s
+            ease-in-out
+            infinite
+            alternate;
+
+        pointer-events:
+            none;
+    }
+
+    @keyframes login-lux-orbit {
+        from {
+            transform:
+                translate3d(
+                    0,
+                    0,
+                    0
+                )
+                rotateX(67deg)
+                rotateZ(-5deg);
+        }
+
+        to {
+            transform:
+                translate3d(
+                    -38px,
+                    24px,
+                    0
+                )
+                rotateX(71deg)
+                rotateZ(8deg);
+        }
+    }
+
+    .login-shell {
+        position:
+            relative;
+
+        z-index:
+            2;
+
+        width:
+            min(
+                100% - 2rem,
+                1180px
+            );
+
+        margin-inline:
+            auto;
+
+        perspective:
+            1400px;
+    }
+
+    .login-shell::before {
+        content:
+            "";
+
+        position:
+            absolute;
+
+        z-index:
+            -1;
+
+        top:
+            8%;
+
+        left:
+            -9rem;
+
+        width:
+            15rem;
+
+        height:
+            15rem;
+
+        border-radius:
+            50%;
+
+        background:
+            rgba(216, 212, 205, .022);
+
+        filter:
+            blur(44px);
+
+        animation:
+            login-lux-glow
+            8s
+            ease-in-out
+            infinite;
+    }
+
+    @keyframes login-lux-glow {
+        0%,
+        100% {
+            transform:
+                scale(.94);
+
+            opacity:
+                .34;
+        }
+
+        50% {
+            transform:
+                scale(1.08);
+
+            opacity:
+                .68;
+        }
+    }
+
+    .login-layout {
+        grid-template-columns:
+            minmax(
+                0,
+                1.05fr
+            )
+            minmax(
+                390px,
+                .78fr
+            );
+
+        gap:
+            clamp(
+                1.6rem,
+                4.6vw,
+                5.3rem
+            );
+
+        align-items:
+            center;
+    }
+
+    /* =====================================================================
+       LEFT EDITORIAL / BRAND PANEL
+       ===================================================================== */
+
+    .login-intro {
+        position:
+            relative;
+
+        max-width:
+            560px;
+
+        padding:
+            clamp(
+                .15rem,
+                2.3vw,
+                1.15rem
+            );
+
+        transform:
+            translateZ(
+                12px
+            );
+    }
+
+    .login-intro::before {
+        content:
+            "";
+
+        position:
+            absolute;
+
+        top:
+            -1.4rem;
+
+        left:
+            -1.9rem;
+
+        width:
+            8.8rem;
+
+        height:
+            1px;
+
+        background:
+            linear-gradient(
+                90deg,
+                var(--lux-gold-300),
+                rgba(216, 212, 205, .15),
+                transparent
+            );
+
+        opacity:
+            .80;
+    }
+
+    .login-intro::after {
+        content:
+            "";
+
+        position:
+            absolute;
+
+        z-index:
+            -1;
+
+        right:
+            8%;
+
+        bottom:
+            -3rem;
+
+        width:
+            12rem;
+
+        height:
+            12rem;
+
+        border:
+            1px solid
+            rgba(216, 212, 205, .038);
+
+        border-radius:
+            50%;
+
+        transform:
+            rotateX(
+                67deg
+            );
+
+        box-shadow:
+            0 14px 34px
+            rgba(0, 0, 0, .14);
+
+        pointer-events:
+            none;
+    }
+
+    .login-kicker {
+        min-height:
+            29px;
+
+        padding:
+            .30rem
+            .60rem;
+
+        margin-bottom:
+            .86rem;
+
+        border:
+            1px solid
+            rgba(217, 155, 53, .15);
+
+        border-radius:
+            999px;
+
+        background:
+            rgba(255, 255, 255, .019);
+
+        color:
+            var(--lux-gold-200);
+
+        font-size:
+            .60rem;
+
+        font-weight:
+            900;
+
+        letter-spacing:
+            .13em;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255, 255, 255, .026),
+            0 10px 20px
+            rgba(0, 0, 0, .13);
+    }
+
+    .login-kicker::before {
+        width:
+            18px;
+
+        height:
+            1px;
+
+        background:
+            linear-gradient(
+                90deg,
+                var(--lux-gold-100),
+                var(--lux-gold-400)
+            );
+    }
+
+    .login-title {
+        max-width:
+            11ch;
+
+        color:
+            var(--lux-ivory);
+
+        font-size:
+            clamp(
+                3rem,
+                5.8vw,
+                5.25rem
+            );
+
+        font-weight:
+            950;
+
+        line-height:
+            .90;
+
+        letter-spacing:
+            -.070em;
+
+        text-shadow:
+            0 24px 56px
+            rgba(0, 0, 0, .31);
+
+        text-wrap:
+            balance;
+    }
+
+    .login-lead {
+        max-width:
+            49ch;
+
+        margin-top:
+            1.05rem;
+
+        color:
+            var(--lux-muted);
+
+        font-size:
+            clamp(
+                .79rem,
+                1.25vw,
+                .94rem
+            );
+
+        line-height:
+            1.72;
+    }
+
+    /* =====================================================================
+       TRUST CARDS / MICRO FEATURES
+       ===================================================================== */
+
+    .login-trust-list {
+        gap:
+            .72rem;
+
+        margin-top:
+            1.45rem;
+
+        perspective:
+            900px;
+    }
+
+    .login-trust-list li {
+        position:
+            relative;
+
+        overflow:
+            hidden;
+
+        min-height:
+            76px;
+
+        gap:
+            .64rem;
+
+        padding:
+            .82rem;
+
+        border-color:
+            rgba(217, 155, 53, .11);
+
+        border-radius:
+            14px;
+
+        background:
+            radial-gradient(
+                circle at 88% 10%,
+                rgba(255, 231, 164, .040),
+                transparent 9rem
+            ),
+            linear-gradient(
+                145deg,
+                rgba(255, 255, 255, .028),
+                rgba(255, 255, 255, .005)
+            ),
+            #0f0e0b;
+
+        color:
+            var(--lux-muted);
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255, 255, 255, .023),
+            0 15px 28px
+            rgba(0, 0, 0, .17);
+
+        transform:
+            translateZ(
+                0
+            );
+
+        transition:
+            transform
+            220ms
+            var(--lux-ease),
+            border-color
+            180ms
+            ease,
+            box-shadow
+            220ms
+            ease;
+    }
+
+    .login-trust-list li::after {
+        content:
+            "";
+
+        position:
+            absolute;
+
+        top:
+            0;
+
+        right:
+            20%;
+
+        left:
+            20%;
+
+        height:
+            1px;
+
+        background:
+            var(--lux-silver-line);
+
+        opacity:
+            .28;
+    }
+
+    .login-trust-list li:hover {
+        transform:
+            translateY(
+                -4px
+            )
+            translateZ(
+                12px
+            );
+
+        border-color:
+            rgba(255, 230, 168, .20);
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255, 255, 255, .032),
+            0 22px 40px
+            rgba(0, 0, 0, .23);
+    }
+
+    .login-trust-icon {
+        width:
+            34px;
+
+        height:
+            34px;
+
+        flex-basis:
+            34px;
+
+        border:
+            1px solid
+            rgba(241, 210, 127, .17);
+
+        border-radius:
+            10px;
+
+        background:
+            linear-gradient(
+                145deg,
+                rgba(217, 155, 53, .11),
+                rgba(217, 155, 53, .025)
+            );
+
+        color:
+            var(--lux-gold-200);
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255, 255, 255, .030),
+            0 9px 18px
+            rgba(0, 0, 0, .15);
+    }
+
+    .login-trust-icon svg {
+        width:
+            .96rem;
+
+        height:
+            .96rem;
+    }
+
+    .login-trust-list strong {
+        color:
+            var(--lux-cream);
+
+        font-size:
+            .72rem;
+
+        font-weight:
+            860;
+    }
+
+    /* =====================================================================
+       AUTHENTICATION CARD — PREMIUM 3D SURFACE
+       ===================================================================== */
+
+    .login-card {
+        --login-card-rx:
+            var(--lux-card-rx);
+
+        --login-card-ry:
+            var(--lux-card-ry);
+
+        --login-card-light-x:
+            var(--lux-card-shine-x);
+
+        --login-card-light-y:
+            var(--lux-card-shine-y);
+
+        position:
+            relative;
+
+        overflow:
+            hidden;
+
+        isolation:
+            isolate;
+
+        border:
+            1px solid
+            rgba(217, 155, 53, .17);
+
+        border-radius:
+            22px;
+
+        background:
+            radial-gradient(
+                circle at
+                var(--login-card-light-x)
+                var(--login-card-light-y),
+                rgba(255, 231, 164, .090),
+                transparent 18rem
+            ),
+            linear-gradient(
+                145deg,
+                rgba(255, 255, 255, .046),
+                rgba(255, 255, 255, .008)
+            ),
+            #11100d;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255, 255, 255, .045),
+            0 34px 78px
+            rgba(0, 0, 0, .38),
+            0 0 0 1px
+            rgba(255, 255, 255, .010);
+
+        transform:
+            perspective(
+                1200px
+            )
+            rotateX(
+                var(--login-card-rx)
+            )
+            rotateY(
+                var(--login-card-ry)
+            )
+            translateZ(
+                0
+            );
+
+        transform-style:
+            preserve-3d;
+
+        transform-origin:
+            center 62%;
+
+        transition:
+            transform
+            260ms
+            var(--lux-ease),
+            border-color
+            200ms
+            ease,
+            box-shadow
+            260ms
+            ease;
+
+        will-change:
+            transform;
+    }
+
+    .login-card::before {
+        inset:
+            0 15% auto;
+
+        height:
+            1px;
+
+        background:
+            var(--lux-silver-line);
+
+        opacity:
+            .56;
+    }
+
+    .login-card::after {
+        content:
+            "";
+
+        position:
+            absolute;
+
+        z-index:
+            -1;
+
+        top:
+            -1px;
+
+        right:
+            -1px;
+
+        width:
+            38%;
+
+        height:
+            42%;
+
+        border-radius:
+            0 22px 0 100%;
+
+        background:
+            radial-gradient(
+                circle at 100% 0,
+                rgba(217, 155, 53, .085),
+                transparent 72%
+            );
+
+        pointer-events:
+            none;
+    }
+
+    .login-card:hover {
+        border-color:
+            rgba(255, 230, 168, .26);
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255, 255, 255, .054),
+            0 42px 88px
+            rgba(0, 0, 0, .42),
+            0 0 0 1px
+            rgba(255, 255, 255, .012);
+    }
+
+    .login-card-inner {
+        position:
+            relative;
+
+        z-index:
+            2;
+
+        padding:
+            clamp(
+                1.15rem,
+                3vw,
+                1.7rem
+            );
+
+        transform:
+            translateZ(
+                18px
+            );
+    }
+
+    .login-card-header {
+        position:
+            relative;
+
+        margin-bottom:
+            1rem;
+
+        padding-bottom:
+            .9rem;
+
+        border-bottom:
+            1px solid
+            rgba(216, 212, 205, .065);
+    }
+
+    .login-card-header::after {
+        content:
+            "";
+
+        position:
+            absolute;
+
+        bottom:
+            -1px;
+
+        left:
+            0;
+
+        width:
+            34%;
+
+        height:
+            1px;
+
+        background:
+            linear-gradient(
+                90deg,
+                var(--lux-gold-300),
+                transparent
+            );
+    }
+
+    .login-card-title {
+        color:
+            var(--lux-ivory);
+
+        font-size:
+            clamp(
+                1.45rem,
+                2.8vw,
+                1.9rem
+            );
+
+        font-weight:
+            930;
+
+        letter-spacing:
+            -.035em;
+
+        text-shadow:
+            0 12px 28px
+            rgba(0, 0, 0, .25);
+    }
+
+    .login-card-copy {
+        max-width:
+            54ch;
+
+        color:
+            var(--lux-muted);
+
+        font-size:
+            .70rem;
+
+        line-height:
+            1.55;
+    }
+
+    /* =====================================================================
+       NOTIFICATION / ERROR / VERIFICATION SURFACES
+       ===================================================================== */
+
+    .login-config-note,
+    .login-error,
+    .login-verification-note,
+    .login-offline-note {
+        position:
+            relative;
+
+        overflow:
+            hidden;
+
+        border-radius:
+            11px;
+
+        backdrop-filter:
+            blur(
+                8px
+            );
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255, 255, 255, .018);
+    }
+
+    .login-config-note::after,
+    .login-error::after,
+    .login-verification-note::after,
+    .login-offline-note::after {
+        content:
+            "";
+
+        position:
+            absolute;
+
+        top:
+            0;
+
+        right:
+            20%;
+
+        left:
+            20%;
+
+        height:
+            1px;
+
+        background:
+            var(--lux-silver-line);
+
+        opacity:
+            .22;
+    }
+
+    .login-config-note,
+    .login-offline-note {
+        border-color:
+            rgba(229, 186, 99, .23);
+
+        background:
+            rgba(229, 186, 99, .060);
+
+        color:
+            #e7c474;
+    }
+
+    .login-error {
+        border-color:
+            rgba(239, 137, 125, .24);
+
+        background:
+            rgba(239, 137, 125, .060);
+
+        color:
+            #f09b92;
+    }
+
+    .login-verification-note {
+        border-color:
+            rgba(153, 182, 212, .23);
+
+        background:
+            rgba(153, 182, 212, .058);
+
+        color:
+            #adc5dc;
+    }
+
+    .login-error strong,
+    .login-config-note strong,
+    .login-verification-note strong,
+    .login-offline-note strong {
+        font-weight:
+            850;
+    }
+
+    /* =====================================================================
+       FORM FIELDS
+       ===================================================================== */
+
+    .login-form {
+        gap:
+            .86rem;
+    }
+
+    .login-field {
+        gap:
+            .36rem;
+    }
+
+    .login-field-row {
+        gap:
+            .72rem;
+    }
+
+    .login-label {
+        color:
+            var(--lux-cream);
+
+        font-size:
+            .68rem;
+
+        font-weight:
+            830;
+    }
+
+    .login-forgot {
+        color:
+            var(--lux-gold-200);
+
+        font-size:
+            .62rem;
+
+        font-weight:
+            810;
+
+        text-decoration-color:
+            rgba(234, 191, 93, .42);
+
+        text-underline-offset:
+            .18em;
+    }
+
+    .login-forgot:hover {
+        color:
+            var(--lux-gold-100);
+    }
+
+    .login-input-wrap {
+        perspective:
+            700px;
+    }
+
+    .login-input-icon {
+        z-index:
+            2;
+
+        color:
+            var(--lux-subtle);
+
+        transition:
+            color
+            180ms
+            ease,
+            transform
+            180ms
+            var(--lux-ease);
+    }
+
+    .login-input-wrap:focus-within
+    .login-input-icon {
+        color:
+            var(--lux-gold-200);
+
+        transform:
+            translateY(
+                -50%
+            )
+            scale(
+                1.04
+            );
+    }
+
+    .login-input {
+        min-height:
+            50px;
+
+        border:
+            1px solid
+            rgba(217, 155, 53, .12);
+
+        border-radius:
+            11px;
+
+        background:
+            linear-gradient(
+                180deg,
+                rgba(255, 255, 255, .018),
+                rgba(255, 255, 255, .005)
+            ),
+            #0b0a08;
+
+        color:
+            var(--lux-text);
+
+        caret-color:
+            var(--lux-gold-200);
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255, 255, 255, .015),
+            inset 0 7px 17px
+            rgba(0, 0, 0, .08);
+
+        font-size:
+            .75rem;
+
+        transition:
+            border-color
+            180ms
+            ease,
+            box-shadow
+            180ms
+            ease,
+            background
+            180ms
+            ease,
+            transform
+            180ms
+            var(--lux-ease);
+    }
+
+    .login-input:hover {
+        border-color:
+            rgba(241, 210, 127, .22);
+
+        background:
+            #0d0c09;
+    }
+
+    .login-input:focus {
+        border-color:
+            rgba(241, 210, 127, .44);
+
+        background:
+            #0f0d0a;
+
+        box-shadow:
+            0 0 0 4px
+            rgba(217, 155, 53, .057),
+            inset 0 1px 0
+            rgba(255, 255, 255, .020),
+            0 11px 21px
+            rgba(0, 0, 0, .12);
+
+        transform:
+            translateY(
+                -1px
+            );
+    }
+
+    .login-input[aria-invalid="true"] {
+        border-color:
+            rgba(239, 137, 125, .55);
+
+        box-shadow:
+            0 0 0 4px
+            rgba(239, 137, 125, .055);
+    }
+
+    .login-input:disabled {
+        background:
+            #11100d;
+
+        color:
+            #8f8880;
+    }
+
+    .login-password-toggle {
+        border:
+            1px solid
+            transparent;
+
+        color:
+            var(--lux-muted);
+
+        transition:
+            color
+            180ms
+            ease,
+            border-color
+            180ms
+            ease,
+            background
+            180ms
+            ease,
+            transform
+            180ms
+            var(--lux-ease);
+    }
+
+    .login-password-toggle:hover {
+        border-color:
+            rgba(217, 155, 53, .10);
+
+        background:
+            rgba(217, 155, 53, .055);
+
+        color:
+            var(--lux-gold-200);
+
+        transform:
+            translateY(
+                -50%
+            )
+            scale(
+                1.03
+            );
+    }
+
+    .login-field-hint {
+        color:
+            var(--lux-subtle);
+
+        font-size:
+            .57rem;
+    }
+
+    .login-caps-hint {
+        color:
+            #e7c474;
+    }
+
+    /* Chrome / Edge autofill follows the restaurant dark surface. */
+
+    .login-input:-webkit-autofill,
+    .login-input:-webkit-autofill:hover,
+    .login-input:-webkit-autofill:focus {
+        -webkit-text-fill-color:
+            var(--lux-text);
+
+        caret-color:
+            var(--lux-gold-200);
+
+        box-shadow:
+            0 0 0 1000px
+            #0b0a08
+            inset;
+
+        transition:
+            background-color
+            9999s
+            ease-out
+            0s;
+    }
+
+    /* =====================================================================
+       PRIMARY AUTH BUTTON — TACTILE GOLD
+       ===================================================================== */
+
+    .login-submit {
+        position:
+            relative;
+
+        overflow:
+            hidden;
+
+        isolation:
+            isolate;
+
+        min-height:
+            50px;
+
+        border:
+            1px solid
+            rgba(255, 233, 181, .52);
+
+        border-radius:
+            10px;
+
+        background:
+            var(--lux-gold-gradient);
+
+        color:
+            #1b1107;
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255, 255, 255, .36),
+            0 4px 0
+            #74440b,
+            0 14px 25px
+            rgba(0, 0, 0, .24);
+
+        font-size:
+            .73rem;
+
+        font-weight:
+            900;
+
+        letter-spacing:
+            .005em;
+
+        text-shadow:
+            0 1px 0
+            rgba(255, 255, 255, .19);
+
+        transition:
+            transform
+            180ms
+            var(--lux-ease),
+            box-shadow
+            180ms
+            ease,
+            filter
+            180ms
+            ease;
+    }
+
+    .login-submit::before {
+        content:
+            "";
+
+        position:
+            absolute;
+
+        z-index:
+            -1;
+
+        top:
+            -90%;
+
+        bottom:
+            -90%;
+
+        left:
+            -35%;
+
+        width:
+            25%;
+
+        background:
+            linear-gradient(
+                90deg,
+                transparent,
+                rgba(255, 255, 255, .50),
+                transparent
+            );
+
+        transform:
+            rotate(
+                16deg
+            )
+            translateX(
+                -170%
+            );
+
+        transition:
+            transform
+            680ms
+            var(--lux-ease-out);
+    }
+
+    .login-submit:hover:not(:disabled) {
+        border-color:
+            rgba(255, 242, 202, .70);
+
+        background:
+            var(--lux-gold-gradient);
+
+        color:
+            #160d05;
+
+        transform:
+            translateY(
+                -3px
+            );
+
+        filter:
+            saturate(
+                1.04
+            )
+            brightness(
+                1.035
+            );
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255, 255, 255, .40),
+            0 7px 0
+            #74440b,
+            0 20px 34px
+            rgba(0, 0, 0, .30);
+    }
+
+    .login-submit:hover:not(:disabled)::before {
+        transform:
+            rotate(
+                16deg
+            )
+            translateX(
+                650%
+            );
+    }
+
+    .login-submit:active:not(:disabled) {
+        transform:
+            translateY(
+                2px
+            );
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255, 255, 255, .30),
+            0 1px 0
+            #74440b,
+            0 8px 16px
+            rgba(0, 0, 0, .22);
+    }
+
+    .login-submit:disabled {
+        filter:
+            saturate(
+                .42
+            );
+
+        opacity:
+            .58;
+
+        box-shadow:
+            0 2px 0
+            #5a3b17;
+    }
+
+    .login-spinner {
+        border-color:
+            rgba(27, 17, 7, .24);
+
+        border-top-color:
+            #1b1107;
+    }
+
+    /* =====================================================================
+       SOCIAL PROVIDER BUTTONS
+       ===================================================================== */
+
+    .login-social-section {
+        margin-top:
+            1rem;
+    }
+
+    .login-divider {
+        color:
+            var(--lux-subtle);
+
+        font-size:
+            .54rem;
+
+        letter-spacing:
+            .11em;
+    }
+
+    .login-divider::before,
+    .login-divider::after {
+        background:
+            linear-gradient(
+                90deg,
+                transparent,
+                rgba(216, 212, 205, .11),
+                rgba(217, 155, 53, .14)
+            );
+    }
+
+    .login-divider::after {
+        transform:
+            scaleX(
+                -1
+            );
+    }
+
+    .login-social-grid {
+        gap:
+            .62rem;
+    }
+
+    .login-social-button {
+        position:
+            relative;
+
+        overflow:
+            hidden;
+
+        min-height:
+            48px;
+
+        border:
+            1px solid
+            rgba(216, 212, 205, .10);
+
+        border-radius:
+            10px;
+
+        background:
+            linear-gradient(
+                145deg,
+                rgba(255, 255, 255, .021),
+                rgba(255, 255, 255, .005)
+            ),
+            #0d0c09;
+
+        color:
+            var(--lux-text);
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255, 255, 255, .018),
+            0 9px 18px
+            rgba(0, 0, 0, .13);
+    }
+
+    .login-social-button::after {
+        content:
+            "";
+
+        position:
+            absolute;
+
+        inset:
+            0;
+
+        background:
+            linear-gradient(
+                105deg,
+                transparent 32%,
+                rgba(255, 255, 255, .045) 50%,
+                transparent 68%
+            );
+
+        transform:
+            translateX(
+                -120%
+            );
+
+        transition:
+            transform
+            560ms
+            var(--lux-ease-out);
+
+        pointer-events:
+            none;
+    }
+
+    .login-social-button:hover:not(:disabled) {
+        border-color:
+            rgba(241, 210, 127, .21);
+
+        background:
+            #11100d;
+
+        color:
+            var(--lux-ivory);
+
+        transform:
+            translateY(
+                -2px
+            );
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255, 255, 255, .024),
+            0 15px 26px
+            rgba(0, 0, 0, .19);
+    }
+
+    .login-social-button:hover:not(:disabled)::after {
+        transform:
+            translateX(
+                120%
+            );
+    }
+
+    .login-provider-mark {
+        border-color:
+            rgba(216, 212, 205, .10);
+
+        background:
+            #17130f;
+
+        color:
+            var(--lux-gold-100);
+
+        box-shadow:
+            inset 0 1px 0
+            rgba(255, 255, 255, .022);
+    }
+
+    .login-provider-mark.facebook {
+        color:
+            #8fb6ff;
+    }
+
+    /* =====================================================================
+       CARD FOOTER
+       ===================================================================== */
+
+    .login-card-footer {
+        border-top-color:
+            rgba(216, 212, 205, .065);
+    }
+
+    .login-signup-copy {
+        color:
+            var(--lux-muted);
+    }
+
+    .login-signup-copy a {
+        color:
+            var(--lux-gold-200);
+
+        text-underline-offset:
+            .18em;
+    }
+
+    .login-signup-copy a:hover {
+        color:
+            var(--lux-gold-100);
+    }
+
+    .login-legal {
+        color:
+            var(--lux-subtle);
+    }
+
+    .login-legal a:hover {
+        color:
+            var(--lux-gold-200);
+    }
+
+    /* =====================================================================
+       DYNAMIC DECORATION CREATED BY THE ENHANCEMENT SCRIPT
+       ===================================================================== */
+
+    .login-lux-scene {
+        position:
+            absolute;
+
+        z-index:
+            -2;
+
+        inset:
+            0;
+
+        overflow:
+            hidden;
+
+        pointer-events:
+            none;
+    }
+
+    .login-lux-glow {
+        position:
+            absolute;
+
+        border-radius:
+            50%;
+
+        filter:
+            blur(
+                46px
+            );
+
+        opacity:
+            .50;
+    }
+
+    .login-lux-glow--gold {
+        top:
+            6rem;
+
+        right:
+            10%;
+
+        width:
+            13rem;
+
+        height:
+            13rem;
+
+        background:
+            rgba(217, 155, 53, .075);
+
+        animation:
+            login-lux-floating-glow
+            7s
+            ease-in-out
+            infinite;
+    }
+
+    .login-lux-glow--silver {
+        top:
+            30rem;
+
+        left:
+            2%;
+
+        width:
+            10rem;
+
+        height:
+            10rem;
+
+        background:
+            rgba(216, 212, 205, .032);
+
+        animation:
+            login-lux-floating-glow
+            9s
+            ease-in-out
+            infinite
+            reverse;
+    }
+
+    @keyframes login-lux-floating-glow {
+        0%,
+        100% {
+            transform:
+                scale(
+                    .95
+                )
+                translate3d(
+                    0,
+                    0,
+                    0
+                );
+
+            opacity:
+                .38;
+        }
+
+        50% {
+            transform:
+                scale(
+                    1.08
+                )
+                translate3d(
+                    12px,
+                    -8px,
+                    0
+                );
+
+            opacity:
+                .68;
+        }
+    }
+
+    .login-lux-ring {
+        position:
+            absolute;
+
+        left:
+            -9rem;
+
+        bottom:
+            8%;
+
+        width:
+            24rem;
+
+        height:
+            24rem;
+
+        border:
+            1px solid
+            rgba(216, 212, 205, .035);
+
+        border-radius:
+            50%;
+
+        transform:
+            rotateX(
+                63deg
+            )
+            rotateZ(
+                5deg
+            );
+
+        box-shadow:
+            0 0 0 36px
+            rgba(217, 155, 53, .006);
+
+        animation:
+            login-lux-ring-float
+            20s
+            ease-in-out
+            infinite
+            alternate;
+    }
+
+    @keyframes login-lux-ring-float {
+        from {
+            transform:
+                translate3d(
+                    0,
+                    0,
+                    0
+                )
+                rotateX(
+                    63deg
+                )
+                rotateZ(
+                    5deg
+                );
+        }
+
+        to {
+            transform:
+                translate3d(
+                    30px,
+                    -15px,
+                    0
+                )
+                rotateX(
+                    58deg
+                )
+                rotateZ(
+                    -8deg
+                );
+        }
+    }
+
+    .login-lux-progress {
+        position:
+            fixed;
+
+        z-index:
+            calc(
+                var(--z-toast, 600) + 2
+            );
+
+        top:
+            0;
+
+        left:
+            0;
+
+        width:
+            0;
+
+        height:
+            2px;
+
+        background:
+            linear-gradient(
+                90deg,
+                var(--lux-gold-500),
+                var(--lux-gold-100)
+            );
+
+        box-shadow:
+            0 0 12px
+            rgba(234, 191, 93, .32);
+
+        pointer-events:
+            none;
+
+        transition:
+            width
+            70ms
+            linear;
+    }
+
+    .login-lux-ripple {
+        position:
+            absolute;
+
+        z-index:
+            5;
+
+        width:
+            12px;
+
+        height:
+            12px;
+
+        border:
+            1px solid
+            rgba(255, 255, 255, .28);
+
+        border-radius:
+            50%;
+
+        background:
+            rgba(255, 255, 255, .19);
+
+        pointer-events:
+            none;
+
+        transform:
+            translate(
+                -50%,
+                -50%
+            )
+            scale(
+                0
+            );
+
+        animation:
+            login-lux-ripple
+            640ms
+            var(--lux-ease-out)
+            forwards;
+    }
+
+    @keyframes login-lux-ripple {
+        0% {
+            opacity:
+                .70;
+
+            transform:
+                translate(
+                    -50%,
+                    -50%
+                )
+                scale(
+                    0
+                );
+        }
+
+        100% {
+            opacity:
+                0;
+
+            transform:
+                translate(
+                    -50%,
+                    -50%
+                )
+                scale(
+                    18
+                );
+        }
+    }
+
+    /* =====================================================================
+       ENTRANCE / REVEAL MOTION
+       ===================================================================== */
+
+    .login-page[data-lux-ready="true"]
+    .login-intro {
+        animation:
+            login-lux-intro-enter
+            760ms
+            var(--lux-ease-out)
+            both;
+    }
+
+    .login-page[data-lux-ready="true"]
+    .login-card {
+        animation:
+            login-lux-card-enter
+            820ms
+            var(--lux-ease-out)
+            80ms
+            both;
+    }
+
+    @keyframes login-lux-intro-enter {
+        from {
+            opacity:
+                0;
+
+            transform:
+                translate3d(
+                    -18px,
+                    12px,
+                    0
+                );
+        }
+
+        to {
+            opacity:
+                1;
+
+            transform:
+                translate3d(
+                    0,
+                    0,
+                    0
+                );
+        }
+    }
+
+    @keyframes login-lux-card-enter {
+        from {
+            opacity:
+                0;
+
+            transform:
+                perspective(
+                    1200px
+                )
+                translate3d(
+                    18px,
+                    22px,
+                    0
+                )
+                rotateX(
+                    1.8deg
+                )
+                scale(
+                    .985
+                );
+        }
+
+        to {
+            opacity:
+                1;
+
+            transform:
+                perspective(
+                    1200px
+                )
+                translate3d(
+                    0,
+                    0,
+                    0
+                )
+                rotateX(
+                    0deg
+                )
+                scale(
+                    1
+                );
+        }
+    }
+
+    .login-lux-reveal {
+        opacity:
+            0;
+
+        transform:
+            translateY(
+                14px
+            );
+
+        transition:
+            opacity
+            560ms
+            var(--lux-ease),
+            transform
+            560ms
+            var(--lux-ease);
+    }
+
+    .login-lux-reveal.is-visible {
+        opacity:
+            1;
+
+        transform:
+            translateY(
+                0
+            );
+    }
+
+    .login-lux-reveal[data-lux-order="1"] {
+        transition-delay:
+            45ms;
+    }
+
+    .login-lux-reveal[data-lux-order="2"] {
+        transition-delay:
+            85ms;
+    }
+
+    .login-lux-reveal[data-lux-order="3"] {
+        transition-delay:
+            125ms;
+    }
+
+    .login-lux-reveal[data-lux-order="4"] {
+        transition-delay:
+            165ms;
+    }
+
+    /* =====================================================================
+       FOCUS / ACCESSIBILITY
+       ===================================================================== */
+
+    .login-page button:focus-visible,
+    .login-page a:focus-visible,
+    .login-page input:focus-visible {
+        outline:
+            3px solid
+            rgba(234, 191, 93, .25);
+
+        outline-offset:
+            3px;
+    }
+
+    .login-page ::selection {
+        background:
+            rgba(234, 191, 93, .24);
+
+        color:
+            var(--lux-ivory);
+    }
+
+    /* =====================================================================
+       ZOOM / COMPACT DESKTOP OPTIMIZATION
+       Explicitly keeps 110%–115% browser zoom comfortable by tightening
+       the composition before horizontal pressure appears.
+       ===================================================================== */
+
+    @media (max-width: 1180px) {
+        .login-shell {
+            width:
+                min(
+                    100% - 1.5rem,
+                    1080px
+                );
+        }
+
+        .login-layout {
+            grid-template-columns:
+                minmax(
+                    0,
+                    .98fr
+                )
+                minmax(
+                    370px,
+                    .72fr
+                );
+
+            gap:
+                clamp(
+                    1.35rem,
+                    3.5vw,
+                    3.3rem
+                );
+        }
+
+        .login-title {
+            font-size:
+                clamp(
+                    2.65rem,
+                    5.4vw,
+                    4.55rem
+                );
+        }
+    }
+
+    @media (max-width: 1020px) {
+        .login-page {
+            padding-top:
+                1.15rem;
+        }
+
+        .login-shell {
+            width:
+                min(
+                    100% - 1.25rem,
+                    940px
+                );
+        }
+
+        .login-layout {
+            grid-template-columns:
+                minmax(
+                    0,
+                    .90fr
+                )
+                minmax(
+                    355px,
+                    .74fr
+                );
+
+            gap:
+                1.35rem;
+        }
+
+        .login-intro {
+            padding:
+                .3rem;
+        }
+
+        .login-title {
+            font-size:
+                clamp(
+                    2.45rem,
+                    5vw,
+                    3.75rem
+                );
+        }
+
+        .login-trust-list {
+            grid-template-columns:
+                1fr;
+        }
+
+        .login-trust-list li {
+            min-height:
+                66px;
+
+            padding:
+                .68rem;
+        }
+    }
+
+    @media (max-width: 860px) {
+        .login-page {
+            min-height:
+                auto;
+
+            padding-top:
+                .95rem;
+
+            padding-bottom:
+                3.5rem;
+        }
+
+        .login-shell {
+            width:
+                min(
+                    100% - 1.2rem,
+                    700px
+                );
+        }
+
+        .login-layout {
+            grid-template-columns:
+                1fr;
+
+            gap:
+                1rem;
+        }
+
+        .login-intro {
+            max-width:
+                none;
+
+            padding:
+                0 .15rem;
+        }
+
+        .login-intro::after {
+            display:
+                none;
+        }
+
+        .login-title {
+            max-width:
+                14ch;
+
+            font-size:
+                clamp(
+                    2.2rem,
+                    8vw,
+                    3.45rem
+                );
+        }
+
+        .login-lead {
+            margin-top:
+                .68rem;
+
+            max-width:
+                62ch;
+        }
+
+        .login-trust-list {
+            display:
+                grid;
+
+            grid-template-columns:
+                repeat(
+                    2,
+                    minmax(
+                        0,
+                        1fr
+                    )
+                );
+
+            margin-top:
+                .85rem;
+        }
+
+        .login-card {
+            transform:
+                none !important;
+        }
+
+        .login-card-inner {
+            transform:
+                none;
+        }
+    }
+
+    @media (max-width: 620px) {
+        .login-page::after,
+        .login-lux-ring {
+            display:
+                none;
+        }
+
+        .login-shell {
+            width:
+                min(
+                    100% - .9rem,
+                    620px
+                );
+        }
+
+        .login-intro::before {
+            left:
+                0;
+        }
+
+        .login-kicker {
+            margin-bottom:
+                .58rem;
+        }
+
+        .login-title {
+            font-size:
+                clamp(
+                    2rem,
+                    10.2vw,
+                    2.9rem
+                );
+        }
+
+        .login-lead {
+            font-size:
+                .76rem;
+        }
+
+        .login-trust-list {
+            display:
+                none;
+        }
+
+        .login-card {
+            border-radius:
+                18px;
+        }
+
+        .login-card::after {
+            border-radius:
+                0 18px 0 100%;
+        }
+
+        .login-card-inner {
+            padding:
+                .95rem;
+        }
+
+        .login-card-title {
+            font-size:
+                1.4rem;
+        }
+
+        .login-input {
+            min-height:
+                50px;
+
+            font-size:
+                .80rem;
+        }
+
+        .login-submit,
+        .login-social-button {
+            min-height:
+                50px;
+
+            font-size:
+                .75rem;
+        }
+    }
+
+    @media (max-width: 430px) {
+        .login-page {
+            padding-top:
+                .72rem;
+
+            padding-bottom:
+                2.8rem;
+        }
+
+        .login-shell {
+            width:
+                min(
+                    100% - .72rem,
+                    620px
+                );
+        }
+
+        .login-intro {
+            padding-inline:
+                .10rem;
+        }
+
+        .login-kicker {
+            min-height:
+                26px;
+
+            padding:
+                .24rem
+                .48rem;
+
+            font-size:
+                .53rem;
+        }
+
+        .login-title {
+            font-size:
+                clamp(
+                    1.9rem,
+                    11vw,
+                    2.65rem
+                );
+        }
+
+        .login-lead {
+            display:
+                -webkit-box;
+
+            overflow:
+                hidden;
+
+            -webkit-box-orient:
+                vertical;
+
+            -webkit-line-clamp:
+                3;
+        }
+
+        .login-card-inner {
+            padding:
+                .82rem;
+        }
+
+        .login-field-row {
+            gap:
+                .42rem;
+        }
+
+        .login-label {
+            font-size:
+                .66rem;
+        }
+
+        .login-forgot {
+            font-size:
+                .60rem;
+        }
+
+        .login-input {
+            padding-left:
+                2.3rem;
+
+            font-size:
+                .80rem;
+        }
+
+        .login-card-footer {
+            margin-top:
+                .82rem;
+        }
+    }
+
+    @media (hover: none) {
+        .login-trust-list li:hover,
+        .login-submit:hover:not(:disabled),
+        .login-social-button:hover:not(:disabled) {
+            transform:
+                none;
+        }
+
+        .login-card {
+            transform:
+                none !important;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .login-page::after,
+        .login-lux-glow,
+        .login-lux-ring,
+        .login-page[data-lux-ready="true"] .login-intro,
+        .login-page[data-lux-ready="true"] .login-card,
+        .login-lux-ripple {
+            animation:
+                none !important;
+        }
+
+        .login-lux-reveal {
+            opacity:
+                1 !important;
+
+            transform:
+                none !important;
+        }
+
+        .login-card,
+        .login-trust-list li,
+        .login-submit,
+        .login-social-button,
+        .login-input {
+            transition-duration:
+                .01ms !important;
+        }
+    }
+
+
+    /* =====================================================================
+       LOGIN V2 — SIGNUP-MATCHED CINEMATIC CREAM / WHITE EXPERIENCE
+       =====================================================================
+       This layer intentionally sits ABOVE the previous visual layer.
+       It keeps every Flask / Jinja / Firebase hook unchanged while moving
+       the login page closer to the successful signup.html visual language:
+       deep charcoal restaurant canvas + cream/white authentication surface,
+       stronger white shadow, gold rim light, tactile 3D depth and dynamic
+       pointer lighting.
+       ===================================================================== */
+
+    .login-page {
+        --login-v2-cream-0: #fffdf8;
+        --login-v2-cream-1: #fff9ef;
+        --login-v2-cream-2: #fbf1e3;
+        --login-v2-cream-3: #f4e5d1;
+        --login-v2-cream-4: #ead6bd;
+        --login-v2-ink-9: #19120d;
+        --login-v2-ink-8: #251b14;
+        --login-v2-ink-7: #3a2e25;
+        --login-v2-ink-6: #5f5146;
+        --login-v2-ink-5: #7c6e63;
+        --login-v2-white: #ffffff;
+        --login-v2-gold: #daa13a;
+        --login-v2-gold-light: #f8da82;
+        --login-v2-gold-dark: #86500d;
+        --login-v2-pointer-x: 74%;
+        --login-v2-pointer-y: 14%;
+        --login-v2-card-rx: 0deg;
+        --login-v2-card-ry: 0deg;
+        --login-v2-card-x: 78%;
+        --login-v2-card-y: 8%;
+        --login-v2-page-scroll: 0px;
+
+        background:
+            radial-gradient(
+                circle at var(--login-v2-pointer-x) var(--login-v2-pointer-y),
+                rgba(238, 201, 103, .085),
+                transparent 31rem
+            ),
+            radial-gradient(
+                ellipse at 90% 11%,
+                rgba(192, 126, 38, .105),
+                transparent 29rem
+            ),
+            radial-gradient(
+                circle at 5% 55%,
+                rgba(255, 255, 255, .030),
+                transparent 32rem
+            ),
+            linear-gradient(
+                180deg,
+                #080706 0%,
+                #040403 48%,
+                #090705 100%
+            );
+    }
+
+    .login-page::before {
+        background-image:
+            linear-gradient(rgba(255,255,255,.012) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,.010) 1px, transparent 1px);
+        background-size: 48px 48px;
+        opacity: .78;
+        mask-image: linear-gradient(180deg, #000 0%, rgba(0,0,0,.56) 44%, transparent 90%);
+    }
+
+    .login-page::after {
+        top: -12rem;
+        right: -11rem;
+        width: 39rem;
+        height: 39rem;
+        border-color: rgba(239, 198, 99, .078);
+        box-shadow:
+            0 0 0 52px rgba(239, 198, 99, .016),
+            0 0 0 104px rgba(239, 198, 99, .009),
+            0 0 0 156px rgba(255,255,255,.004);
+        transform:
+            rotateX(66deg)
+            rotateZ(-6deg)
+            translate3d(
+                calc(var(--login-v2-page-scroll) * -.055),
+                calc(var(--login-v2-page-scroll) * .025),
+                0
+            );
+        animation: login-v2-orbit 16s ease-in-out infinite alternate;
+    }
+
+    @keyframes login-v2-orbit {
+        from {
+            transform:
+                rotateX(66deg)
+                rotateZ(-6deg)
+                translate3d(0,0,0);
+        }
+        to {
+            transform:
+                rotateX(71deg)
+                rotateZ(7deg)
+                translate3d(-34px,20px,0);
+        }
+    }
+
+    .login-shell {
+        width: min(100% - 2rem, 1180px);
+        perspective: 1500px;
+    }
+
+    .login-layout {
+        grid-template-columns: minmax(0, .88fr) minmax(430px, .78fr);
+        gap: clamp(1.7rem, 4.5vw, 5rem);
+        align-items: center;
+    }
+
+    /* =====================================================================
+       LEFT SIDE — DARK BRAND / TRUST AREA
+       ===================================================================== */
+
+    .login-intro {
+        position: relative;
+        max-width: 560px;
+        padding: clamp(.15rem, 2vw, 1rem);
+        transform: translateZ(16px);
+    }
+
+    .login-intro::before {
+        content: "";
+        position: absolute;
+        top: -1rem;
+        left: -1rem;
+        width: 10rem;
+        height: 1px;
+        background: linear-gradient(90deg, var(--login-v2-gold-light), rgba(255,255,255,.16), transparent);
+        opacity: .85;
+    }
+
+    .login-intro::after {
+        content: "";
+        position: absolute;
+        z-index: -1;
+        top: 2rem;
+        left: -7rem;
+        width: 16rem;
+        height: 16rem;
+        border-radius: 50%;
+        background: rgba(255,255,255,.025);
+        filter: blur(36px);
+        animation: login-v2-left-glow 7s ease-in-out infinite;
+        pointer-events: none;
+    }
+
+    @keyframes login-v2-left-glow {
+        0%, 100% { transform: scale(.92); opacity: .34; }
+        50% { transform: scale(1.08); opacity: .72; }
+    }
+
+    .login-kicker {
+        color: var(--login-v2-gold-light);
+        font-size: .72rem;
+        letter-spacing: .14em;
+        text-shadow: 0 0 18px rgba(239, 198, 99, .18);
+    }
+
+    .login-kicker::before {
+        width: 28px;
+        height: 2px;
+        background: linear-gradient(90deg, #fff0b8, #d99b35);
+        box-shadow: 0 0 12px rgba(239,198,99,.22);
+    }
+
+    .login-title {
+        max-width: 11ch;
+        color: #fffaf1;
+        font-size: clamp(2.15rem, 5.15vw, 4.15rem);
+        font-weight: 950;
+        line-height: .94;
+        letter-spacing: -.064em;
+        text-shadow: 0 10px 28px rgba(0,0,0,.40);
+    }
+
+    .login-lead {
+        max-width: 48ch;
+        color: #b8aca0;
+        font-size: clamp(.84rem, 1.45vw, .98rem);
+        line-height: 1.72;
+    }
+
+    .login-trust-list {
+        gap: .72rem;
+        margin-top: 1.45rem;
+    }
+
+    .login-trust-list li {
+        min-height: 70px;
+        position: relative;
+        overflow: hidden;
+        padding: .78rem .8rem;
+        border: 1px solid rgba(239,198,99,.14);
+        border-radius: 14px;
+        background:
+            radial-gradient(circle at 88% 12%, rgba(255,255,255,.055), transparent 7rem),
+            linear-gradient(145deg, rgba(255,255,255,.040), rgba(255,255,255,.011));
+        color: #a99f95;
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.055),
+            0 14px 28px rgba(0,0,0,.18);
+        backdrop-filter: blur(12px);
+        transform-style: preserve-3d;
+        transition:
+            transform 240ms cubic-bezier(.2,.72,.2,1),
+            border-color 220ms ease,
+            box-shadow 240ms ease;
+    }
+
+    .login-trust-list li::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: linear-gradient(112deg, transparent 0%, rgba(255,255,255,.015) 42%, rgba(255,235,179,.10) 50%, rgba(255,255,255,.015) 58%, transparent 100%);
+        opacity: 0;
+        transform: translateX(-75%);
+        transition: opacity 200ms ease, transform 620ms ease;
+    }
+
+    .login-trust-list li:hover {
+        transform: translateY(-4px) rotateX(.8deg);
+        border-color: rgba(255,220,142,.28);
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.07),
+            0 20px 40px rgba(0,0,0,.25);
+    }
+
+    .login-trust-list li:hover::after {
+        opacity: .9;
+        transform: translateX(72%);
+    }
+
+    .login-trust-icon {
+        width: 34px;
+        height: 34px;
+        flex: 0 0 34px;
+        border: 1px solid rgba(255,231,170,.24);
+        border-radius: 10px;
+        background: linear-gradient(135deg, #fff0b8 0%, #e6b955 48%, #a86514 100%);
+        color: #241407;
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.48),
+            0 3px 0 #6f420b,
+            0 10px 18px rgba(0,0,0,.24);
+        transform: translateZ(12px);
+    }
+
+    .login-trust-list strong {
+        color: #fff9ef;
+        font-size: .72rem;
+    }
+
+    /* =====================================================================
+       LOGIN CARD — WHITE / CREAM AUTH SURFACE, LIKE SIGNUP
+       ===================================================================== */
+
+    .login-card {
+        --login-bg: #fbf1e3;
+        --login-bg-subtle: #f4e6d2;
+        --login-surface: #fffdf8;
+        --login-surface-elevated: #fffdf8;
+        --login-surface-muted: #f2e2cb;
+        --login-text: #41342a;
+        --login-text-strong: #1c1510;
+        --login-muted: #716357;
+        --login-subtle: #97897d;
+        --login-border: #e5d1b8;
+        --login-border-strong: #ccb596;
+        --login-primary: #b97c1d;
+        --login-primary-hover: #9c6313;
+        --login-primary-soft: #f5e4b9;
+        --login-primary-contrast: #1a1008;
+        --login-success: #39714f;
+        --login-success-soft: #e7f1e9;
+        --login-warning: #946315;
+        --login-warning-soft: #fff2d7;
+        --login-error: #aa382d;
+        --login-error-soft: #fae7e3;
+        --login-info: #3b638b;
+        --login-info-soft: #e9f0f7;
+
+        position: relative;
+        overflow: hidden;
+        isolation: isolate;
+        border: 1px solid rgba(255,246,229,.95);
+        border-radius: clamp(21px, 2.4vw, 30px);
+        background:
+            radial-gradient(
+                circle at var(--login-v2-card-x) var(--login-v2-card-y),
+                rgba(255,255,255,.99),
+                transparent 22rem
+            ),
+            linear-gradient(145deg, #fffdf8 0%, #fff8ed 42%, #f7ead8 100%);
+        color: var(--login-text);
+        box-shadow:
+            0 7px 0 rgba(107,74,46,.07),
+            0 26px 70px rgba(0,0,0,.32),
+            0 0 0 1px rgba(255,255,255,.22),
+            0 0 52px rgba(255,255,255,.09),
+            inset 0 1px 0 rgba(255,255,255,1);
+        transform:
+            perspective(1450px)
+            rotateX(var(--login-v2-card-rx))
+            rotateY(var(--login-v2-card-ry));
+        transform-style: preserve-3d;
+        transition:
+            transform 300ms cubic-bezier(.2,.72,.2,1),
+            box-shadow 300ms cubic-bezier(.2,.72,.2,1),
+            border-color 220ms ease;
+        will-change: transform;
+    }
+
+    .login-card:hover {
+        border-color: #fff;
+        box-shadow:
+            0 8px 0 rgba(107,74,46,.07),
+            0 38px 96px rgba(0,0,0,.39),
+            0 0 0 1px rgba(255,255,255,.30),
+            0 0 76px rgba(255,255,255,.13),
+            inset 0 1px 0 #fff;
+    }
+
+    .login-card::before {
+        content: "";
+        position: absolute;
+        z-index: 4;
+        inset: 0 0 auto;
+        height: 4px;
+        background: linear-gradient(90deg, #6a3d0a 0%, #d39d34 20%, #ffe39a 49%, #d39d34 76%, #6a3d0a 100%);
+        box-shadow: 0 1px 0 rgba(255,255,255,.52), 0 6px 20px rgba(203,149,47,.14);
+    }
+
+    .login-card::after {
+        content: "";
+        position: absolute;
+        z-index: 1;
+        top: -38%;
+        left: -28%;
+        width: 44%;
+        height: 180%;
+        pointer-events: none;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,.34), transparent);
+        transform: rotate(14deg) translateX(-240%);
+        animation: login-v2-card-sheen 10.5s cubic-bezier(.16,1,.3,1) infinite;
+    }
+
+    @keyframes login-v2-card-sheen {
+        0%, 76% { transform: rotate(14deg) translateX(-240%); opacity: 0; }
+        82% { opacity: .48; }
+        94%, 100% { transform: rotate(14deg) translateX(520%); opacity: 0; }
+    }
+
+    .login-card-inner {
+        position: relative;
+        z-index: 2;
+        padding: clamp(1.05rem, 2.8vw, 1.6rem);
+        transform-style: preserve-3d;
+    }
+
+    .login-card-header {
+        position: relative;
+        margin-bottom: 1rem;
+        padding-bottom: .9rem;
+        border-bottom: 1px solid rgba(101,72,47,.12);
+        transform: translateZ(8px);
+    }
+
+    .login-card-header::after {
+        content: "";
+        position: absolute;
+        right: 54%;
+        bottom: -1px;
+        left: 0;
+        height: 1px;
+        background: linear-gradient(90deg, #c99028, rgba(195,146,58,.20), transparent);
+    }
+
+    .login-card-title {
+        color: var(--login-text-strong);
+        font-size: clamp(1.58rem, 2.9vw, 2.12rem);
+        font-weight: 930;
+        line-height: 1;
+        letter-spacing: -.045em;
+    }
+
+    .login-card-copy {
+        max-width: 56ch;
+        margin-top: .42rem;
+        color: var(--login-muted);
+        font-size: .70rem;
+        line-height: 1.58;
+    }
+
+    /* Alerts stay readable on cream */
+    .login-config-note,
+    .login-error,
+    .login-verification-note,
+    .login-offline-note {
+        position: relative;
+        overflow: hidden;
+        border-radius: 12px;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.72), 0 8px 18px rgba(78,55,34,.08);
+        transform: translateZ(5px);
+    }
+
+    .login-config-note::after,
+    .login-error::after,
+    .login-verification-note::after,
+    .login-offline-note::after {
+        content: "";
+        position: absolute;
+        inset: 0 0 auto;
+        height: 1px;
+        background: rgba(255,255,255,.78);
+    }
+
+    /* =====================================================================
+       FORM FIELDS — STRONGER WHITE SHADOW / SHADY DEPTH
+       ===================================================================== */
+
+    .login-form {
+        position: relative;
+        z-index: 2;
+        gap: .88rem;
+        transform-style: preserve-3d;
+    }
+
+    .login-field {
+        position: relative;
+        padding: .05rem;
+        transform: translateZ(5px);
+    }
+
+    .login-label {
+        color: #34271f;
+        font-size: .69rem;
+        font-weight: 850;
+        letter-spacing: .012em;
+    }
+
+    .login-forgot {
+        color: #9f6816;
+        font-weight: 850;
+    }
+
+    .login-input-wrap {
+        position: relative;
+        border-radius: 13px;
+        transform-style: preserve-3d;
+    }
+
+    .login-input-wrap::before {
+        content: "";
+        position: absolute;
+        z-index: -1;
+        inset: 3px 8px -6px;
+        border-radius: 14px;
+        background: rgba(124,83,44,.11);
+        filter: blur(8px);
+        opacity: .72;
+        transition: opacity 200ms ease, transform 200ms ease;
+    }
+
+    .login-input-wrap:focus-within::before {
+        opacity: 1;
+        transform: translateY(3px) scale(1.015);
+        background: rgba(183,124,29,.18);
+    }
+
+    .login-input {
+        min-height: 50px;
+        border: 1px solid #d9c4aa;
+        border-radius: 12px;
+        background:
+            linear-gradient(180deg, #fffefb 0%, #fff9ef 100%);
+        color: #2e241d;
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,1),
+            inset 0 -1px 0 rgba(130,94,61,.04),
+            0 5px 13px rgba(77,52,31,.075),
+            0 0 0 1px rgba(255,255,255,.50);
+        font-size: .76rem;
+        font-weight: 620;
+        transition:
+            border-color 180ms ease,
+            box-shadow 220ms ease,
+            background 180ms ease,
+            transform 180ms ease;
+    }
+
+    .login-input:hover {
+        border-color: #c6aa87;
+        background: #fffdf9;
+    }
+
+    .login-input:focus {
+        border-color: #c2872a;
+        background: #fff;
+        box-shadow:
+            0 0 0 4px rgba(194,135,42,.12),
+            0 7px 18px rgba(74,49,28,.10),
+            0 0 24px rgba(255,255,255,.36),
+            inset 0 1px 0 #fff;
+        transform: translateY(-1px);
+    }
+
+    .login-input::placeholder {
+        color: #a89788;
+    }
+
+    .login-input-icon {
+        color: #9a7b5a;
+        filter: drop-shadow(0 1px 0 rgba(255,255,255,.8));
+    }
+
+    .login-password-toggle {
+        background: rgba(255,255,255,.34);
+        color: #816d5e;
+        border: 1px solid rgba(129,102,77,.08);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.65);
+        transition: background 180ms ease, color 180ms ease, transform 180ms ease;
+    }
+
+    .login-password-toggle:hover {
+        background: #f6e7d1;
+        color: #9b6517;
+        transform: translateY(-50%) rotate(-3deg) scale(1.03);
+    }
+
+    .login-field-hint {
+        color: #8e7e71;
+        font-size: .58rem;
+        line-height: 1.45;
+    }
+
+    /* =====================================================================
+       GOLD SIGN-IN CTA — TACTILE 3D
+       ===================================================================== */
+
+    .login-submit {
+        position: relative;
+        overflow: hidden;
+        min-height: 52px;
+        margin-top: .18rem;
+        border: 1px solid #a56a16;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #fff0b8 0%, #f1cd72 27%, #dda744 59%, #b8751b 83%, #89510f 100%);
+        color: #1b1007;
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.55),
+            0 5px 0 #74430c,
+            0 14px 26px rgba(98,61,16,.23),
+            0 0 28px rgba(232,190,83,.12);
+        font-size: .74rem;
+        font-weight: 920;
+        letter-spacing: .015em;
+        text-shadow: 0 1px 0 rgba(255,255,255,.32);
+        transform: translateZ(10px);
+        transition:
+            transform 180ms cubic-bezier(.2,.72,.2,1),
+            box-shadow 180ms ease,
+            filter 180ms ease;
+    }
+
+    .login-submit::before {
+        content: "";
+        position: absolute;
+        top: -55%;
+        left: -35%;
+        width: 36%;
+        height: 210%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,.48), transparent);
+        transform: rotate(14deg) translateX(-260%);
+        pointer-events: none;
+    }
+
+    .login-submit:hover:not(:disabled) {
+        border-color: #b97c1d;
+        background: linear-gradient(135deg, #fff5ca 0%, #f5d988 28%, #e3b252 60%, #bd7d22 83%, #8d5511 100%);
+        color: #160d05;
+        transform: translateY(-3px) translateZ(12px);
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.62),
+            0 8px 0 #74430c,
+            0 20px 34px rgba(98,61,16,.29),
+            0 0 38px rgba(232,190,83,.18);
+        filter: saturate(1.04) brightness(1.02);
+    }
+
+    .login-submit:hover:not(:disabled)::before {
+        animation: login-v2-button-shine .88s ease;
+    }
+
+    .login-submit:active:not(:disabled) {
+        transform: translateY(2px) translateZ(8px);
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.48),
+            0 2px 0 #74430c,
+            0 7px 14px rgba(98,61,16,.20);
+    }
+
+    @keyframes login-v2-button-shine {
+        from { transform: rotate(14deg) translateX(-260%); }
+        to { transform: rotate(14deg) translateX(650%); }
+    }
+
+    /* =====================================================================
+       SOCIAL AUTH — WHITE TACTILE BUTTONS
+       ===================================================================== */
+
+    .login-social-section {
+        position: relative;
+        z-index: 2;
+        margin-top: 1.08rem;
+        transform: translateZ(4px);
+    }
+
+    .login-divider {
+        color: #a08d7c;
+    }
+
+    .login-divider::before,
+    .login-divider::after {
+        background: linear-gradient(90deg, transparent, #dcc8af, transparent);
+    }
+
+    .login-social-button {
+        position: relative;
+        overflow: hidden;
+        min-height: 49px;
+        border: 1px solid #dcc8af;
+        border-radius: 12px;
+        background: linear-gradient(180deg, #fffefb, #fff8ed);
+        color: #34271f;
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,1),
+            0 5px 13px rgba(77,52,31,.075),
+            0 0 0 1px rgba(255,255,255,.38);
+        font-weight: 850;
+    }
+
+    .login-social-button:hover:not(:disabled) {
+        border-color: #c9ad8a;
+        background: #fff;
+        color: #271c14;
+        transform: translateY(-2px);
+        box-shadow:
+            inset 0 1px 0 #fff,
+            0 9px 19px rgba(77,52,31,.11),
+            0 0 22px rgba(255,255,255,.30);
+    }
+
+    .login-provider-mark {
+        border-color: #d8c1a5;
+        background: #fff;
+        box-shadow: 0 3px 8px rgba(74,48,28,.08), inset 0 1px 0 #fff;
+    }
+
+    /* =====================================================================
+       FOOTER / LINKS — CLEAN CREAM DETAIL
+       ===================================================================== */
+
+    .login-card-footer {
+        position: relative;
+        z-index: 2;
+        margin-top: 1.08rem;
+        padding-top: 1rem;
+        border-top-color: rgba(101,72,47,.12);
+        transform: translateZ(3px);
+    }
+
+    .login-signup-copy {
+        color: #77695d;
+    }
+
+    .login-signup-copy a,
+    .login-legal a:hover,
+    .login-forgot:hover {
+        color: #a56c18;
+    }
+
+    .login-legal {
+        color: #97897d;
+    }
+
+    /* =====================================================================
+       WHITE SHADOW / AURA BEHIND CARD
+       ===================================================================== */
+
+    .login-layout::after {
+        content: "";
+        position: absolute;
+        z-index: -1;
+        top: 50%;
+        right: -4%;
+        width: min(48vw, 560px);
+        height: min(58vw, 620px);
+        border-radius: 42%;
+        background:
+            radial-gradient(circle at 52% 46%, rgba(255,255,255,.18), rgba(255,245,222,.07) 38%, transparent 72%);
+        filter: blur(28px);
+        transform: translateY(-50%);
+        opacity: .92;
+        pointer-events: none;
+        animation: login-v2-white-aura 7.8s ease-in-out infinite;
+    }
+
+    .login-layout {
+        position: relative;
+    }
+
+    @keyframes login-v2-white-aura {
+        0%, 100% { transform: translateY(-50%) scale(.96); opacity: .72; }
+        50% { transform: translateY(-50%) scale(1.05); opacity: 1; }
+    }
+
+    /* =====================================================================
+       REVEALS / POINTER / MOTION UTILITIES
+       ===================================================================== */
+
+    .login-v2-reveal {
+        opacity: 0;
+        filter: blur(5px);
+        transform: translateY(22px) scale(.988);
+        transition:
+            opacity 720ms cubic-bezier(.16,1,.3,1),
+            transform 720ms cubic-bezier(.16,1,.3,1),
+            filter 720ms cubic-bezier(.16,1,.3,1);
+    }
+
+    .login-v2-reveal.is-v2-visible {
+        opacity: 1;
+        filter: blur(0);
+        transform: translateY(0) scale(1);
+    }
+
+    .login-v2-ripple {
+        position: absolute;
+        z-index: 20;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: rgba(255,255,255,.58);
+        pointer-events: none;
+        transform: translate(-50%,-50%) scale(0);
+        animation: login-v2-ripple .62s ease-out forwards;
+    }
+
+    @keyframes login-v2-ripple {
+        to {
+            opacity: 0;
+            transform: translate(-50%,-50%) scale(26);
+        }
+    }
+
+    .login-v2-progress {
+        position: fixed;
+        z-index: 70;
+        inset: 0 0 auto 0;
+        height: 3px;
+        pointer-events: none;
+        background: rgba(255,255,255,.035);
+    }
+
+    .login-v2-progress > span {
+        display: block;
+        width: var(--login-v2-scroll-progress, 0%);
+        height: 100%;
+        background: linear-gradient(90deg, rgba(255,245,214,.88), #edc35c 42%, #b9771b 100%);
+        box-shadow: 0 0 14px rgba(239,198,99,.34), 0 0 28px rgba(239,198,99,.15);
+        transition: width .14s linear;
+    }
+
+    /* =====================================================================
+       RESPONSIVE / ZOOM CONTROL
+       ===================================================================== */
+
+    @media (max-width: 980px) {
+        .login-layout {
+            grid-template-columns: minmax(0, .76fr) minmax(400px, .76fr);
+            gap: 1.6rem;
+        }
+
+        .login-title {
+            font-size: clamp(2rem, 5vw, 3.35rem);
+        }
+    }
+
+    @media (max-width: 820px) {
+        .login-shell {
+            width: min(100% - 1.35rem, 700px);
+        }
+
+        .login-layout {
+            grid-template-columns: 1fr;
+            gap: 1.15rem;
+        }
+
+        .login-intro {
+            max-width: none;
+            padding: 0 .15rem;
+        }
+
+        .login-title {
+            max-width: 14ch;
+            font-size: clamp(1.85rem, 7vw, 2.8rem);
+        }
+
+        .login-lead {
+            margin-top: .7rem;
+        }
+
+        .login-trust-list {
+            display: none;
+        }
+
+        .login-layout::after {
+            right: 5%;
+            top: 70%;
+            width: 90%;
+            height: 45%;
+        }
+    }
+
+    @media (max-width: 560px) {
+        .login-page {
+            padding-top: .9rem;
+        }
+
+        .login-shell {
+            width: min(100% - 1rem, 660px);
+        }
+
+        .login-card {
+            border-radius: 18px;
+            transform: none !important;
+        }
+
+        .login-card-inner {
+            padding: .9rem;
+        }
+
+        .login-card-title {
+            font-size: 1.48rem;
+        }
+
+        .login-input {
+            min-height: 50px;
+            font-size: .80rem;
+        }
+
+        .login-submit,
+        .login-social-button {
+            min-height: 51px;
+        }
+
+        .login-v2-progress {
+            height: 2px;
+        }
+    }
+
+    @media (min-width: 1200px) and (max-height: 820px) {
+        .login-page {
+            padding-top: 1rem;
+            padding-bottom: 3rem;
+        }
+
+        .login-layout {
+            gap: clamp(1.4rem, 3.5vw, 4rem);
+        }
+
+        .login-title {
+            font-size: clamp(2rem, 4.5vw, 3.7rem);
+        }
+
+        .login-card-inner {
+            padding: 1.25rem 1.35rem;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .login-page::after,
+        .login-card::after,
+        .login-intro::after,
+        .login-layout::after {
+            animation: none !important;
+        }
+
+        .login-v2-reveal {
+            opacity: 1 !important;
+            filter: none !important;
+            transform: none !important;
+        }
+
+        .login-card {
+            transform: none !important;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<main
+    class="login-page"
+    id="login-root"
+    data-session-url="{{ url_for('create_auth_session') }}"
+    data-post-login-url="{{ url_for('login_page') }}"
+    data-support-url="{{ url_for('support_page') }}"
+>
+    <span
+        class="visually-hidden"
+        id="login-live"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+    ></span>
+
+    <script type="application/json" id="login-firebase-config">{{ supplied_firebase_config|tojson }}</script>
+    <script type="application/json" id="login-provider-config">{{ supplied_provider_config|tojson }}</script>
+
+    <div class="login-shell">
+        <div class="login-layout">
+            <section class="login-intro" aria-labelledby="login-page-title">
+                <p class="login-kicker">Account access</p>
+
+                <h1 class="login-title" id="login-page-title">
+                    Sign in and continue your order.
+                </h1>
+
+                <p class="login-lead">
+                    Use your account credentials or an enabled social provider.
+                    Identity is authenticated by Firebase; protected access and roles
+                    remain controlled by the trusted Flask backend.
+                </p>
+
+                <ul class="login-trust-list" aria-label="Sign-in architecture">
+                    <li>
+                        <span class="login-trust-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24">
+                                <path d="M6 10V8a6 6 0 0 1 12 0v2"></path>
+                                <rect x="4" y="10" width="16" height="11" rx="2"></rect>
+                                <path d="M12 14v3"></path>
+                            </svg>
+                        </span>
+                        <span>
+                            <strong>Trusted server session</strong>
+                            Protected Flask pages rely on the server session created only after token verification.
+                        </span>
+                    </li>
+
+                    <li>
+                        <span class="login-trust-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24">
+                                <circle cx="12" cy="8" r="4"></circle>
+                                <path d="M4.5 21a7.5 7.5 0 0 1 15 0"></path>
+                            </svg>
+                        </span>
+                        <span>
+                            <strong>One secure login flow</strong>
+                            Customer and staff destinations are determined by trusted backend role records, not a browser role selector.
+                        </span>
+                    </li>
+                </ul>
+            </section>
+
+            <section class="login-card" aria-labelledby="login-card-title">
+                <div class="login-card-inner">
+                    <header class="login-card-header">
+                        <h2 class="login-card-title" id="login-card-title">Welcome back</h2>
+                        <p class="login-card-copy">Sign in to access your account and continue.</p>
+                    </header>
+
+                    <div class="login-offline-note" id="login-offline-note" hidden>
+                        <svg aria-hidden="true" viewBox="0 0 24 24">
+                            <path d="M3 3l18 18"></path>
+                            <path d="M8.5 8.5A8.7 8.7 0 0 1 12 7.8c3.1 0 5.9 1.6 7.5 4"></path>
+                            <path d="M5 10.5A11 11 0 0 1 6.8 9"></path>
+                            <path d="M9.5 14.2A4 4 0 0 1 12 13.4c1.1 0 2.1.4 2.9 1.1"></path>
+                            <path d="M12 18h.01"></path>
+                        </svg>
+                        <div>
+                            <strong>You're offline</strong>
+                            Check your connection, then try signing in again.
+                        </div>
+                    </div>
+
+                    <div class="login-config-note" id="login-config-note" hidden>
+                        <svg aria-hidden="true" viewBox="0 0 24 24">
+                            <circle cx="12" cy="12" r="9"></circle>
+                            <path d="M12 8v5M12 16.5h.01"></path>
+                        </svg>
+                        <div>
+                            <strong>Sign in is temporarily unavailable</strong>
+                            Browser authentication configuration is not available on this page.
+                            Please try again later or <a href="{{ url_for('support_page') }}">contact support</a>.
+                        </div>
+                    </div>
+
+                    <div
+                        class="login-error"
+                        id="login-error"
+                        role="alert"
+                        tabindex="-1"
+                        hidden
+                    >
+                        <svg aria-hidden="true" viewBox="0 0 24 24">
+                            <circle cx="12" cy="12" r="9"></circle>
+                            <path d="M12 7.5v6M12 17h.01"></path>
+                        </svg>
+                        <div>
+                            <strong id="login-error-title">Unable to sign in</strong>
+                            <span id="login-error-message">Please try again.</span>
+                        </div>
+                    </div>
+
+                    <div class="login-verification-note" id="login-verification-note" hidden>
+                        <svg aria-hidden="true" viewBox="0 0 24 24">
+                            <path d="M4 6h16v12H4z"></path>
+                            <path d="m5 7 7 6 7-6"></path>
+                        </svg>
+                        <div>
+                            <strong>Email verification required</strong>
+                            <span id="login-verification-copy">Please verify your email address before continuing.</span>
+                        </div>
+                    </div>
+
+                    <form
+                        class="login-form"
+                        id="login-form"
+                        action="{{ url_for('login_page') }}"
+                        method="post"
+                        aria-describedby="login-error"
+                    >
+                        <div class="login-field">
+                            <label class="login-label" for="login-email">Email address</label>
+
+                            <div class="login-input-wrap">
+                                <svg class="login-input-icon" aria-hidden="true" viewBox="0 0 24 24">
+                                    <path d="M4 6h16v12H4z"></path>
+                                    <path d="m5 7 7 6 7-6"></path>
+                                </svg>
+
+                                <input
+                                    class="login-input"
+                                    id="login-email"
+                                    name="email"
+                                    type="email"
+                                    inputmode="email"
+                                    autocomplete="email"
+                                    autocapitalize="none"
+                                    spellcheck="false"
+                                    maxlength="254"
+                                    required
+                                    aria-describedby="login-email-hint"
+                                >
+                            </div>
+
+                            <p class="login-field-hint" id="login-email-hint">
+                                Enter the email connected to your account.
+                            </p>
+                        </div>
+
+                        <div class="login-field">
+                            <div class="login-field-row">
+                                <label class="login-label" for="login-password">Password</label>
+                                <a class="login-forgot" href="{{ url_for('forgot_password_page') }}">Forgot Password?</a>
+                            </div>
+
+                            <div class="login-input-wrap">
+                                <svg class="login-input-icon" aria-hidden="true" viewBox="0 0 24 24">
+                                    <rect x="4" y="10" width="16" height="10" rx="2"></rect>
+                                    <path d="M8 10V8a4 4 0 0 1 8 0v2"></path>
+                                </svg>
+
+                                <input
+                                    class="login-input has-toggle"
+                                    id="login-password"
+                                    name="password"
+                                    type="password"
+                                    autocomplete="current-password"
+                                    required
+                                    aria-describedby="login-password-hint login-caps-hint"
+                                >
+
+                                <button
+                                    class="login-password-toggle"
+                                    id="login-password-toggle"
+                                    type="button"
+                                    aria-label="Show password"
+                                    aria-pressed="false"
+                                >
+                                    <svg id="login-password-eye" aria-hidden="true" viewBox="0 0 24 24">
+                                        <path d="M3 12s3.4-6 9-6 9 6 9 6-3.4 6-9 6-9-6-9-6Z"></path>
+                                        <circle cx="12" cy="12" r="2.5"></circle>
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <p class="login-field-hint" id="login-password-hint">
+                                Use your existing password. Sign-in does not apply signup strength rules.
+                            </p>
+
+                            <span class="login-caps-hint" id="login-caps-hint" hidden>Caps Lock is on</span>
+                        </div>
+
+                        <button class="login-submit" id="login-submit" type="submit">
+                            <span class="login-spinner" id="login-submit-spinner" hidden aria-hidden="true"></span>
+                            <span id="login-submit-label">Sign In</span>
+                        </button>
+                    </form>
+
+                    <section class="login-social-section" id="login-social-section" aria-label="Social sign in" hidden>
+                        <div class="login-divider" aria-hidden="true">or</div>
+
+                        <div class="login-social-grid">
+                            <button
+                                class="login-social-button"
+                                id="login-google"
+                                type="button"
+                                hidden
+                            >
+                                <span class="login-provider-mark" aria-hidden="true">G</span>
+                                <span data-provider-label>Continue with Google</span>
+                            </button>
+
+                            <button
+                                class="login-social-button"
+                                id="login-facebook"
+                                type="button"
+                                hidden
+                            >
+                                <span class="login-provider-mark facebook" aria-hidden="true">f</span>
+                                <span data-provider-label>Continue with Facebook</span>
+                            </button>
+                        </div>
+                    </section>
+
+                    <footer class="login-card-footer">
+                        <p class="login-signup-copy">
+                            Don't have an account?
+                            <a href="{{ url_for('signup_page') }}">Sign Up</a>
+                        </p>
+
+                        <nav class="login-legal" aria-label="Account help and policies">
+                            <a href="{{ url_for('support_page') }}">Need help signing in?</a>
+                            <a href="{{ url_for('privacy_page') }}">Privacy</a>
+                            <a href="{{ url_for('terms_page') }}">Terms</a>
+                        </nav>
+                    </footer>
+                </div>
+            </section>
+        </div>
+    </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+    import {
+        initializeApp,
+        getApp,
+        getApps
+    } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
+
+    import {
+        getAuth,
+        inMemoryPersistence,
+        setPersistence,
+        signInWithEmailAndPassword,
+        GoogleAuthProvider,
+        FacebookAuthProvider,
+        signInWithPopup,
+        signOut
+    } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
+
+    const root = document.getElementById("login-root");
+
+    if (root) {
+        const elements = {
+            form: document.getElementById("login-form"),
+            email: document.getElementById("login-email"),
+            password: document.getElementById("login-password"),
+            passwordToggle: document.getElementById("login-password-toggle"),
+            passwordEye: document.getElementById("login-password-eye"),
+            capsHint: document.getElementById("login-caps-hint"),
+            submit: document.getElementById("login-submit"),
+            submitLabel: document.getElementById("login-submit-label"),
+            submitSpinner: document.getElementById("login-submit-spinner"),
+            google: document.getElementById("login-google"),
+            facebook: document.getElementById("login-facebook"),
+            socialSection: document.getElementById("login-social-section"),
+            error: document.getElementById("login-error"),
+            errorTitle: document.getElementById("login-error-title"),
+            errorMessage: document.getElementById("login-error-message"),
+            configNote: document.getElementById("login-config-note"),
+            offlineNote: document.getElementById("login-offline-note"),
+            verificationNote: document.getElementById("login-verification-note"),
+            verificationCopy: document.getElementById("login-verification-copy"),
+            live: document.getElementById("login-live")
+        };
+
+        const state = {
+            auth: null,
+            busy: false,
+            provider: "",
+            firebaseReady: false,
+            providerConfig: {},
+            firebaseConfig: {}
+        };
+
+        function parseJsonElement(id) {
+            const element = document.getElementById(id);
+            if (!element) {
+                return {};
+            }
+
+            try {
+                const value = JSON.parse(element.textContent || "{}");
+                return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+            } catch (error) {
+                return {};
+            }
+        }
+
+        function mergePublicFirebaseConfig() {
+            const rendered = parseJsonElement("login-firebase-config");
+            const globalConfig =
+                window.restaurantFirebaseConfig && typeof window.restaurantFirebaseConfig === "object"
+                    ? window.restaurantFirebaseConfig
+                    : (
+                        window.firebaseWebConfig && typeof window.firebaseWebConfig === "object"
+                            ? window.firebaseWebConfig
+                            : {}
+                    );
+
+            return {
+                ...globalConfig,
+                ...rendered
+            };
+        }
+
+        function providerFlags() {
+            const rendered = parseJsonElement("login-provider-config");
+            const authConfig =
+                window.restaurantAuthProviders && typeof window.restaurantAuthProviders === "object"
+                    ? window.restaurantAuthProviders
+                    : {};
+
+            return {
+                ...authConfig,
+                ...rendered
+            };
+        }
+
+        function hasUsableFirebaseConfig(config) {
+            return Boolean(
+                config &&
+                typeof config.apiKey === "string" &&
+                config.apiKey.trim() &&
+                typeof config.authDomain === "string" &&
+                config.authDomain.trim()
+            );
+        }
+
+        function providerEnabled(config, provider) {
+            if (!config || typeof config !== "object") {
+                return false;
+            }
+
+            const names = provider === "google"
+                ? ["google_enabled", "googleEnabled", "google"]
+                : ["facebook_enabled", "facebookEnabled", "facebook"];
+
+            return names.some((name) => config[name] === true);
+        }
+
+        function announce(message) {
+            if (window.AppUI && typeof window.AppUI.announce === "function") {
+                window.AppUI.announce(message);
+            }
+
+            if (!elements.live) {
+                return;
+            }
+
+            elements.live.textContent = "";
+            window.setTimeout(() => {
+                elements.live.textContent = String(message || "");
+            }, 30);
+        }
+
+        function toast(message, type = "info") {
+            if (window.AppUI && typeof window.AppUI.showToast === "function") {
+                window.AppUI.showToast(message, type);
+                return;
+            }
+
+            if (typeof window.showToast === "function") {
+                window.showToast(message, type);
+            }
+        }
+
+        function clearError() {
+            if (elements.error) {
+                elements.error.hidden = true;
+            }
+
+            if (elements.verificationNote) {
+                elements.verificationNote.hidden = true;
+            }
+
+            [elements.email, elements.password].forEach((field) => {
+                if (field) {
+                    field.removeAttribute("aria-invalid");
+                }
+            });
+        }
+
+        function showError(message, options = {}) {
+            const title = options.title || "Unable to sign in";
+
+            if (elements.errorTitle) {
+                elements.errorTitle.textContent = title;
+            }
+
+            if (elements.errorMessage) {
+                elements.errorMessage.textContent = String(message || "Please try again.");
+            }
+
+            if (elements.error) {
+                elements.error.hidden = false;
+
+                if (options.focus !== false) {
+                    window.requestAnimationFrame(() => {
+                        elements.error.focus({ preventScroll: false });
+                    });
+                }
+            }
+
+            if (options.field === "email" && elements.email) {
+                elements.email.setAttribute("aria-invalid", "true");
+            }
+
+            if (options.field === "password" && elements.password) {
+                elements.password.setAttribute("aria-invalid", "true");
+            }
+
+            announce(message);
+        }
+
+        function showVerification(message) {
+            if (elements.verificationCopy) {
+                elements.verificationCopy.textContent = String(
+                    message || "Please verify your email address before continuing."
+                );
+            }
+
+            if (elements.verificationNote) {
+                elements.verificationNote.hidden = false;
+            }
+
+            announce(message || "Please verify your email address before continuing.");
+        }
+
+        function setOfflineState() {
+            const offline = navigator.onLine === false;
+
+            if (elements.offlineNote) {
+                elements.offlineNote.hidden = !offline;
+            }
+
+            return offline;
+        }
+
+        function setBusy(source, busy) {
+            state.busy = busy;
+            state.provider = busy ? source : "";
+
+            if (elements.form) {
+                elements.form.setAttribute("aria-busy", busy ? "true" : "false");
+            }
+
+            const controls = [elements.submit, elements.google, elements.facebook];
+            controls.forEach((button) => {
+                if (button && !button.hidden) {
+                    button.disabled = busy || !state.firebaseReady;
+                }
+            });
+
+            if (elements.email) {
+                elements.email.disabled = busy || !state.firebaseReady;
+            }
+
+            if (elements.password) {
+                elements.password.disabled = busy || !state.firebaseReady;
+            }
+
+            if (elements.submitSpinner) {
+                elements.submitSpinner.hidden = !(busy && source === "password");
+            }
+
+            if (elements.submitLabel) {
+                elements.submitLabel.textContent = busy && source === "password" ? "Signing In..." : "Sign In";
+            }
+
+            updateProviderButton(elements.google, "google", "Continue with Google");
+            updateProviderButton(elements.facebook, "facebook", "Continue with Facebook");
+        }
+
+        function updateProviderButton(button, provider, idleLabel) {
+            if (!button) {
+                return;
+            }
+
+            const label = button.querySelector("[data-provider-label]");
+            if (!label) {
+                return;
+            }
+
+            if (state.busy && state.provider === provider) {
+                label.textContent = provider === "google" ? "Connecting to Google..." : "Connecting to Facebook...";
+            } else {
+                label.textContent = idleLabel;
+            }
+        }
+
+        function safeBackendMessage(code, fallback) {
+            const messages = {
+                ACCOUNT_DISABLED: "This account is currently unavailable. Please contact support.",
+                AUTH_PROVIDER_NOT_ALLOWED: "This sign-in method is not available for this account.",
+                AUTH_TOKEN_REQUIRED: "Your sign-in could not be verified. Please try again.",
+                AUTH_TOKEN_EXPIRED: "Your sign-in expired before the secure session was created. Please try again.",
+                AUTH_TOKEN_REVOKED: "Your sign-in session has been revoked. Please sign in again.",
+                INVALID_AUTH_TOKEN: "Your sign-in could not be verified. Please try again.",
+                AUTH_VERIFICATION_FAILED: "Authentication could not be verified right now. Please try again.",
+                FIREBASE_UNAVAILABLE: "Sign in is temporarily unavailable. Please try again later.",
+                AUTH_SERVICE_UNAVAILABLE: "The authentication service is temporarily unavailable. Please try again later.",
+                EMAIL_VERIFICATION_REQUIRED: "Please verify your email address before continuing.",
+                PROFILE_NOT_FOUND: "Your account profile could not be loaded. Please contact support.",
+                STAFF_PROFILE_MISSING: "This staff account is not fully configured. Please contact an administrator.",
+                STAFF_ROLE_MISMATCH: "This staff account configuration needs administrator attention."
+            };
+
+            return messages[code] || fallback || "Unable to create a secure sign-in session. Please try again.";
+        }
+
+        function mapFirebaseAuthError(error) {
+            const code = String(error && error.code ? error.code : "");
+
+            const genericCredentialCodes = new Set([
+                "auth/invalid-credential",
+                "auth/invalid-login-credentials",
+                "auth/wrong-password",
+                "auth/user-not-found",
+                "auth/invalid-email"
+            ]);
+
+            if (genericCredentialCodes.has(code)) {
+                return {
+                    message: "Unable to sign in with those credentials.",
+                    title: "Invalid email or password"
+                };
+            }
+
+            if (code === "auth/user-disabled") {
+                return {
+                    message: "This account is currently unavailable. Please contact support.",
+                    title: "Account unavailable"
+                };
+            }
+
+            if (code === "auth/too-many-requests") {
+                return {
+                    message: "Too many attempts. Please wait a little and try again.",
+                    title: "Please wait before retrying"
+                };
+            }
+
+            if (code === "auth/network-request-failed") {
+                return {
+                    message: "We couldn't connect right now. Please check your connection and try again.",
+                    title: "Connection problem"
+                };
+            }
+
+            if (code === "auth/popup-blocked") {
+                return {
+                    message: "Your browser blocked the sign-in window. Please allow popups and try again.",
+                    title: "Sign-in window blocked"
+                };
+            }
+
+            if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
+                return {
+                    message: "Sign-in was cancelled.",
+                    title: "Sign-in cancelled",
+                    quiet: true
+                };
+            }
+
+            if (
+                code === "auth/account-exists-with-different-credential" ||
+                code === "auth/credential-already-in-use"
+            ) {
+                return {
+                    message: "An account already exists with a different sign-in method. Use the method originally connected to this email.",
+                    title: "Different sign-in method required"
+                };
+            }
+
+            if (code === "auth/operation-not-allowed") {
+                return {
+                    message: "This sign-in method is not currently enabled.",
+                    title: "Sign-in method unavailable"
+                };
+            }
+
+            if (code === "auth/unauthorized-domain") {
+                return {
+                    message: "This website domain is not authorized for this sign-in method.",
+                    title: "Sign-in unavailable"
+                };
+            }
+
+            return {
+                message: "We couldn't sign you in right now. Please try again.",
+                title: "Unable to sign in"
+            };
+        }
+
+        async function safeJson(response) {
+            try {
+                return await response.json();
+            } catch (error) {
+                return null;
+            }
+        }
+
+        async function secureFetch(url, options) {
+            if (window.AppUI && typeof window.AppUI.csrfFetch === "function") {
+                return window.AppUI.csrfFetch(url, options);
+            }
+
+            const headers = new Headers(options && options.headers ? options.headers : {});
+            const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+            const csrfToken = csrfMeta ? csrfMeta.getAttribute("content") || "" : "";
+
+            if (csrfToken) {
+                headers.set("X-CSRFToken", csrfToken);
+            }
+
+            return fetch(url, {
+                ...options,
+                credentials: "same-origin",
+                headers
+            });
+        }
+
+        async function exchangeFirebaseTokenForSession(user) {
+            const idToken = await user.getIdToken(true);
+
+            const response = await secureFetch(root.dataset.sessionUrl, {
+                method: "POST",
+                credentials: "same-origin",
+                headers: {
+                    Accept: "application/json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ id_token: idToken })
+            });
+
+            const payload = await safeJson(response);
+
+            if (!response.ok || !payload || payload.success !== true) {
+                const code = payload && payload.error ? String(payload.error.code || "") : "";
+                let fallback = payload && payload.error ? String(payload.error.message || "") : "";
+
+                if (response.status === 429) {
+                    fallback = "Too many attempts. Please wait and try again.";
+                } else if (response.status >= 500) {
+                    fallback = "Sign in is temporarily unavailable. Please try again later.";
+                }
+
+                const error = new Error(safeBackendMessage(code, fallback));
+                error.name = "BackendSessionError";
+                error.backendCode = code;
+                error.httpStatus = response.status;
+                throw error;
+            }
+
+            return payload.data || {};
+        }
+
+        async function signOutClientQuietly() {
+            if (!state.auth) {
+                return;
+            }
+
+            try {
+                await signOut(state.auth);
+            } catch (error) {
+                // Client Firebase state is secondary to the trusted Flask session.
+            }
+        }
+
+        function completeAuthenticatedRedirect(sessionData) {
+            const user = sessionData && sessionData.user ? sessionData.user : {};
+
+            if (user && user.email_verified === false) {
+                toast("Signed in. Some actions may require email verification.", "info");
+            }
+
+            /*
+             * Current main.py does not expose a browser-controlled next/return_to
+             * contract. Redirect back to /login and let Flask route the authenticated
+             * principal according to the trusted backend role.
+             */
+            window.location.assign(root.dataset.postLoginUrl);
+        }
+
+        async function finalizeFirebaseUser(user) {
+            const sessionData = await exchangeFirebaseTokenForSession(user);
+            completeAuthenticatedRedirect(sessionData);
+        }
+
+        async function handleEmailLogin(event) {
+            event.preventDefault();
+
+            if (state.busy || !state.firebaseReady || !state.auth) {
+                return;
+            }
+
+            clearError();
+
+            if (setOfflineState()) {
+                showError("We couldn't connect right now. Please check your connection and try again.", {
+                    title: "Connection problem"
+                });
+                return;
+            }
+
+            if (!elements.form || !elements.form.checkValidity()) {
+                if (elements.form) {
+                    elements.form.reportValidity();
+                }
+                return;
+            }
+
+            const email = elements.email ? elements.email.value.trim() : "";
+            const password = elements.password ? elements.password.value : "";
+
+            if (!email || !password) {
+                showError("Enter your email and password to continue.", {
+                    title: "Complete the sign-in form"
+                });
+                return;
+            }
+
+            setBusy("password", true);
+
+            try {
+                const credential = await signInWithEmailAndPassword(state.auth, email, password);
+                await finalizeFirebaseUser(credential.user);
+            } catch (error) {
+                const backendFailure = error && error.name === "BackendSessionError";
+
+                if (backendFailure) {
+                    await signOutClientQuietly();
+
+                    if (error.backendCode === "EMAIL_VERIFICATION_REQUIRED") {
+                        showVerification(error.message);
+                    }
+
+                    showError(error.message, {
+                        title: error.backendCode === "ACCOUNT_DISABLED" ? "Account unavailable" : "Secure session could not be created"
+                    });
+                } else {
+                    const mapped = mapFirebaseAuthError(error);
+                    if (!mapped.quiet) {
+                        showError(mapped.message, { title: mapped.title });
+                    } else {
+                        announce(mapped.message);
+                    }
+                }
+
+                setBusy("", false);
+            }
+        }
+
+        async function handleSocialLogin(providerName) {
+            if (state.busy || !state.firebaseReady || !state.auth) {
+                return;
+            }
+
+            clearError();
+
+            if (setOfflineState()) {
+                showError("We couldn't connect right now. Please check your connection and try again.", {
+                    title: "Connection problem"
+                });
+                return;
+            }
+
+            setBusy(providerName, true);
+
+            try {
+                const provider = providerName === "google"
+                    ? new GoogleAuthProvider()
+                    : new FacebookAuthProvider();
+
+                const credential = await signInWithPopup(state.auth, provider);
+                await finalizeFirebaseUser(credential.user);
+            } catch (error) {
+                const backendFailure = error && error.name === "BackendSessionError";
+
+                if (backendFailure) {
+                    await signOutClientQuietly();
+                    showError(error.message, {
+                        title: error.backendCode === "ACCOUNT_DISABLED" ? "Account unavailable" : "Secure session could not be created"
+                    });
+                } else {
+                    const mapped = mapFirebaseAuthError(error);
+                    if (!mapped.quiet) {
+                        showError(mapped.message, { title: mapped.title });
+                    } else {
+                        announce(mapped.message);
+                    }
+                }
+
+                setBusy("", false);
+            }
+        }
+
+        function initializePasswordToggle() {
+            if (!elements.passwordToggle || !elements.password) {
+                return;
+            }
+
+            elements.passwordToggle.addEventListener("click", () => {
+                const showing = elements.password.type === "text";
+                elements.password.type = showing ? "password" : "text";
+                elements.passwordToggle.setAttribute("aria-pressed", showing ? "false" : "true");
+                elements.passwordToggle.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+
+                if (elements.passwordEye) {
+                    elements.passwordEye.innerHTML = showing
+                        ? '<path d="M3 12s3.4-6 9-6 9 6 9 6-3.4 6-9 6-9-6-9-6Z"></path><circle cx="12" cy="12" r="2.5"></circle>'
+                        : '<path d="M3 3l18 18"></path><path d="M10.7 6.1A9 9 0 0 1 12 6c5.6 0 9 6 9 6a15 15 0 0 1-2.6 3.2"></path><path d="M6.6 6.6C4.3 8.2 3 12 3 12s3.4 6 9 6c1.1 0 2.1-.2 3-.5"></path>';
+                }
+
+                elements.password.focus({ preventScroll: true });
+            });
+        }
+
+        function initializeCapsLockHint() {
+            if (!elements.password || !elements.capsHint) {
+                return;
+            }
+
+            const update = (event) => {
+                const active = typeof event.getModifierState === "function" && event.getModifierState("CapsLock");
+                elements.capsHint.hidden = !active;
+            };
+
+            elements.password.addEventListener("keydown", update);
+            elements.password.addEventListener("keyup", update);
+            elements.password.addEventListener("blur", () => {
+                elements.capsHint.hidden = true;
+            });
+        }
+
+        function configureSocialButtons() {
+            const googleEnabled = providerEnabled(state.providerConfig, "google");
+            const facebookEnabled = providerEnabled(state.providerConfig, "facebook");
+
+            if (elements.google) {
+                elements.google.hidden = !googleEnabled;
+            }
+
+            if (elements.facebook) {
+                elements.facebook.hidden = !facebookEnabled;
+            }
+
+            if (elements.socialSection) {
+                elements.socialSection.hidden = !(googleEnabled || facebookEnabled);
+            }
+        }
+
+        async function initializeFirebaseAuth() {
+            state.firebaseConfig = mergePublicFirebaseConfig();
+            state.providerConfig = providerFlags();
+            configureSocialButtons();
+
+            if (!hasUsableFirebaseConfig(state.firebaseConfig)) {
+                state.firebaseReady = false;
+
+                if (elements.configNote) {
+                    elements.configNote.hidden = false;
+                }
+
+                setBusy("", false);
+                return;
+            }
+
+            try {
+                const app = getApps().length ? getApp() : initializeApp(state.firebaseConfig);
+                state.auth = getAuth(app);
+
+                /*
+                 * Flask's secure server-side session is the application authority.
+                 * Keep Firebase client auth ephemeral on this page rather than creating
+                 * a second long-lived browser session mechanism.
+                 */
+                await setPersistence(state.auth, inMemoryPersistence);
+
+                state.firebaseReady = true;
+
+                if (elements.configNote) {
+                    elements.configNote.hidden = true;
+                }
+
+                setBusy("", false);
+            } catch (error) {
+                state.firebaseReady = false;
+
+                if (elements.configNote) {
+                    elements.configNote.hidden = false;
+                }
+
+                setBusy("", false);
+            }
+        }
+
+        function initializeLoginPage() {
+            initializePasswordToggle();
+            initializeCapsLockHint();
+            setOfflineState();
+
+            if (elements.form) {
+                elements.form.addEventListener("submit", handleEmailLogin);
+            }
+
+            if (elements.google) {
+                elements.google.addEventListener("click", () => handleSocialLogin("google"));
+            }
+
+            if (elements.facebook) {
+                elements.facebook.addEventListener("click", () => handleSocialLogin("facebook"));
+            }
+
+            window.addEventListener("offline", () => {
+                setOfflineState();
+            });
+
+            window.addEventListener("online", () => {
+                setOfflineState();
+                clearError();
+                toast("You're back online. You can try signing in again.", "info");
+            });
+
+            initializeFirebaseAuth();
+        }
+
+        initializeLoginPage();
+    }
+</script>
+
+<script>
+(function () {
+    "use strict";
+
+    const root =
+        document.getElementById(
+            "login-root"
+        );
+
+    if (!root) {
+        return;
+    }
+
+    const reducedMotion =
+        window.matchMedia &&
+        window.matchMedia(
+            "(prefers-reduced-motion: reduce)"
+        ).matches;
+
+    const finePointer =
+        window.matchMedia &&
+        window.matchMedia(
+            "(hover: hover) and (pointer: fine)"
+        ).matches;
+
+    const card =
+        root.querySelector(
+            ".login-card"
+        );
+
+    const intro =
+        root.querySelector(
+            ".login-intro"
+        );
+
+    const shell =
+        root.querySelector(
+            ".login-shell"
+        );
+
+    const form =
+        root.querySelector(
+            ".login-form"
+        );
+
+    const trustItems =
+        Array.from(
+            root.querySelectorAll(
+                ".login-trust-list li"
+            )
+        );
+
+    const interactiveButtons =
+        Array.from(
+            root.querySelectorAll(
+                ".login-submit, .login-social-button"
+            )
+        );
+
+    /* ---------------------------------------------------------------
+       Decorative scene
+       --------------------------------------------------------------- */
+
+    function createScene() {
+        if (
+            root.querySelector(
+                ".login-lux-scene"
+            )
+        ) {
+            return;
+        }
+
+        const scene =
+            document.createElement(
+                "div"
+            );
+
+        scene.className =
+            "login-lux-scene";
+
+        scene.setAttribute(
+            "aria-hidden",
+            "true"
+        );
+
+        const glowGold =
+            document.createElement(
+                "span"
+            );
+
+        glowGold.className =
+            "login-lux-glow login-lux-glow--gold";
+
+        const glowSilver =
+            document.createElement(
+                "span"
+            );
+
+        glowSilver.className =
+            "login-lux-glow login-lux-glow--silver";
+
+        const ring =
+            document.createElement(
+                "span"
+            );
+
+        ring.className =
+            "login-lux-ring";
+
+        scene.append(
+            glowGold,
+            glowSilver,
+            ring
+        );
+
+        root.prepend(
+            scene
+        );
+    }
+
+    /* ---------------------------------------------------------------
+       Scroll progress
+       --------------------------------------------------------------- */
+
+    function createProgress() {
+        if (
+            document.querySelector(
+                ".login-lux-progress"
+            )
+        ) {
+            return null;
+        }
+
+        const progress =
+            document.createElement(
+                "div"
+            );
+
+        progress.className =
+            "login-lux-progress";
+
+        progress.setAttribute(
+            "aria-hidden",
+            "true"
+        );
+
+        document.body.appendChild(
+            progress
+        );
+
+        return progress;
+    }
+
+    const progress =
+        createProgress();
+
+    let progressFrame =
+        0;
+
+    function updateProgress() {
+        if (!progress) {
+            return;
+        }
+
+        if (progressFrame) {
+            return;
+        }
+
+        progressFrame =
+            window.requestAnimationFrame(
+                function () {
+                    progressFrame =
+                        0;
+
+                    const documentElement =
+                        document.documentElement;
+
+                    const maxScroll =
+                        Math.max(
+                            1,
+                            documentElement.scrollHeight -
+                            window.innerHeight
+                        );
+
+                    const amount =
+                        Math.min(
+                            1,
+                            Math.max(
+                                0,
+                                window.scrollY /
+                                maxScroll
+                            )
+                        );
+
+                    progress.style.width =
+                        (
+                            amount *
+                            100
+                        ).toFixed(
+                            2
+                        ) +
+                        "%";
+                }
+            );
+    }
+
+    /* ---------------------------------------------------------------
+       Pointer spotlight across the page
+       --------------------------------------------------------------- */
+
+    let pointerFrame =
+        0;
+
+    let pendingPointerX =
+        0;
+
+    let pendingPointerY =
+        0;
+
+    function applyPointerLight() {
+        pointerFrame =
+            0;
+
+        const bounds =
+            root.getBoundingClientRect();
+
+        if (
+            bounds.width <= 0 ||
+            bounds.height <= 0
+        ) {
+            return;
+        }
+
+        const x =
+            (
+                (
+                    pendingPointerX -
+                    bounds.left
+                ) /
+                bounds.width
+            ) *
+            100;
+
+        const y =
+            (
+                (
+                    pendingPointerY -
+                    bounds.top
+                ) /
+                bounds.height
+            ) *
+            100;
+
+        root.style.setProperty(
+            "--lux-pointer-x",
+            Math.max(
+                0,
+                Math.min(
+                    100,
+                    x
+                )
+            ).toFixed(
+                2
+            ) +
+            "%"
+        );
+
+        root.style.setProperty(
+            "--lux-pointer-y",
+            Math.max(
+                0,
+                Math.min(
+                    100,
+                    y
+                )
+            ).toFixed(
+                2
+            ) +
+            "%"
+        );
+    }
+
+    function handleRootPointer(event) {
+        if (
+            !finePointer ||
+            reducedMotion
+        ) {
+            return;
+        }
+
+        pendingPointerX =
+            event.clientX;
+
+        pendingPointerY =
+            event.clientY;
+
+        if (!pointerFrame) {
+            pointerFrame =
+                window.requestAnimationFrame(
+                    applyPointerLight
+                );
+        }
+    }
+
+    /* ---------------------------------------------------------------
+       Premium 3D card tilt
+       --------------------------------------------------------------- */
+
+    let tiltFrame =
+        0;
+
+    let tiltClientX =
+        0;
+
+    let tiltClientY =
+        0;
+
+    function resetCardTilt() {
+        root.style.setProperty(
+            "--lux-card-rx",
+            "0deg"
+        );
+
+        root.style.setProperty(
+            "--lux-card-ry",
+            "0deg"
+        );
+
+        root.style.setProperty(
+            "--lux-card-shine-x",
+            "72%"
+        );
+
+        root.style.setProperty(
+            "--lux-card-shine-y",
+            "10%"
+        );
+    }
+
+    function applyCardTilt() {
+        tiltFrame =
+            0;
+
+        if (!card) {
+            return;
+        }
+
+        const bounds =
+            card.getBoundingClientRect();
+
+        if (
+            bounds.width <= 0 ||
+            bounds.height <= 0
+        ) {
+            return;
+        }
+
+        const x =
+            (
+                tiltClientX -
+                bounds.left
+            ) /
+            bounds.width;
+
+        const y =
+            (
+                tiltClientY -
+                bounds.top
+            ) /
+            bounds.height;
+
+        const rotateY =
+            (
+                x -
+                .5
+            ) *
+            4.6;
+
+        const rotateX =
+            (
+                .5 -
+                y
+            ) *
+            3.6;
+
+        root.style.setProperty(
+            "--lux-card-rx",
+            rotateX.toFixed(
+                2
+            ) +
+            "deg"
+        );
+
+        root.style.setProperty(
+            "--lux-card-ry",
+            rotateY.toFixed(
+                2
+            ) +
+            "deg"
+        );
+
+        root.style.setProperty(
+            "--lux-card-shine-x",
+            (
+                x *
+                100
+            ).toFixed(
+                1
+            ) +
+            "%"
+        );
+
+        root.style.setProperty(
+            "--lux-card-shine-y",
+            (
+                y *
+                100
+            ).toFixed(
+                1
+            ) +
+            "%"
+        );
+    }
+
+    function handleCardPointer(event) {
+        if (
+            !finePointer ||
+            reducedMotion
+        ) {
+            return;
+        }
+
+        tiltClientX =
+            event.clientX;
+
+        tiltClientY =
+            event.clientY;
+
+        if (!tiltFrame) {
+            tiltFrame =
+                window.requestAnimationFrame(
+                    applyCardTilt
+                );
+        }
+    }
+
+    /* ---------------------------------------------------------------
+       Button ripple
+       --------------------------------------------------------------- */
+
+    function addRipple(event) {
+        const button =
+            event.currentTarget;
+
+        if (
+            !button ||
+            button.disabled ||
+            reducedMotion
+        ) {
+            return;
+        }
+
+        const bounds =
+            button.getBoundingClientRect();
+
+        const ripple =
+            document.createElement(
+                "span"
+            );
+
+        ripple.className =
+            "login-lux-ripple";
+
+        const x =
+            event.clientX
+                ? event.clientX -
+                  bounds.left
+                : bounds.width /
+                  2;
+
+        const y =
+            event.clientY
+                ? event.clientY -
+                  bounds.top
+                : bounds.height /
+                  2;
+
+        ripple.style.left =
+            x +
+            "px";
+
+        ripple.style.top =
+            y +
+            "px";
+
+        button.appendChild(
+            ripple
+        );
+
+        window.setTimeout(
+            function () {
+                ripple.remove();
+            },
+            700
+        );
+    }
+
+    /* ---------------------------------------------------------------
+       Reveal observers
+       --------------------------------------------------------------- */
+
+    function prepareReveal() {
+        const targets =
+            [];
+
+        if (intro) {
+            targets.push(
+                ...intro.querySelectorAll(
+                    ".login-trust-list li"
+                )
+            );
+        }
+
+        if (card) {
+            targets.push(
+                ...card.querySelectorAll(
+                    ".login-field, .login-social-section, .login-card-footer"
+                )
+            );
+        }
+
+        targets.forEach(
+            function (
+                element,
+                index
+            ) {
+                element.classList.add(
+                    "login-lux-reveal"
+                );
+
+                element.dataset.luxOrder =
+                    String(
+                        (
+                            index %
+                            4
+                        ) +
+                        1
+                    );
+            }
+        );
+
+        if (
+            reducedMotion ||
+            !(
+                "IntersectionObserver" in
+                window
+            )
+        ) {
+            targets.forEach(
+                function (element) {
+                    element.classList.add(
+                        "is-visible"
+                    );
+                }
+            );
+
+            return;
+        }
+
+        const observer =
+            new IntersectionObserver(
+                function (entries) {
+                    entries.forEach(
+                        function (entry) {
+                            if (
+                                !entry.isIntersecting
+                            ) {
+                                return;
+                            }
+
+                            entry.target.classList.add(
+                                "is-visible"
+                            );
+
+                            observer.unobserve(
+                                entry.target
+                            );
+                        }
+                    );
+                },
+                {
+                    threshold:
+                        .12,
+                    rootMargin:
+                        "0px 0px -3% 0px"
+                }
+            );
+
+        targets.forEach(
+            function (element) {
+                observer.observe(
+                    element
+                );
+            }
+        );
+    }
+
+    /* ---------------------------------------------------------------
+       Trust-card micro depth
+       --------------------------------------------------------------- */
+
+    function setupTrustDepth() {
+        if (
+            !finePointer ||
+            reducedMotion
+        ) {
+            return;
+        }
+
+        trustItems.forEach(
+            function (item) {
+                item.addEventListener(
+                    "pointermove",
+                    function (event) {
+                        const bounds =
+                            item.getBoundingClientRect();
+
+                        const x =
+                            (
+                                event.clientX -
+                                bounds.left
+                            ) /
+                            bounds.width;
+
+                        const y =
+                            (
+                                event.clientY -
+                                bounds.top
+                            ) /
+                            bounds.height;
+
+                        const rx =
+                            (
+                                .5 -
+                                y
+                            ) *
+                            2.2;
+
+                        const ry =
+                            (
+                                x -
+                                .5
+                            ) *
+                            2.8;
+
+                        item.style.transform =
+                            "perspective(700px) " +
+                            "rotateX(" +
+                            rx.toFixed(
+                                2
+                            ) +
+                            "deg) " +
+                            "rotateY(" +
+                            ry.toFixed(
+                                2
+                            ) +
+                            "deg) " +
+                            "translateY(-4px) " +
+                            "translateZ(12px)";
+                    }
+                );
+
+                item.addEventListener(
+                    "pointerleave",
+                    function () {
+                        item.style.transform =
+                            "";
+                    }
+                );
+            }
+        );
+    }
+
+    /* ---------------------------------------------------------------
+       Form interaction polish
+       --------------------------------------------------------------- */
+
+    function setupFormState() {
+        if (!form) {
+            return;
+        }
+
+        const inputs =
+            Array.from(
+                form.querySelectorAll(
+                    ".login-input"
+                )
+            );
+
+        inputs.forEach(
+            function (input) {
+                const wrap =
+                    input.closest(
+                        ".login-input-wrap"
+                    );
+
+                if (!wrap) {
+                    return;
+                }
+
+                function syncFilled() {
+                    wrap.dataset.filled =
+                        input.value
+                            ? "true"
+                            : "false";
+                }
+
+                input.addEventListener(
+                    "input",
+                    syncFilled
+                );
+
+                input.addEventListener(
+                    "change",
+                    syncFilled
+                );
+
+                syncFilled();
+            }
+        );
+
+        form.addEventListener(
+            "invalid",
+            function (event) {
+                const field =
+                    event.target;
+
+                if (
+                    field &&
+                    field.classList &&
+                    field.classList.contains(
+                        "login-input"
+                    )
+                ) {
+                    field.setAttribute(
+                        "aria-invalid",
+                        "true"
+                    );
+                }
+            },
+            true
+        );
+
+        form.addEventListener(
+            "input",
+            function (event) {
+                const field =
+                    event.target;
+
+                if (
+                    field &&
+                    field.classList &&
+                    field.classList.contains(
+                        "login-input"
+                    ) &&
+                    field.validity &&
+                    field.validity.valid
+                ) {
+                    field.removeAttribute(
+                        "aria-invalid"
+                    );
+                }
+            }
+        );
+    }
+
+    /* ---------------------------------------------------------------
+       Resize safety
+       --------------------------------------------------------------- */
+
+    let resizeTimer =
+        0;
+
+    function handleResize() {
+        window.clearTimeout(
+            resizeTimer
+        );
+
+        resizeTimer =
+            window.setTimeout(
+                function () {
+                    resetCardTilt();
+                    updateProgress();
+                },
+                90
+            );
+    }
+
+    /* ---------------------------------------------------------------
+       Bootstrap enhancement layer
+       --------------------------------------------------------------- */
+
+    createScene();
+    prepareReveal();
+    setupTrustDepth();
+    setupFormState();
+    resetCardTilt();
+
+    interactiveButtons.forEach(
+        function (button) {
+            button.addEventListener(
+                "pointerdown",
+                addRipple
+            );
+        }
+    );
+
+    root.addEventListener(
+        "pointermove",
+        handleRootPointer,
+        {
+            passive:
+                true
+        }
+    );
+
+    if (card) {
+        card.addEventListener(
+            "pointermove",
+            handleCardPointer,
+            {
+                passive:
+                    true
+            }
+        );
+
+        card.addEventListener(
+            "pointerleave",
+            resetCardTilt
+        );
+    }
+
+    window.addEventListener(
+        "scroll",
+        updateProgress,
+        {
+            passive:
+                true
+        }
+    );
+
+    window.addEventListener(
+        "resize",
+        handleResize,
+        {
+            passive:
+                true
+        }
+    );
+
+    window.requestAnimationFrame(
+        function () {
+            root.dataset.luxReady =
+                "true";
+
+            updateProgress();
+        }
+    );
+}());
+
+/* =====================================================================
+   LOGIN V2 — SIGNUP-MATCHED VISUAL MOTION LAYER
+   No authentication logic is modified here.
+   ===================================================================== */
+(function () {
+    "use strict";
+
+    const root = document.getElementById("login-root");
+    if (!root || root.dataset.loginV2Ready === "true") return;
+    root.dataset.loginV2Ready = "true";
+
+    const finePointer = () => window.matchMedia && window.matchMedia("(pointer: fine)").matches;
+    const reduced = () => window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    function percent(rect, x, y) {
+        return {
+            x: Math.max(0, Math.min(100, ((x - rect.left) / Math.max(1, rect.width)) * 100)),
+            y: Math.max(0, Math.min(100, ((y - rect.top) / Math.max(1, rect.height)) * 100))
+        };
+    }
+
+    function ensureProgress() {
+        if (root.querySelector(".login-v2-progress")) return;
+        const bar = document.createElement("div");
+        bar.className = "login-v2-progress";
+        bar.setAttribute("aria-hidden", "true");
+        bar.innerHTML = "<span></span>";
+        root.prepend(bar);
+    }
+
+    function updateScroll() {
+        const y = window.scrollY || window.pageYOffset || 0;
+        root.style.setProperty("--login-v2-page-scroll", `${y}px`);
+
+        const doc = document.documentElement;
+        const max = Math.max(1, doc.scrollHeight - window.innerHeight);
+        const progress = Math.max(0, Math.min(100, (y / max) * 100));
+        root.style.setProperty("--login-v2-scroll-progress", `${progress.toFixed(2)}%`);
+    }
+
+    function pagePointer() {
+        if (!finePointer() || reduced()) return;
+
+        let raf = 0;
+        let lastX = 0;
+        let lastY = 0;
+
+        window.addEventListener("pointermove", (event) => {
+            lastX = event.clientX;
+            lastY = event.clientY;
+            if (raf) return;
+            raf = requestAnimationFrame(() => {
+                const x = Math.max(0, Math.min(100, (lastX / Math.max(1, window.innerWidth)) * 100));
+                const y = Math.max(0, Math.min(100, (lastY / Math.max(1, window.innerHeight)) * 100));
+                root.style.setProperty("--login-v2-pointer-x", `${x.toFixed(2)}%`);
+                root.style.setProperty("--login-v2-pointer-y", `${y.toFixed(2)}%`);
+                raf = 0;
+            });
+        }, { passive: true });
+    }
+
+    function cardTilt() {
+        const card = root.querySelector(".login-card");
+        if (!card || !finePointer() || reduced()) return;
+
+        card.addEventListener("pointermove", (event) => {
+            const p = percent(card.getBoundingClientRect(), event.clientX, event.clientY);
+            const nx = (p.x - 50) / 50;
+            const ny = (p.y - 50) / 50;
+            root.style.setProperty("--login-v2-card-rx", `${(-ny * 1.15).toFixed(2)}deg`);
+            root.style.setProperty("--login-v2-card-ry", `${(nx * 1.55).toFixed(2)}deg`);
+            root.style.setProperty("--login-v2-card-x", `${p.x.toFixed(2)}%`);
+            root.style.setProperty("--login-v2-card-y", `${p.y.toFixed(2)}%`);
+        }, { passive: true });
+
+        const reset = () => {
+            root.style.setProperty("--login-v2-card-rx", "0deg");
+            root.style.setProperty("--login-v2-card-ry", "0deg");
+            root.style.setProperty("--login-v2-card-x", "78%");
+            root.style.setProperty("--login-v2-card-y", "8%");
+        };
+
+        card.addEventListener("pointerleave", reset);
+        card.addEventListener("pointercancel", reset);
+    }
+
+    function trustTilt() {
+        if (!finePointer() || reduced()) return;
+
+        root.querySelectorAll(".login-trust-list li").forEach((item) => {
+            if (item.dataset.loginV2Tilt === "true") return;
+            item.dataset.loginV2Tilt = "true";
+
+            item.addEventListener("pointermove", (event) => {
+                const p = percent(item.getBoundingClientRect(), event.clientX, event.clientY);
+                const nx = (p.x - 50) / 50;
+                const ny = (p.y - 50) / 50;
+                item.style.transform = `perspective(700px) rotateX(${(-ny * .9).toFixed(2)}deg) rotateY(${(nx * 1.1).toFixed(2)}deg) translateY(-3px)`;
+            }, { passive: true });
+
+            item.addEventListener("pointerleave", () => {
+                item.style.transform = "";
+            });
+        });
+    }
+
+    function ripples() {
+        root.querySelectorAll(".login-submit,.login-social-button,.login-password-toggle").forEach((button) => {
+            if (button.dataset.loginV2Ripple === "true") return;
+            button.dataset.loginV2Ripple = "true";
+
+            button.addEventListener("pointerdown", (event) => {
+                if (button.disabled || reduced()) return;
+                if (getComputedStyle(button).position === "static") button.style.position = "relative";
+                button.style.overflow = "hidden";
+                const rect = button.getBoundingClientRect();
+                const node = document.createElement("span");
+                node.className = "login-v2-ripple";
+                node.style.left = `${event.clientX - rect.left}px`;
+                node.style.top = `${event.clientY - rect.top}px`;
+                button.appendChild(node);
+                window.setTimeout(() => node.remove(), 680);
+            });
+        });
+    }
+
+    function reveals() {
+        const targets = [
+            root.querySelector(".login-kicker"),
+            root.querySelector(".login-title"),
+            root.querySelector(".login-lead"),
+            ...root.querySelectorAll(".login-trust-list li"),
+            root.querySelector(".login-card")
+        ].filter(Boolean);
+
+        targets.forEach((node, index) => {
+            node.classList.add("login-v2-reveal");
+            node.style.transitionDelay = `${Math.min(index * 55, 330)}ms`;
+        });
+
+        if (reduced() || !("IntersectionObserver" in window)) {
+            targets.forEach((node) => node.classList.add("is-v2-visible"));
+            return;
+        }
+
+        const observer = new IntersectionObserver((entries, instance) => {
+            entries.forEach((entry) => {
+                if (!entry.isIntersecting) return;
+                entry.target.classList.add("is-v2-visible");
+                instance.unobserve(entry.target);
+            });
+        }, { threshold: .08, rootMargin: "0px 0px -5% 0px" });
+
+        targets.forEach((node) => observer.observe(node));
+    }
+
+    function fieldParallax() {
+        if (!finePointer() || reduced()) return;
+        root.querySelectorAll(".login-input-wrap").forEach((wrap) => {
+            if (wrap.dataset.loginV2Parallax === "true") return;
+            wrap.dataset.loginV2Parallax = "true";
+
+            wrap.addEventListener("pointermove", (event) => {
+                const p = percent(wrap.getBoundingClientRect(), event.clientX, event.clientY);
+                const nx = (p.x - 50) / 50;
+                wrap.style.transform = `perspective(600px) rotateY(${(nx * .45).toFixed(2)}deg)`;
+            }, { passive: true });
+
+            wrap.addEventListener("pointerleave", () => {
+                wrap.style.transform = "";
+            });
+        });
+    }
+
+    function mutationSupport() {
+        if (!("MutationObserver" in window)) return;
+        const observer = new MutationObserver((records) => {
+            if (!records.some((record) => record.addedNodes && record.addedNodes.length)) return;
+            requestAnimationFrame(() => {
+                ripples();
+                trustTilt();
+                fieldParallax();
+            });
+        });
+        observer.observe(root, { childList: true, subtree: true });
+    }
+
+    ensureProgress();
+    updateScroll();
+    pagePointer();
+    cardTilt();
+    trustTilt();
+    fieldParallax();
+    ripples();
+    reveals();
+    mutationSupport();
+
+    window.addEventListener("scroll", updateScroll, { passive: true });
+    window.addEventListener("resize", updateScroll);
+}());
+
+</script>
+
+{% endblock %}

@@ -1,0 +1,2389 @@
+{% extends "base.html" %}
+
+{% block title %}Product Options | {{ business_name|default("Restaurant", true) }}{% endblock %}
+{% block meta_description %}Protected product option and variant management.{% endblock %}
+
+{% block head %}
+{{ super() }}
+<meta name="robots" content="noindex,nofollow">
+{% endblock %}
+
+{% block styles %}
+<style>
+    .po-page {
+        --po-primary: var(--primary-color, #b83222);
+        --po-primary-hover: var(--primary-color-hover, #98281b);
+        --po-bg: var(--background-color, #fffaf4);
+        --po-surface: var(--surface-color, #fff);
+        --po-soft: var(--background-subtle, #f8f2ea);
+        --po-muted: var(--muted-text, #6f6760);
+        --po-strong: var(--text-strong, #151210);
+        --po-border: var(--border-color, #e7ded4);
+        --po-border-strong: var(--border-strong, #d3c6b9);
+        --po-danger: var(--error-color, #b42318);
+        --po-danger-soft: var(--error-soft, #fff0ee);
+        --po-success: var(--success-color, #247a4a);
+        --po-success-soft: var(--success-soft, #eaf7ef);
+        --po-info: var(--info-color, #285ea8);
+        --po-info-soft: var(--info-soft, #edf4ff);
+        min-height: 72vh;
+        padding: clamp(.8rem, 2vw, 1.3rem) 0 5rem;
+        color: var(--text-color);
+        background: var(--po-bg);
+    }
+
+    .po-page *, .po-page *::before, .po-page *::after { box-sizing: border-box; }
+    .po-page [hidden] { display: none !important; }
+    .po-shell { width: min(100% - 1.2rem, 1280px); margin-inline: auto; }
+
+    .po-breadcrumb {
+        display: flex;
+        gap: .35rem;
+        flex-wrap: wrap;
+        margin-bottom: .65rem;
+        font-size: .78rem;
+        color: var(--po-muted);
+    }
+    .po-breadcrumb a { color: var(--po-primary); font-weight: 800; text-decoration: none; }
+
+    .po-head {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 1rem;
+        align-items: center;
+        padding: 1rem;
+        border: 1px solid var(--po-border);
+        border-radius: 18px;
+        background: var(--po-surface);
+        box-shadow: var(--shadow-sm);
+    }
+    .po-head h1 { margin: 0; font-size: clamp(1.5rem, 4vw, 2.6rem); }
+    .po-head p { margin: .3rem 0 0; max-width: 72ch; color: var(--po-muted); }
+
+    .po-base-price {
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        margin-top: .55rem;
+        padding: .38rem .55rem;
+        border: 1px solid var(--po-border);
+        border-radius: 999px;
+        background: var(--po-soft);
+        color: var(--po-strong);
+        font-size: .78rem;
+        font-weight: 800;
+    }
+
+    .po-actions { display: flex; gap: .45rem; flex-wrap: wrap; }
+    .po-btn {
+        min-height: 42px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: .35rem;
+        padding: .58rem .75rem;
+        border-radius: 10px;
+        border: 1px solid var(--po-border-strong);
+        background: var(--po-surface);
+        color: var(--text-color);
+        font: inherit;
+        font-weight: 800;
+        text-decoration: none;
+        cursor: pointer;
+    }
+    .po-btn:hover { transform: translateY(-1px); }
+    .po-btn:disabled { opacity: .58; cursor: not-allowed; transform: none; }
+    .po-btn--primary { border-color: var(--po-primary); background: var(--po-primary); color: var(--primary-contrast, #fff); }
+    .po-btn--primary:hover { background: var(--po-primary-hover); }
+    .po-btn--danger {
+        border-color: color-mix(in srgb, var(--po-danger) 35%, var(--po-border));
+        background: var(--po-danger-soft);
+        color: var(--po-danger);
+    }
+    .po-btn--small { min-height: 34px; padding: .42rem .55rem; font-size: .78rem; }
+    .po-btn--sizes {
+        border-color: color-mix(in srgb, var(--po-info) 35%, var(--po-border));
+        background: var(--po-info-soft);
+        color: var(--po-info);
+    }
+
+    .po-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .7rem;
+        flex-wrap: wrap;
+        margin-top: .75rem;
+        padding: .75rem;
+        border: 1px solid var(--po-border);
+        border-radius: 14px;
+        background: var(--po-surface);
+    }
+    .po-toolbar__actions { display: flex; gap: .45rem; flex-wrap: wrap; }
+    .po-help { margin: 0; max-width: 78ch; color: var(--po-muted); font-size: .84rem; line-height: 1.5; }
+
+    .po-note {
+        margin-top: .7rem;
+        padding: .7rem .8rem;
+        border: 1px solid color-mix(in srgb, var(--po-info) 25%, var(--po-border));
+        border-radius: 10px;
+        background: var(--po-info-soft);
+        color: var(--po-info);
+        font-size: .82rem;
+        line-height: 1.5;
+    }
+    .po-alert {
+        margin-top: .7rem;
+        padding: .7rem .8rem;
+        border: 1px solid color-mix(in srgb, var(--po-danger) 28%, var(--po-border));
+        border-radius: 10px;
+        background: var(--po-danger-soft);
+        color: var(--po-danger);
+        font-size: .86rem;
+    }
+
+    .po-groups { display: grid; gap: .8rem; margin-top: .8rem; }
+    .po-group {
+        border: 1px solid var(--po-border);
+        border-radius: 16px;
+        background: var(--po-surface);
+        box-shadow: var(--shadow-xs);
+        overflow: hidden;
+    }
+    .po-group.is-size-group {
+        border-color: color-mix(in srgb, var(--po-primary) 32%, var(--po-border));
+    }
+    .po-group__head {
+        display: flex;
+        justify-content: space-between;
+        gap: .6rem;
+        align-items: center;
+        padding: .75rem .8rem;
+        border-bottom: 1px solid var(--po-border);
+        background: var(--surface-muted);
+    }
+    .po-group__title-wrap { min-width: 0; }
+    .po-group__title { margin: 0; font-size: 1rem; }
+    .po-group__badge {
+        display: inline-flex;
+        margin-top: .25rem;
+        padding: .18rem .42rem;
+        border-radius: 999px;
+        background: var(--po-info-soft);
+        color: var(--po-info);
+        font-size: .64rem;
+        font-weight: 800;
+    }
+    .po-group__body { padding: .8rem; }
+
+    .po-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: .65rem; }
+    .po-field { grid-column: span 6; display: grid; gap: .25rem; }
+    .po-field--full { grid-column: 1 / -1; }
+    .po-field--compact { grid-column: span 3; }
+    .po-field label { font-size: .78rem; font-weight: 800; color: var(--po-strong); }
+    .po-field small { color: var(--po-muted); font-size: .68rem; line-height: 1.4; }
+
+    .po-input {
+        width: 100%;
+        min-height: 42px;
+        padding: .58rem .65rem;
+        border: 1px solid var(--po-border-strong);
+        border-radius: 9px;
+        background: var(--background-color);
+        color: var(--text-color);
+        font: inherit;
+    }
+    .po-input:focus {
+        outline: none;
+        border-color: var(--po-primary);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--po-primary) 15%, transparent);
+    }
+
+    .po-check {
+        min-height: 42px;
+        display: flex;
+        align-items: center;
+        gap: .45rem;
+        padding: .45rem .55rem;
+        border: 1px solid var(--po-border);
+        border-radius: 9px;
+        background: var(--background-color);
+    }
+    .po-check input { width: 18px; height: 18px; accent-color: var(--po-primary); }
+
+    .po-options { display: grid; gap: .55rem; margin-top: .8rem; }
+    .po-options__head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+    .po-options__head h3 { margin: 0; font-size: .95rem; }
+    .po-options__copy { margin: .18rem 0 0; color: var(--po-muted); font-size: .72rem; }
+
+    .po-option {
+        display: grid;
+        grid-template-columns: minmax(115px, .9fr) minmax(150px, 1.4fr) minmax(130px, .85fr) minmax(80px, .55fr) auto auto;
+        gap: .45rem;
+        align-items: end;
+        padding: .6rem;
+        border: 1px solid var(--po-border);
+        border-radius: 11px;
+        background: var(--background-subtle);
+    }
+    .po-option .po-field { grid-column: auto; }
+
+    .po-empty {
+        padding: 1.1rem;
+        border: 1px dashed var(--po-border-strong);
+        border-radius: 12px;
+        text-align: center;
+        color: var(--po-muted);
+    }
+
+    .po-status { margin-top: .65rem; min-height: 1.3rem; color: var(--po-muted); font-size: .82rem; }
+    .po-status.is-success { color: var(--po-success); }
+    .po-status.is-error { color: var(--po-danger); }
+
+    @media (max-width: 980px) {
+        .po-head { grid-template-columns: 1fr; }
+        .po-actions { justify-content: flex-start; }
+        .po-option { grid-template-columns: 1fr 1fr; }
+        .po-option .po-field { grid-column: auto; }
+        .po-option .po-btn { width: 100%; }
+    }
+    @media (max-width: 640px) {
+        .po-field, .po-field--compact { grid-column: 1 / -1; }
+        .po-option { grid-template-columns: 1fr; }
+        .po-toolbar { align-items: stretch; }
+        .po-toolbar__actions, .po-toolbar .po-btn { width: 100%; }
+        .po-toolbar__actions .po-btn { flex: 1 1 100%; }
+    }
+
+    /* =====================================================================
+       PREMIUM PRODUCT OPTIONS / VARIANTS — NON-INVASIVE VISUAL LAYER
+       Existing Flask/Jinja data flow, validation, pricing and secure save
+       logic remain authoritative. This layer changes presentation only.
+       ===================================================================== */
+
+    .po-page {
+        --po-lux-black-00: #030303;
+        --po-lux-black-01: #070706;
+        --po-lux-black-02: #0b0a08;
+        --po-lux-black-03: #11100d;
+        --po-lux-black-04: #17130f;
+        --po-lux-black-05: #201911;
+        --po-lux-gold-050: #fff8df;
+        --po-lux-gold-100: #f8e8b4;
+        --po-lux-gold-200: #efd37c;
+        --po-lux-gold-300: #e3b84f;
+        --po-lux-gold-400: #c98e28;
+        --po-lux-gold-500: #9e6518;
+        --po-lux-ivory: #fffaf2;
+        --po-lux-cream: #f3e8d8;
+        --po-lux-cream-soft: #eadac4;
+        --po-lux-silver: #d8d3ca;
+        --po-lux-text: #ddd5ca;
+        --po-lux-muted: #aaa096;
+        --po-lux-subtle: #7f766e;
+        --po-lux-border: rgba(228, 184, 81, .14);
+        --po-lux-border-strong: rgba(241, 210, 127, .28);
+        --po-lux-white-border: rgba(255, 255, 255, .08);
+        --po-lux-shadow-sm: 0 14px 34px rgba(0, 0, 0, .24);
+        --po-lux-shadow-md: 0 24px 58px rgba(0, 0, 0, .32);
+        --po-lux-shadow-lg: 0 40px 90px rgba(0, 0, 0, .42);
+        --po-lux-white-shadow: 0 0 36px rgba(255, 248, 233, .08);
+        --po-lux-ease: cubic-bezier(.2, .72, .2, 1);
+        --po-lux-ease-out: cubic-bezier(.16, 1, .3, 1);
+        --po-lux-pointer-x: 52%;
+        --po-lux-pointer-y: 10%;
+
+        --po-primary: var(--po-lux-gold-400);
+        --po-primary-hover: var(--po-lux-gold-300);
+        --po-bg: var(--po-lux-black-01);
+        --po-surface: var(--po-lux-black-03);
+        --po-soft: var(--po-lux-black-04);
+        --po-muted: var(--po-lux-muted);
+        --po-strong: var(--po-lux-ivory);
+        --po-border: var(--po-lux-border);
+        --po-border-strong: var(--po-lux-border-strong);
+        --po-danger: #ec8b7d;
+        --po-danger-soft: rgba(236, 139, 125, .08);
+        --po-success: #9acaaa;
+        --po-success-soft: rgba(154, 202, 170, .08);
+        --po-info: #d9b45e;
+        --po-info-soft: rgba(217, 180, 94, .08);
+
+        position: relative;
+        isolation: isolate;
+        overflow: clip;
+        min-height: 82vh;
+        padding-top: clamp(1rem, 2vw, 1.5rem);
+        color: var(--po-lux-text);
+        background:
+            radial-gradient(
+                circle at var(--po-lux-pointer-x) var(--po-lux-pointer-y),
+                rgba(228, 184, 81, .055),
+                transparent 30rem
+            ),
+            radial-gradient(
+                circle at 96% 2%,
+                rgba(255, 244, 218, .07),
+                transparent 24rem
+            ),
+            radial-gradient(
+                circle at 2% 55%,
+                rgba(139, 87, 22, .07),
+                transparent 30rem
+            ),
+            linear-gradient(
+                180deg,
+                #090807 0%,
+                #050504 52%,
+                #090705 100%
+            );
+    }
+
+    .po-page::before {
+        content: "";
+        position: absolute;
+        z-index: -2;
+        top: -8rem;
+        right: -12rem;
+        width: 34rem;
+        height: 34rem;
+        border: 1px solid rgba(241, 210, 127, .07);
+        border-radius: 50%;
+        box-shadow:
+            0 0 0 44px rgba(228, 184, 81, .012),
+            0 0 0 88px rgba(228, 184, 81, .007),
+            0 0 72px rgba(255, 244, 218, .025);
+        transform: rotateX(68deg) rotateZ(-8deg);
+        pointer-events: none;
+        animation: po-lux-orbit-a 16s ease-in-out infinite alternate;
+    }
+
+    .po-page::after {
+        content: "";
+        position: absolute;
+        z-index: -2;
+        top: 62rem;
+        left: -13rem;
+        width: 29rem;
+        height: 29rem;
+        border: 1px solid rgba(215, 211, 204, .045);
+        border-radius: 50%;
+        box-shadow:
+            0 0 0 40px rgba(228, 184, 81, .007),
+            0 0 0 80px rgba(228, 184, 81, .004);
+        transform: rotateX(62deg) rotateZ(7deg);
+        pointer-events: none;
+        animation: po-lux-orbit-b 19s ease-in-out infinite alternate;
+    }
+
+    @keyframes po-lux-orbit-a {
+        from {
+            transform: translate3d(0, 0, 0) rotateX(68deg) rotateZ(-8deg);
+        }
+        to {
+            transform: translate3d(-32px, 24px, 0) rotateX(72deg) rotateZ(8deg);
+        }
+    }
+
+    @keyframes po-lux-orbit-b {
+        from {
+            transform: translate3d(0, 0, 0) rotateX(62deg) rotateZ(7deg);
+        }
+        to {
+            transform: translate3d(24px, -16px, 0) rotateX(58deg) rotateZ(-7deg);
+        }
+    }
+
+    .po-shell {
+        position: relative;
+        z-index: 2;
+        width: min(100% - 1.4rem, 1320px);
+    }
+
+    .po-breadcrumb {
+        align-items: center;
+        gap: .42rem;
+        margin-bottom: .78rem;
+        color: var(--po-lux-subtle);
+        font-size: .68rem;
+        letter-spacing: .01em;
+    }
+
+    .po-breadcrumb a {
+        color: var(--po-lux-gold-200);
+        transition: color 180ms ease, text-shadow 180ms ease;
+    }
+
+    .po-breadcrumb a:hover {
+        color: var(--po-lux-ivory);
+        text-shadow: 0 0 18px rgba(255, 248, 233, .14);
+    }
+
+    .po-head {
+        --po-head-x: 84%;
+        --po-head-y: 8%;
+        --po-head-rx: 0deg;
+        --po-head-ry: 0deg;
+        position: relative;
+        overflow: hidden;
+        padding: clamp(1.05rem, 2.4vw, 1.4rem);
+        border: 1px solid rgba(241, 210, 127, .18);
+        border-radius: 22px;
+        background:
+            radial-gradient(
+                circle at var(--po-head-x) var(--po-head-y),
+                rgba(255, 248, 233, .085),
+                transparent 17rem
+            ),
+            radial-gradient(
+                circle at 8% 86%,
+                rgba(228, 184, 81, .055),
+                transparent 18rem
+            ),
+            linear-gradient(
+                145deg,
+                rgba(255, 255, 255, .05),
+                rgba(255, 255, 255, .008)
+            ),
+            #12100d;
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .045),
+            inset 0 -1px 0 rgba(0, 0, 0, .34),
+            var(--po-lux-shadow-md),
+            var(--po-lux-white-shadow);
+        transform:
+            perspective(1300px)
+            rotateX(var(--po-head-rx))
+            rotateY(var(--po-head-ry));
+        transform-style: preserve-3d;
+        transition:
+            transform 280ms var(--po-lux-ease),
+            border-color 220ms ease,
+            box-shadow 260ms ease;
+    }
+
+    .po-head::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background:
+            linear-gradient(
+                120deg,
+                transparent 0%,
+                transparent 36%,
+                rgba(255, 255, 255, .08) 48%,
+                transparent 60%,
+                transparent 100%
+            );
+        transform: translateX(-130%);
+        opacity: 0;
+    }
+
+    .po-head:hover::before {
+        animation: po-head-sheen 1.35s ease;
+    }
+
+    @keyframes po-head-sheen {
+        0% { transform: translateX(-130%); opacity: 0; }
+        16% { opacity: .32; }
+        100% { transform: translateX(135%); opacity: 0; }
+    }
+
+    .po-head::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        right: 17%;
+        left: 17%;
+        height: 1px;
+        background:
+            linear-gradient(
+                90deg,
+                transparent,
+                rgba(255, 247, 224, .26),
+                rgba(228, 184, 81, .42),
+                rgba(255, 247, 224, .22),
+                transparent
+            );
+        opacity: .72;
+        pointer-events: none;
+    }
+
+    .po-head h1 {
+        color: var(--po-lux-ivory);
+        font-size: clamp(2rem, 4vw, 3.75rem);
+        font-weight: 950;
+        line-height: .98;
+        letter-spacing: -.055em;
+        text-shadow:
+            0 20px 50px rgba(0, 0, 0, .34),
+            0 0 34px rgba(255, 248, 233, .055);
+    }
+
+    .po-head p {
+        max-width: 74ch;
+        margin-top: .55rem;
+        color: var(--po-lux-muted);
+        font-size: .78rem;
+        line-height: 1.65;
+    }
+
+    .po-base-price {
+        margin-top: .75rem;
+        padding: .42rem .62rem;
+        border-color: rgba(241, 210, 127, .17);
+        background:
+            linear-gradient(
+                135deg,
+                rgba(255, 255, 255, .035),
+                rgba(228, 184, 81, .025)
+            );
+        color: var(--po-lux-gold-100);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .035),
+            0 10px 24px rgba(0, 0, 0, .16);
+    }
+
+    .po-actions {
+        align-items: center;
+    }
+
+    .po-btn {
+        position: relative;
+        overflow: hidden;
+        border-color: rgba(241, 210, 127, .16);
+        background:
+            linear-gradient(
+                180deg,
+                rgba(255, 255, 255, .045),
+                rgba(255, 255, 255, .012)
+            ),
+            #11100d;
+        color: var(--po-lux-text);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .045),
+            0 11px 24px rgba(0, 0, 0, .19);
+        transition:
+            transform 210ms var(--po-lux-ease),
+            border-color 180ms ease,
+            color 180ms ease,
+            box-shadow 220ms ease,
+            background 180ms ease;
+    }
+
+    .po-btn::after {
+        content: "";
+        position: absolute;
+        inset: 0 auto 0 -115%;
+        width: 58%;
+        background:
+            linear-gradient(
+                90deg,
+                transparent,
+                rgba(255, 255, 255, .25),
+                transparent
+            );
+        transform: skewX(-24deg);
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .po-btn:hover:not(:disabled) {
+        transform: translateY(-2px);
+        border-color: rgba(255, 232, 174, .28);
+        color: var(--po-lux-ivory);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .055),
+            0 16px 30px rgba(0, 0, 0, .23),
+            0 0 22px rgba(255, 248, 233, .035);
+    }
+
+    .po-btn:hover:not(:disabled)::after {
+        animation: po-btn-shine 1.05s ease;
+    }
+
+    @keyframes po-btn-shine {
+        0% { left: -115%; opacity: 0; }
+        17% { opacity: .36; }
+        100% { left: 135%; opacity: 0; }
+    }
+
+    .po-btn--primary {
+        border-color: rgba(255, 232, 174, .56);
+        background:
+            linear-gradient(
+                135deg,
+                #ffe9aa 0%,
+                #efcc6e 34%,
+                #d59e39 69%,
+                #9e6417 100%
+            );
+        color: #171006;
+        text-shadow: 0 1px 0 rgba(255, 255, 255, .18);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .34),
+            inset 0 -1px 0 rgba(94, 55, 7, .38),
+            0 4px 0 #75500f,
+            0 13px 30px rgba(0, 0, 0, .26),
+            0 0 24px rgba(228, 184, 81, .11);
+    }
+
+    .po-btn--primary:hover:not(:disabled) {
+        background:
+            linear-gradient(
+                135deg,
+                #fff2c7 0%,
+                #f5d884 35%,
+                #dfa947 68%,
+                #aa6c19 100%
+            );
+        color: #120d06;
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .40),
+            inset 0 -1px 0 rgba(94, 55, 7, .34),
+            0 4px 0 #75500f,
+            0 17px 34px rgba(0, 0, 0, .29),
+            0 0 32px rgba(228, 184, 81, .15);
+    }
+
+    .po-btn--sizes {
+        border-color: rgba(241, 210, 127, .28);
+        background:
+            linear-gradient(
+                135deg,
+                rgba(255, 244, 214, .105),
+                rgba(228, 184, 81, .055)
+            ),
+            #12100d;
+        color: var(--po-lux-gold-100);
+    }
+
+    .po-btn--danger {
+        border-color: rgba(236, 139, 125, .24);
+        background:
+            linear-gradient(
+                180deg,
+                rgba(236, 139, 125, .075),
+                rgba(236, 139, 125, .025)
+            ),
+            #120d0c;
+        color: #efa197;
+    }
+
+    .po-toolbar {
+        position: relative;
+        overflow: hidden;
+        margin-top: .86rem;
+        padding: .82rem .9rem;
+        border-color: rgba(228, 184, 81, .11);
+        border-radius: 16px;
+        background:
+            radial-gradient(
+                circle at 88% 8%,
+                rgba(255, 248, 233, .045),
+                transparent 14rem
+            ),
+            linear-gradient(
+                145deg,
+                rgba(255, 255, 255, .033),
+                rgba(255, 255, 255, .007)
+            ),
+            #100f0c;
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .025),
+            0 15px 34px rgba(0, 0, 0, .20);
+    }
+
+    .po-toolbar::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        right: 22%;
+        left: 22%;
+        height: 1px;
+        background:
+            linear-gradient(
+                90deg,
+                transparent,
+                rgba(255, 249, 235, .16),
+                rgba(228, 184, 81, .30),
+                rgba(255, 249, 235, .14),
+                transparent
+            );
+    }
+
+    .po-help {
+        color: var(--po-lux-muted);
+        font-size: .76rem;
+        line-height: 1.62;
+    }
+
+    .po-note,
+    .po-alert {
+        position: relative;
+        overflow: hidden;
+        border-radius: 13px;
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .025),
+            0 12px 28px rgba(0, 0, 0, .16);
+    }
+
+    .po-note {
+        border-color: rgba(241, 210, 127, .16);
+        background:
+            linear-gradient(
+                135deg,
+                rgba(255, 245, 219, .055),
+                rgba(228, 184, 81, .02)
+            ),
+            #0f0d0a;
+        color: var(--po-lux-cream);
+    }
+
+    .po-note strong {
+        color: var(--po-lux-gold-100);
+    }
+
+    .po-alert {
+        border-color: rgba(236, 139, 125, .25);
+        background:
+            linear-gradient(
+                135deg,
+                rgba(236, 139, 125, .07),
+                rgba(236, 139, 125, .022)
+            ),
+            #120d0c;
+        color: #f1a79d;
+    }
+
+    .po-groups {
+        gap: .92rem;
+        margin-top: .92rem;
+        perspective: 1400px;
+    }
+
+    .po-group {
+        --po-group-x: 82%;
+        --po-group-y: 8%;
+        --po-group-rx: 0deg;
+        --po-group-ry: 0deg;
+        --po-group-lift: 0px;
+        position: relative;
+        overflow: hidden;
+        border-color: rgba(228, 184, 81, .12);
+        border-radius: 19px;
+        background:
+            radial-gradient(
+                circle at var(--po-group-x) var(--po-group-y),
+                rgba(255, 248, 233, .055),
+                transparent 17rem
+            ),
+            linear-gradient(
+                145deg,
+                rgba(255, 255, 255, .04),
+                rgba(255, 255, 255, .007)
+            ),
+            #11100d;
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .03),
+            0 18px 42px rgba(0, 0, 0, .23);
+        transform:
+            perspective(1300px)
+            rotateX(var(--po-group-rx))
+            rotateY(var(--po-group-ry))
+            translateY(var(--po-group-lift));
+        transform-style: preserve-3d;
+        transition:
+            transform 245ms var(--po-lux-ease),
+            border-color 200ms ease,
+            box-shadow 245ms ease;
+    }
+
+    .po-group::before {
+        content: "";
+        position: absolute;
+        z-index: 3;
+        top: 0;
+        right: 16%;
+        left: 16%;
+        height: 1px;
+        background:
+            linear-gradient(
+                90deg,
+                transparent,
+                rgba(255, 248, 233, .18),
+                rgba(228, 184, 81, .34),
+                rgba(255, 248, 233, .16),
+                transparent
+            );
+        opacity: .64;
+        pointer-events: none;
+    }
+
+    .po-group:hover {
+        --po-group-lift: -3px;
+        border-color: rgba(255, 232, 174, .24);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .04),
+            0 25px 56px rgba(0, 0, 0, .29),
+            0 0 30px rgba(255, 248, 233, .025);
+    }
+
+    .po-group.is-size-group {
+        border-color: rgba(241, 210, 127, .28);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .035),
+            0 20px 48px rgba(0, 0, 0, .25),
+            0 0 34px rgba(228, 184, 81, .05);
+    }
+
+    .po-group__head {
+        position: relative;
+        padding: .86rem .92rem;
+        border-bottom-color: rgba(228, 184, 81, .10);
+        background:
+            linear-gradient(
+                180deg,
+                rgba(255, 255, 255, .035),
+                rgba(255, 255, 255, .008)
+            ),
+            #16130f;
+    }
+
+    .po-group__head::after {
+        content: "";
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        height: 1px;
+        background:
+            linear-gradient(
+                90deg,
+                rgba(228, 184, 81, .28),
+                rgba(255, 255, 255, .05) 42%,
+                transparent 100%
+            );
+    }
+
+    .po-group__title {
+        color: var(--po-lux-ivory);
+        font-size: 1.04rem;
+        font-weight: 900;
+        letter-spacing: -.022em;
+    }
+
+    .po-group__badge {
+        margin-top: .32rem;
+        border: 1px solid rgba(241, 210, 127, .16);
+        background:
+            linear-gradient(
+                135deg,
+                rgba(255, 247, 220, .07),
+                rgba(228, 184, 81, .035)
+            );
+        color: var(--po-lux-gold-100);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025);
+    }
+
+    .po-group__body {
+        padding: .92rem;
+    }
+
+    .po-grid {
+        gap: .72rem;
+    }
+
+    .po-field {
+        gap: .31rem;
+    }
+
+    .po-field label {
+        color: var(--po-lux-cream);
+        font-size: .69rem;
+        font-weight: 820;
+        letter-spacing: .01em;
+    }
+
+    .po-field small {
+        color: var(--po-lux-subtle);
+        font-size: .62rem;
+        line-height: 1.45;
+    }
+
+    .po-input {
+        min-height: 44px;
+        border-color: rgba(241, 210, 127, .13);
+        border-radius: 10px;
+        background:
+            linear-gradient(
+                180deg,
+                rgba(255, 255, 255, .022),
+                rgba(255, 255, 255, .006)
+            ),
+            #0b0a08;
+        color: var(--po-lux-ivory);
+        caret-color: var(--po-lux-gold-200);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .018),
+            0 8px 18px rgba(0, 0, 0, .12);
+        transition:
+            border-color 180ms ease,
+            box-shadow 180ms ease,
+            background 180ms ease,
+            transform 180ms var(--po-lux-ease);
+    }
+
+    .po-input::placeholder {
+        color: rgba(170, 160, 150, .48);
+    }
+
+    .po-input:hover {
+        border-color: rgba(241, 210, 127, .22);
+    }
+
+    .po-input:focus {
+        border-color: rgba(255, 232, 174, .48);
+        background:
+            linear-gradient(
+                180deg,
+                rgba(255, 255, 255, .032),
+                rgba(255, 255, 255, .008)
+            ),
+            #0d0b09;
+        box-shadow:
+            0 0 0 3px rgba(228, 184, 81, .055),
+            0 0 0 1px rgba(255, 248, 233, .025),
+            0 12px 24px rgba(0, 0, 0, .18);
+        transform: translateY(-1px);
+    }
+
+    .po-check {
+        min-height: 44px;
+        border-color: rgba(241, 210, 127, .11);
+        border-radius: 10px;
+        background:
+            linear-gradient(
+                180deg,
+                rgba(255, 255, 255, .022),
+                rgba(255, 255, 255, .006)
+            ),
+            #0b0a08;
+        color: var(--po-lux-text);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, .018);
+        transition:
+            border-color 180ms ease,
+            background 180ms ease,
+            transform 180ms var(--po-lux-ease);
+    }
+
+    .po-check:hover {
+        transform: translateY(-1px);
+        border-color: rgba(241, 210, 127, .20);
+        background:
+            linear-gradient(
+                180deg,
+                rgba(255, 255, 255, .028),
+                rgba(228, 184, 81, .012)
+            ),
+            #0c0a08;
+    }
+
+    .po-check input {
+        accent-color: var(--po-lux-gold-400);
+        filter: drop-shadow(0 0 5px rgba(228, 184, 81, .10));
+    }
+
+    .po-options {
+        gap: .66rem;
+        margin-top: .92rem;
+        padding-top: .84rem;
+        border-top: 1px solid rgba(228, 184, 81, .08);
+    }
+
+    .po-options__head {
+        align-items: flex-end;
+    }
+
+    .po-options__head h3 {
+        color: var(--po-lux-ivory);
+        font-size: .98rem;
+        font-weight: 880;
+    }
+
+    .po-options__copy {
+        color: var(--po-lux-subtle);
+        font-size: .65rem;
+        line-height: 1.48;
+    }
+
+    .po-option {
+        --po-option-x: 86%;
+        --po-option-y: 6%;
+        position: relative;
+        overflow: hidden;
+        padding: .7rem;
+        border-color: rgba(228, 184, 81, .10);
+        border-radius: 13px;
+        background:
+            radial-gradient(
+                circle at var(--po-option-x) var(--po-option-y),
+                rgba(255, 248, 233, .045),
+                transparent 12rem
+            ),
+            linear-gradient(
+                145deg,
+                rgba(255, 255, 255, .026),
+                rgba(255, 255, 255, .005)
+            ),
+            #0d0c09;
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .018),
+            0 11px 25px rgba(0, 0, 0, .16);
+        transition:
+            transform 210ms var(--po-lux-ease),
+            border-color 180ms ease,
+            box-shadow 210ms ease;
+    }
+
+    .po-option::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        right: 22%;
+        left: 22%;
+        height: 1px;
+        background:
+            linear-gradient(
+                90deg,
+                transparent,
+                rgba(255, 248, 233, .12),
+                rgba(228, 184, 81, .22),
+                rgba(255, 248, 233, .10),
+                transparent
+            );
+        opacity: .65;
+        pointer-events: none;
+    }
+
+    .po-option:hover {
+        transform: translateY(-2px);
+        border-color: rgba(255, 232, 174, .20);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .024),
+            0 15px 30px rgba(0, 0, 0, .21),
+            0 0 22px rgba(255, 248, 233, .018);
+    }
+
+    .po-empty {
+        border-color: rgba(241, 210, 127, .15);
+        background:
+            radial-gradient(
+                circle at 50% 0%,
+                rgba(255, 248, 233, .045),
+                transparent 11rem
+            ),
+            rgba(255, 255, 255, .012);
+        color: var(--po-lux-muted);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, .015);
+    }
+
+    .po-status {
+        margin-top: .75rem;
+        color: var(--po-lux-muted);
+        font-size: .72rem;
+    }
+
+    .po-status.is-success {
+        color: #9ccaaa;
+        text-shadow: 0 0 16px rgba(154, 202, 170, .08);
+    }
+
+    .po-status.is-error {
+        color: #efa197;
+        text-shadow: 0 0 16px rgba(236, 139, 125, .08);
+    }
+
+    .po-lux-progress {
+        position: fixed;
+        inset: 0 0 auto 0;
+        z-index: 80;
+        height: 3px;
+        background: rgba(255, 255, 255, .025);
+        pointer-events: none;
+    }
+
+    .po-lux-progress__bar {
+        width: var(--po-lux-progress, 0%);
+        height: 100%;
+        background:
+            linear-gradient(
+                90deg,
+                rgba(255, 248, 233, .82),
+                rgba(239, 211, 124, .96) 42%,
+                rgba(158, 101, 24, .95)
+            );
+        box-shadow:
+            0 0 13px rgba(228, 184, 81, .28),
+            0 0 28px rgba(255, 248, 233, .06);
+        transition: width .16s linear;
+    }
+
+    .po-lux-ripple {
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        margin-left: -5px;
+        margin-top: -5px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, .34);
+        pointer-events: none;
+        animation: po-lux-ripple .62s ease-out forwards;
+    }
+
+    @keyframes po-lux-ripple {
+        from {
+            transform: scale(0);
+            opacity: .42;
+        }
+        to {
+            transform: scale(18);
+            opacity: 0;
+        }
+    }
+
+    .po-lux-reveal {
+        opacity: 0;
+        transform: translateY(16px) scale(.992);
+        filter: blur(3px);
+        transition:
+            opacity 560ms var(--po-lux-ease-out),
+            transform 560ms var(--po-lux-ease-out),
+            filter 560ms ease;
+    }
+
+    .po-lux-reveal.is-po-lux-visible {
+        opacity: 1;
+        transform: none;
+        filter: none;
+    }
+
+    .po-group[data-po-lux-highlight="true"] {
+        animation: po-lux-group-highlight 1.05s ease-out 1;
+    }
+
+    @keyframes po-lux-group-highlight {
+        0% {
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, .03),
+                0 18px 42px rgba(0, 0, 0, .23);
+        }
+        38% {
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, .045),
+                0 25px 56px rgba(0, 0, 0, .28),
+                0 0 0 4px rgba(228, 184, 81, .05),
+                0 0 34px rgba(228, 184, 81, .09);
+        }
+        100% {
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, .03),
+                0 18px 42px rgba(0, 0, 0, .23);
+        }
+    }
+
+    .po-page[data-po-saving="true"] .po-head,
+    .po-page[data-po-saving="true"] .po-group {
+        filter: saturate(.94) brightness(.98);
+    }
+
+    .po-page[data-po-saving="true"] #po-save {
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .36),
+            0 4px 0 #75500f,
+            0 16px 34px rgba(0, 0, 0, .30),
+            0 0 32px rgba(228, 184, 81, .17);
+    }
+
+    .po-page[data-po-saving="true"] #po-save::before {
+        content: "";
+        width: 12px;
+        height: 12px;
+        border: 2px solid rgba(23, 16, 6, .30);
+        border-top-color: #171006;
+        border-radius: 50%;
+        animation: po-lux-spin .75s linear infinite;
+    }
+
+    @keyframes po-lux-spin {
+        to { transform: rotate(360deg); }
+    }
+
+    @media (max-width: 980px) {
+        .po-head {
+            padding: 1rem;
+        }
+
+        .po-head h1 {
+            font-size: clamp(1.75rem, 6vw, 3rem);
+        }
+
+        .po-group:hover,
+        .po-option:hover {
+            transform: none;
+        }
+    }
+
+    @media (max-width: 640px) {
+        .po-shell {
+            width: min(100% - .75rem, 720px);
+        }
+
+        .po-page {
+            padding-top: .75rem;
+        }
+
+        .po-head {
+            border-radius: 17px;
+        }
+
+        .po-head h1 {
+            line-height: 1.02;
+        }
+
+        .po-head p,
+        .po-help,
+        .po-note {
+            font-size: .71rem;
+        }
+
+        .po-group {
+            border-radius: 16px;
+        }
+
+        .po-group__head,
+        .po-group__body {
+            padding: .75rem;
+        }
+
+        .po-btn {
+            min-height: 41px;
+        }
+
+        .po-lux-progress {
+            height: 2px;
+        }
+    }
+
+    @media (min-width: 1180px) {
+        @supports (zoom: 1.1) {
+            .po-page {
+                --po-lux-desktop-tighten: 1;
+            }
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .po-page::before,
+        .po-page::after,
+        .po-lux-ripple,
+        .po-head::before,
+        .po-page[data-po-saving="true"] #po-save::before {
+            animation: none !important;
+        }
+
+        .po-lux-reveal,
+        .po-lux-reveal.is-po-lux-visible {
+            opacity: 1 !important;
+            transform: none !important;
+            filter: none !important;
+            transition: none !important;
+        }
+
+        .po-head,
+        .po-group {
+            transform: none !important;
+        }
+    }
+
+    /* =====================================================================
+       END PREMIUM PRODUCT OPTIONS VISUAL LAYER
+       ===================================================================== */
+
+</style>
+{% endblock %}
+
+{% block content %}
+<section
+    class="po-page"
+    id="product-options-root"
+    data-submit-url="{{ options_submit_url }}"
+    data-base-price-minor="{{ product.base_price_minor|default(0, true)|int }}"
+>
+    <div class="po-shell">
+        {% if principal and principal.role == "owner" %}
+            {% set po_dashboard_url = url_for("owner_dashboard") %}
+        {% elif principal and principal.role == "super_admin" %}
+            {% set po_dashboard_url = url_for("super_admin_dashboard") %}
+        {% elif principal and principal.role == "chef" %}
+            {% set po_dashboard_url = url_for("chef_dashboard") %}
+        {% else %}
+            {% set po_dashboard_url = url_for("admin_dashboard") %}
+        {% endif %}
+
+        {% set product_edit_url = url_for("manage_resource_edit_page", resource_key="products", record_id=product.id) %}
+
+        <nav class="po-breadcrumb" aria-label="Breadcrumb">
+            <a href="{{ po_dashboard_url }}">Dashboard</a>
+            <span>/</span>
+            <a href="{{ products_list_url }}">Products</a>
+            <span>/</span>
+            <a href="{{ product_edit_url }}">{{ product.name }}</a>
+            <span>/</span>
+            <span aria-current="page">Options / Variants</span>
+        </nav>
+
+        <header class="po-head">
+            <div>
+                <h1>{{ product.name }} — Options / Variants</h1>
+                <p>Configure pizza sizes and any additional option groups. All saved values are validated again by the Flask backend.</p>
+                <span class="po-base-price">
+                    Product base price:
+                    Rs. {{ "{:,.2f}".format((product.base_price_minor|default(0, true)|int) / 100) }}
+                </span>
+            </div>
+            <div class="po-actions">
+                <a class="po-btn" href="{{ product_edit_url }}">Edit Product</a>
+                <a class="po-btn" href="{{ url_for('product_page', product_id=product.id) }}">View Product</a>
+            </div>
+        </header>
+
+        <div class="po-note">
+            <strong>Pizza size pricing:</strong>
+            use the “Add Small / Medium / Large” button and enter the exact customer-facing final price for each size.
+            The current backend securely converts each size price to its price difference from the product base price.
+            Therefore each size final price must be equal to or higher than the product base price.
+        </div>
+
+        <div class="po-toolbar">
+            <p class="po-help">
+                Size groups use exact final prices. Other groups such as crusts and toppings continue to use an additional price.
+                Required groups must contain at least one option.
+            </p>
+            <div class="po-toolbar__actions">
+                <button class="po-btn po-btn--sizes" type="button" id="po-add-sizes">Add Small / Medium / Large</button>
+                <button class="po-btn" type="button" id="po-add-group">Add Option Group</button>
+            </div>
+        </div>
+
+        <div class="po-alert" id="po-error" role="alert" hidden></div>
+        <div class="po-groups" id="po-groups"></div>
+        <div class="po-status" id="po-status" aria-live="polite"></div>
+
+        <div class="po-toolbar">
+            <a class="po-btn" href="{{ products_list_url }}">Back to Products</a>
+            <button class="po-btn po-btn--primary" type="button" id="po-save">Save Options</button>
+        </div>
+    </div>
+</section>
+
+<script type="application/json" id="po-initial-data">{{ option_groups|default([], true)|tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+(function () {
+    "use strict";
+
+    const root = document.getElementById("product-options-root");
+    if (!root) return;
+
+    const groupsEl = document.getElementById("po-groups");
+    const saveBtn = document.getElementById("po-save");
+    const addGroupBtn = document.getElementById("po-add-group");
+    const addSizesBtn = document.getElementById("po-add-sizes");
+    const errorEl = document.getElementById("po-error");
+    const statusEl = document.getElementById("po-status");
+    const submitUrl = String(root.dataset.submitUrl || "");
+    const basePriceMinor = Number(root.dataset.basePriceMinor || 0);
+    const basePrice = basePriceMinor / 100;
+
+    let groups = [];
+    let saving = false;
+
+    function toast(message, type) {
+        if (window.AppUI && typeof window.AppUI.showToast === "function") {
+            window.AppUI.showToast(message, type || "info");
+        } else if (typeof window.showToast === "function") {
+            window.showToast(message, type || "info");
+        }
+    }
+
+    function secureFetch(url, options) {
+        if (window.AppUI && typeof window.AppUI.csrfFetch === "function") {
+            return window.AppUI.csrfFetch(url, options || {});
+        }
+        throw new Error("CSRF helper unavailable");
+    }
+
+    function moneyNumber(value) {
+        const n = Number(value);
+        return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
+    }
+
+    function moneyText(value) {
+        return moneyNumber(value).toFixed(2);
+    }
+
+    function isSizeMeta(groupKey, groupName) {
+        const key = String(groupKey || "").trim().toLowerCase();
+        const name = String(groupName || "").trim().toLowerCase();
+        return key === "size" || key === "sizes" || name === "size" || name === "sizes" || name === "pizza size";
+    }
+
+    function isSizeGroup(group) {
+        return isSizeMeta(group && group.group_key, group && group.name);
+    }
+
+    function parseInitial() {
+        try {
+            const node = document.getElementById("po-initial-data");
+            const parsed = JSON.parse(node ? node.textContent : "[]");
+            groups = Array.isArray(parsed) ? parsed : [];
+        } catch (error) {
+            groups = [];
+        }
+        groups = groups.map(normalizeGroup);
+    }
+
+    function idSeed(prefix) {
+        return prefix + "_" + Math.random().toString(36).slice(2, 9);
+    }
+
+    function normalizeOption(option, index) {
+        const data = option && typeof option === "object" ? option : {};
+        const delta =
+            data.price_delta !== undefined
+                ? Number(data.price_delta)
+                : (data.price_delta_minor !== undefined ? Number(data.price_delta_minor || 0) / 100 : 0);
+
+        return {
+            id: String(data.id || ""),
+            name: String(data.name || ""),
+            price_delta: moneyText(delta),
+            active: data.active !== false,
+            display_order: Number.isFinite(Number(data.display_order)) ? Number(data.display_order) : index
+        };
+    }
+
+    function normalizeGroup(group, index) {
+        const data = group && typeof group === "object" ? group : {};
+        const options = Array.isArray(data.options) ? data.options.map(normalizeOption) : [];
+        return {
+            group_key: String(data.group_key || ""),
+            name: String(data.name || ""),
+            required: Boolean(data.required),
+            min_selections: Number.isFinite(Number(data.min_selections))
+                ? Number(data.min_selections)
+                : (data.required ? 1 : 0),
+            max_selections: Number.isFinite(Number(data.max_selections))
+                ? Number(data.max_selections)
+                : 1,
+            active: data.active !== false,
+            display_order: Number.isFinite(Number(data.display_order))
+                ? Number(data.display_order)
+                : (index || 0),
+            options: options
+        };
+    }
+
+    function newOption(index) {
+        return normalizeOption({
+            id: "",
+            name: "",
+            price_delta: "0.00",
+            active: true,
+            display_order: index
+        }, index);
+    }
+
+    function newGroup() {
+        return normalizeGroup({
+            group_key: "",
+            name: "",
+            required: false,
+            min_selections: 0,
+            max_selections: 1,
+            active: true,
+            display_order: groups.length,
+            options: [newOption(0)]
+        }, groups.length);
+    }
+
+    function pizzaSizeGroup() {
+        return normalizeGroup({
+            group_key: "size",
+            name: "Size",
+            required: true,
+            min_selections: 1,
+            max_selections: 1,
+            active: true,
+            display_order: 0,
+            options: [
+                {id: "small", name: "Small", price_delta: "0.00", active: true, display_order: 0},
+                {id: "medium", name: "Medium", price_delta: "0.00", active: true, display_order: 1},
+                {id: "large", name: "Large", price_delta: "0.00", active: true, display_order: 2}
+            ]
+        }, 0);
+    }
+
+    function field(labelText, input, helpText) {
+        const wrap = document.createElement("div");
+        wrap.className = "po-field";
+
+        const label = document.createElement("label");
+        label.textContent = labelText;
+        if (input.id) label.htmlFor = input.id;
+
+        wrap.appendChild(label);
+        wrap.appendChild(input);
+
+        if (helpText) {
+            const small = document.createElement("small");
+            small.textContent = helpText;
+            wrap.appendChild(small);
+        }
+        return wrap;
+    }
+
+    function textInput(value, attrs) {
+        const input = document.createElement("input");
+        input.className = "po-input";
+        input.type = attrs.type || "text";
+        input.value = value == null ? "" : String(value);
+        if (attrs.id) input.id = attrs.id;
+        if (attrs.placeholder) input.placeholder = attrs.placeholder;
+        if (attrs.min !== undefined) input.min = String(attrs.min);
+        if (attrs.max !== undefined) input.max = String(attrs.max);
+        if (attrs.step !== undefined) input.step = String(attrs.step);
+        if (attrs.maxLength !== undefined) input.maxLength = Number(attrs.maxLength);
+        return input;
+    }
+
+    function checkInput(value, id, labelText) {
+        const wrap = document.createElement("label");
+        wrap.className = "po-check";
+
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.id = id;
+        input.checked = Boolean(value);
+
+        const text = document.createElement("span");
+        text.textContent = labelText;
+
+        wrap.append(input, text);
+        return {wrap, input};
+    }
+
+    function readGroupMeta(card, groupIndex) {
+        return {
+            group_key: card.querySelector('[data-group-field="group_key"]').value.trim(),
+            name: card.querySelector('[data-group-field="name"]').value.trim(),
+            required: card.querySelector('[data-group-field="required"]').checked,
+            min_selections: Number(card.querySelector('[data-group-field="min_selections"]').value || 0),
+            max_selections: Number(card.querySelector('[data-group-field="max_selections"]').value || 0),
+            active: card.querySelector('[data-group-field="active"]').checked,
+            display_order: Number(card.querySelector('[data-group-field="display_order"]').value || groupIndex)
+        };
+    }
+
+    function syncFromDom() {
+        const cards = Array.from(groupsEl.querySelectorAll("[data-group-index]"));
+
+        groups = cards.map(function (card, groupIndex) {
+            const meta = readGroupMeta(card, groupIndex);
+            const sizeMode = isSizeMeta(meta.group_key, meta.name);
+
+            const options = Array.from(card.querySelectorAll("[data-option-index]")).map(function (row, optionIndex) {
+                const entered = Number(row.querySelector('[data-option-field="price_value"]').value || 0);
+                const delta = sizeMode ? entered - basePrice : entered;
+
+                return normalizeOption({
+                    id: row.querySelector('[data-option-field="id"]').value.trim(),
+                    name: row.querySelector('[data-option-field="name"]').value.trim(),
+                    price_delta: moneyText(delta),
+                    active: row.querySelector('[data-option-field="active"]').checked,
+                    display_order: Number(row.querySelector('[data-option-field="display_order"]').value || optionIndex)
+                }, optionIndex);
+            });
+
+            return normalizeGroup({...meta, options}, groupIndex);
+        });
+    }
+
+    function render() {
+        groupsEl.textContent = "";
+
+        if (!groups.length) {
+            const empty = document.createElement("div");
+            empty.className = "po-empty";
+            empty.textContent = "No option groups yet. For pizza, use “Add Small / Medium / Large”.";
+            groupsEl.appendChild(empty);
+            return;
+        }
+
+        groups.forEach(function (group, groupIndex) {
+            const sizeMode = isSizeGroup(group);
+
+            const card = document.createElement("section");
+            card.className = "po-group" + (sizeMode ? " is-size-group" : "");
+            card.dataset.groupIndex = String(groupIndex);
+
+            const head = document.createElement("div");
+            head.className = "po-group__head";
+
+            const titleWrap = document.createElement("div");
+            titleWrap.className = "po-group__title-wrap";
+
+            const title = document.createElement("h2");
+            title.className = "po-group__title";
+            title.textContent = group.name || "New Option Group";
+            titleWrap.appendChild(title);
+
+            if (sizeMode) {
+                const badge = document.createElement("span");
+                badge.className = "po-group__badge";
+                badge.textContent = "Exact final size prices";
+                titleWrap.appendChild(badge);
+            }
+
+            const headActions = document.createElement("div");
+            headActions.className = "po-actions";
+
+            const up = document.createElement("button");
+            up.type = "button";
+            up.className = "po-btn po-btn--small";
+            up.textContent = "Move Up";
+            up.disabled = groupIndex === 0;
+
+            const down = document.createElement("button");
+            down.type = "button";
+            down.className = "po-btn po-btn--small";
+            down.textContent = "Move Down";
+            down.disabled = groupIndex === groups.length - 1;
+
+            const remove = document.createElement("button");
+            remove.type = "button";
+            remove.className = "po-btn po-btn--danger po-btn--small";
+            remove.textContent = "Remove Group";
+
+            up.addEventListener("click", function () {
+                syncFromDom();
+                [groups[groupIndex - 1], groups[groupIndex]] = [groups[groupIndex], groups[groupIndex - 1]];
+                render();
+            });
+            down.addEventListener("click", function () {
+                syncFromDom();
+                [groups[groupIndex + 1], groups[groupIndex]] = [groups[groupIndex], groups[groupIndex + 1]];
+                render();
+            });
+            remove.addEventListener("click", function () {
+                syncFromDom();
+                groups.splice(groupIndex, 1);
+                render();
+            });
+
+            headActions.append(up, down, remove);
+            head.append(titleWrap, headActions);
+
+            const body = document.createElement("div");
+            body.className = "po-group__body";
+
+            const grid = document.createElement("div");
+            grid.className = "po-grid";
+
+            const name = textInput(group.name, {id: idSeed("group-name"), maxLength: 100});
+            name.dataset.groupField = "name";
+            name.addEventListener("input", function () {
+                title.textContent = name.value.trim() || "New Option Group";
+            });
+
+            const key = textInput(group.group_key, {
+                id: idSeed("group-key"),
+                maxLength: 128,
+                placeholder: "optional_key"
+            });
+            key.dataset.groupField = "group_key";
+
+            const min = textInput(group.min_selections, {
+                type: "number", id: idSeed("group-min"), min: 0, max: 30, step: 1
+            });
+            min.dataset.groupField = "min_selections";
+
+            const max = textInput(group.max_selections, {
+                type: "number", id: idSeed("group-max"), min: 0, max: 30, step: 1
+            });
+            max.dataset.groupField = "max_selections";
+
+            const order = textInput(group.display_order, {
+                type: "number", id: idSeed("group-order"), min: 0, max: 10000, step: 1
+            });
+            order.dataset.groupField = "display_order";
+
+            const required = checkInput(group.required, idSeed("group-required"), "Required");
+            required.input.dataset.groupField = "required";
+
+            const active = checkInput(group.active, idSeed("group-active"), "Active");
+            active.input.dataset.groupField = "active";
+
+            grid.append(
+                field("Group Name", name, sizeMode ? "Keep this as Size for exact final-price mode." : ""),
+                field("Group Key", key, sizeMode ? "Use size." : "Optional stable identifier."),
+                field("Minimum Selections", min),
+                field("Maximum Selections", max),
+                field("Display Order", order)
+            );
+
+            const reqWrap = document.createElement("div");
+            reqWrap.className = "po-field po-field--compact";
+            reqWrap.append(required.wrap);
+
+            const activeWrap = document.createElement("div");
+            activeWrap.className = "po-field po-field--compact";
+            activeWrap.append(active.wrap);
+
+            grid.append(reqWrap, activeWrap);
+            body.appendChild(grid);
+
+            const optionsWrap = document.createElement("div");
+            optionsWrap.className = "po-options";
+
+            const optionsHead = document.createElement("div");
+            optionsHead.className = "po-options__head";
+
+            const optionsCopyWrap = document.createElement("div");
+            const optionsTitle = document.createElement("h3");
+            optionsTitle.textContent = sizeMode ? "Pizza Sizes" : "Options";
+
+            const optionsCopy = document.createElement("p");
+            optionsCopy.className = "po-options__copy";
+            optionsCopy.textContent = sizeMode
+                ? "Enter the exact final selling price for Small, Medium, Large or any other size."
+                : "Enter only the extra amount added to the product base price.";
+
+            optionsCopyWrap.append(optionsTitle, optionsCopy);
+
+            const addOption = document.createElement("button");
+            addOption.type = "button";
+            addOption.className = "po-btn po-btn--small";
+            addOption.textContent = sizeMode ? "Add Size" : "Add Option";
+            addOption.addEventListener("click", function () {
+                syncFromDom();
+                groups[groupIndex].options.push(newOption(groups[groupIndex].options.length));
+                render();
+            });
+
+            optionsHead.append(optionsCopyWrap, addOption);
+            optionsWrap.appendChild(optionsHead);
+
+            if (!group.options.length) {
+                const empty = document.createElement("div");
+                empty.className = "po-empty";
+                empty.textContent = "No options in this group.";
+                optionsWrap.appendChild(empty);
+            } else {
+                group.options.forEach(function (option, optionIndex) {
+                    const row = document.createElement("div");
+                    row.className = "po-option";
+                    row.dataset.optionIndex = String(optionIndex);
+
+                    const id = textInput(option.id, {
+                        id: idSeed("option-id"),
+                        maxLength: 128,
+                        placeholder: sizeMode ? "small" : "optional_id"
+                    });
+                    id.dataset.optionField = "id";
+
+                    const optionName = textInput(option.name, {
+                        id: idSeed("option-name"),
+                        maxLength: 100
+                    });
+                    optionName.dataset.optionField = "name";
+
+                    const delta = Number(option.price_delta || 0);
+                    const shownPrice = sizeMode ? basePrice + delta : delta;
+                    const price = textInput(moneyText(shownPrice), {
+                        type: "number",
+                        id: idSeed("option-price"),
+                        min: sizeMode ? basePrice : 0,
+                        step: "0.01"
+                    });
+                    price.dataset.optionField = "price_value";
+
+                    const displayOrder = textInput(option.display_order, {
+                        type: "number",
+                        id: idSeed("option-order"),
+                        min: 0,
+                        max: 10000,
+                        step: 1
+                    });
+                    displayOrder.dataset.optionField = "display_order";
+
+                    const optionActive = checkInput(option.active, idSeed("option-active"), "Active");
+                    optionActive.input.dataset.optionField = "active";
+
+                    const removeOption = document.createElement("button");
+                    removeOption.type = "button";
+                    removeOption.className = "po-btn po-btn--danger po-btn--small";
+                    removeOption.textContent = "Remove";
+                    removeOption.addEventListener("click", function () {
+                        syncFromDom();
+                        groups[groupIndex].options.splice(optionIndex, 1);
+                        render();
+                    });
+
+                    row.append(
+                        field("Option ID", id),
+                        field("Option Name", optionName),
+                        field(
+                            sizeMode ? "Final Price PKR" : "Additional Price PKR",
+                            price,
+                            sizeMode ? "Exact customer-facing size price." : "Amount added to base price."
+                        ),
+                        field("Order", displayOrder)
+                    );
+
+                    const activeOptionWrap = document.createElement("div");
+                    activeOptionWrap.className = "po-field";
+                    activeOptionWrap.append(optionActive.wrap);
+
+                    row.append(activeOptionWrap, removeOption);
+                    optionsWrap.appendChild(row);
+                });
+            }
+
+            body.appendChild(optionsWrap);
+            card.append(head, body);
+            groupsEl.appendChild(card);
+        });
+    }
+
+    function validate() {
+        const messages = [];
+        const groupKeys = new Set();
+
+        groups.forEach(function (group, gi) {
+            if (!group.name || group.name.length > 100) {
+                messages.push("Group " + (gi + 1) + " needs a name up to 100 characters.");
+            }
+
+            const key = group.group_key.trim();
+            if (key) {
+                if (!/^[A-Za-z0-9_-]{1,128}$/.test(key)) {
+                    messages.push("Group " + (gi + 1) + " has an invalid group key.");
+                }
+                if (groupKeys.has(key)) {
+                    messages.push("Group keys must be unique.");
+                }
+                groupKeys.add(key);
+            }
+
+            if (
+                group.min_selections < 0 ||
+                group.min_selections > 30 ||
+                group.max_selections < 0 ||
+                group.max_selections > 30 ||
+                group.max_selections < group.min_selections
+            ) {
+                messages.push("Group " + (gi + 1) + " has invalid minimum/maximum selections.");
+            }
+
+            if (group.required && !group.options.length) {
+                messages.push("Required group " + (gi + 1) + " must contain options.");
+            }
+
+            if (isSizeGroup(group)) {
+                if (!group.required || group.min_selections !== 1 || group.max_selections !== 1) {
+                    messages.push("The Size group must be Required with minimum 1 and maximum 1 selection.");
+                }
+            }
+
+            const optionIds = new Set();
+            group.options.forEach(function (option, oi) {
+                if (!option.name || option.name.length > 100) {
+                    messages.push("Option " + (oi + 1) + " in group " + (gi + 1) + " needs a name.");
+                }
+
+                const oid = option.id.trim();
+                if (oid) {
+                    if (!/^[A-Za-z0-9_-]{1,128}$/.test(oid)) {
+                        messages.push("Option " + (oi + 1) + " in group " + (gi + 1) + " has an invalid ID.");
+                    }
+                    if (optionIds.has(oid)) {
+                        messages.push("Option IDs must be unique inside each group.");
+                    }
+                    optionIds.add(oid);
+                }
+
+                const delta = Number(option.price_delta);
+                if (!Number.isFinite(delta) || delta < 0) {
+                    if (isSizeGroup(group)) {
+                        messages.push(
+                            option.name + " final price cannot be lower than the product base price (Rs. " +
+                            moneyText(basePrice) + ")."
+                        );
+                    } else {
+                        messages.push(
+                            "Option " + (oi + 1) + " in group " + (gi + 1) + " has an invalid additional price."
+                        );
+                    }
+                }
+            });
+        });
+
+        return messages;
+    }
+
+    function showError(messages) {
+        if (!messages.length) {
+            errorEl.hidden = true;
+            errorEl.textContent = "";
+            return;
+        }
+        errorEl.hidden = false;
+        errorEl.textContent = messages.join(" ");
+        errorEl.scrollIntoView({behavior: "smooth", block: "center"});
+    }
+
+    async function save() {
+        if (saving) return;
+
+        syncFromDom();
+        const errors = validate();
+        if (errors.length) {
+            showError(errors);
+            return;
+        }
+
+        showError([]);
+        saving = true;
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Saving...";
+        statusEl.className = "po-status";
+        statusEl.textContent = "Saving options...";
+
+        try {
+            const response = await secureFetch(submitUrl, {
+                method: "PUT",
+                credentials: "same-origin",
+                headers: {
+                    Accept: "application/json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({option_groups: groups})
+            });
+
+            let payload = null;
+            try {
+                payload = await response.json();
+            } catch (error) {
+                payload = null;
+            }
+
+            if (!response.ok || !payload || payload.success !== true) {
+                const message =
+                    payload && payload.error && payload.error.message
+                        ? payload.error.message
+                        : "Options could not be saved.";
+                throw new Error(message);
+            }
+
+            statusEl.className = "po-status is-success";
+            statusEl.textContent = "Options saved successfully.";
+            toast("Product options saved.", "success");
+
+            if (payload.data && Array.isArray(payload.data.option_groups)) {
+                groups = payload.data.option_groups.map(normalizeGroup);
+                render();
+            }
+        } catch (error) {
+            statusEl.className = "po-status is-error";
+            statusEl.textContent =
+                error && error.message ? error.message : "Options could not be saved.";
+            toast("Unable to save product options.", "error");
+        } finally {
+            saving = false;
+            saveBtn.disabled = false;
+            saveBtn.textContent = "Save Options";
+        }
+    }
+
+    addSizesBtn.addEventListener("click", function () {
+        syncFromDom();
+
+        const existingIndex = groups.findIndex(isSizeGroup);
+        if (existingIndex >= 0) {
+            toast("A Size group already exists.", "info");
+            const cards = groupsEl.querySelectorAll("[data-group-index]");
+            if (cards[existingIndex]) {
+                cards[existingIndex].scrollIntoView({behavior: "smooth", block: "center"});
+            }
+            return;
+        }
+
+        groups.unshift(pizzaSizeGroup());
+        groups.forEach(function (group, index) {
+            group.display_order = index;
+        });
+        render();
+        toast("Small, Medium and Large added. Enter their final prices.", "success");
+    });
+
+    addGroupBtn.addEventListener("click", function () {
+        syncFromDom();
+        groups.push(newGroup());
+        render();
+    });
+
+    saveBtn.addEventListener("click", save);
+
+    parseInitial();
+    render();
+}());
+
+(function () {
+    "use strict";
+
+    /* =====================================================================
+       PREMIUM PRODUCT OPTIONS MICRO-INTERACTIONS
+       Presentation only. No pricing, payload, validation or submit logic is
+       changed by this layer.
+       ===================================================================== */
+
+    const root = document.getElementById("product-options-root");
+    if (!root || root.dataset.poLuxuryReady === "true") return;
+    root.dataset.poLuxuryReady = "true";
+
+    const reducedMedia = window.matchMedia
+        ? window.matchMedia("(prefers-reduced-motion: reduce)")
+        : null;
+
+    const fineMedia = window.matchMedia
+        ? window.matchMedia("(hover: hover) and (pointer: fine)")
+        : null;
+
+    function isReduced() {
+        return Boolean(reducedMedia && reducedMedia.matches);
+    }
+
+    function isFine() {
+        return Boolean(fineMedia && fineMedia.matches);
+    }
+
+    function clamp(value, minimum, maximum) {
+        return Math.min(maximum, Math.max(minimum, value));
+    }
+
+    function pointIn(event, element) {
+        const rect = element.getBoundingClientRect();
+        return {
+            x: clamp(((event.clientX - rect.left) / Math.max(rect.width, 1)) * 100, 0, 100),
+            y: clamp(((event.clientY - rect.top) / Math.max(rect.height, 1)) * 100, 0, 100)
+        };
+    }
+
+    function initializeProgress() {
+        if (root.querySelector(".po-lux-progress")) return;
+
+        const wrap = document.createElement("div");
+        wrap.className = "po-lux-progress";
+        wrap.setAttribute("aria-hidden", "true");
+
+        const bar = document.createElement("div");
+        bar.className = "po-lux-progress__bar";
+        wrap.appendChild(bar);
+        root.prepend(wrap);
+
+        let frame = 0;
+
+        function paint() {
+            frame = 0;
+            const doc = document.documentElement;
+            const max = Math.max(1, doc.scrollHeight - window.innerHeight);
+            const ratio = clamp((window.scrollY || 0) / max, 0, 1);
+            root.style.setProperty("--po-lux-progress", `${(ratio * 100).toFixed(2)}%`);
+        }
+
+        function requestPaint() {
+            if (frame) return;
+            frame = window.requestAnimationFrame(paint);
+        }
+
+        window.addEventListener("scroll", requestPaint, { passive: true });
+        window.addEventListener("resize", requestPaint);
+        requestPaint();
+    }
+
+    function initializePointerLight() {
+        if (!isFine() || isReduced()) return;
+
+        let frame = 0;
+        let x = window.innerWidth / 2;
+        let y = window.innerHeight / 7;
+
+        function paint() {
+            frame = 0;
+            root.style.setProperty(
+                "--po-lux-pointer-x",
+                `${clamp((x / Math.max(window.innerWidth, 1)) * 100, 0, 100).toFixed(2)}%`
+            );
+            root.style.setProperty(
+                "--po-lux-pointer-y",
+                `${clamp((y / Math.max(window.innerHeight, 1)) * 100, 0, 100).toFixed(2)}%`
+            );
+        }
+
+        root.addEventListener("pointermove", function (event) {
+            x = event.clientX;
+            y = event.clientY;
+            if (!frame) frame = window.requestAnimationFrame(paint);
+        }, { passive: true });
+    }
+
+    function wireHead() {
+        const head = root.querySelector(".po-head");
+        if (!head || head.dataset.poLuxReady === "true") return;
+        head.dataset.poLuxReady = "true";
+
+        head.addEventListener("pointermove", function (event) {
+            if (!isFine() || isReduced()) return;
+            const point = pointIn(event, head);
+            const nx = (point.x - 50) / 50;
+            const ny = (point.y - 50) / 50;
+            head.style.setProperty("--po-head-x", `${point.x.toFixed(2)}%`);
+            head.style.setProperty("--po-head-y", `${point.y.toFixed(2)}%`);
+            head.style.setProperty("--po-head-rx", `${(ny * -0.7).toFixed(2)}deg`);
+            head.style.setProperty("--po-head-ry", `${(nx * 0.85).toFixed(2)}deg`);
+        }, { passive: true });
+
+        head.addEventListener("pointerleave", function () {
+            head.style.setProperty("--po-head-x", "84%");
+            head.style.setProperty("--po-head-y", "8%");
+            head.style.setProperty("--po-head-rx", "0deg");
+            head.style.setProperty("--po-head-ry", "0deg");
+        });
+    }
+
+    function wireGroup(card) {
+        if (!card || card.dataset.poLuxGroupReady === "true") return;
+        card.dataset.poLuxGroupReady = "true";
+
+        card.addEventListener("pointermove", function (event) {
+            if (!isFine() || isReduced()) return;
+            const point = pointIn(event, card);
+            const nx = (point.x - 50) / 50;
+            const ny = (point.y - 50) / 50;
+            card.style.setProperty("--po-group-x", `${point.x.toFixed(2)}%`);
+            card.style.setProperty("--po-group-y", `${point.y.toFixed(2)}%`);
+            card.style.setProperty("--po-group-rx", `${(ny * -0.55).toFixed(2)}deg`);
+            card.style.setProperty("--po-group-ry", `${(nx * 0.68).toFixed(2)}deg`);
+        }, { passive: true });
+
+        card.addEventListener("pointerleave", function () {
+            card.style.setProperty("--po-group-x", "82%");
+            card.style.setProperty("--po-group-y", "8%");
+            card.style.setProperty("--po-group-rx", "0deg");
+            card.style.setProperty("--po-group-ry", "0deg");
+        });
+    }
+
+    function wireOption(row) {
+        if (!row || row.dataset.poLuxOptionReady === "true") return;
+        row.dataset.poLuxOptionReady = "true";
+
+        row.addEventListener("pointermove", function (event) {
+            if (!isFine() || isReduced()) return;
+            const point = pointIn(event, row);
+            row.style.setProperty("--po-option-x", `${point.x.toFixed(2)}%`);
+            row.style.setProperty("--po-option-y", `${point.y.toFixed(2)}%`);
+        }, { passive: true });
+
+        row.addEventListener("pointerleave", function () {
+            row.style.setProperty("--po-option-x", "86%");
+            row.style.setProperty("--po-option-y", "6%");
+        });
+    }
+
+    function addRipple(button, event) {
+        if (!button || button.disabled || isReduced()) return;
+
+        const rect = button.getBoundingClientRect();
+        const ripple = document.createElement("span");
+        ripple.className = "po-lux-ripple";
+        ripple.style.left = `${event.clientX - rect.left}px`;
+        ripple.style.top = `${event.clientY - rect.top}px`;
+        button.appendChild(ripple);
+        window.setTimeout(() => ripple.remove(), 680);
+    }
+
+    function wireButton(button) {
+        if (!button || button.dataset.poLuxRippleReady === "true") return;
+        button.dataset.poLuxRippleReady = "true";
+        button.addEventListener("pointerdown", function (event) {
+            addRipple(button, event);
+        });
+    }
+
+    function revealOne(target, index) {
+        if (!target || target.dataset.poLuxRevealReady === "true") return;
+        target.dataset.poLuxRevealReady = "true";
+        target.classList.add("po-lux-reveal");
+        target.style.transitionDelay = `${Math.min((index % 8) * 38, 210)}ms`;
+
+        if (isReduced() || !("IntersectionObserver" in window)) {
+            target.classList.add("is-po-lux-visible");
+            return;
+        }
+
+        const observer = new IntersectionObserver(function (entries, instance) {
+            entries.forEach(function (entry) {
+                if (!entry.isIntersecting) return;
+                entry.target.classList.add("is-po-lux-visible");
+                instance.unobserve(entry.target);
+            });
+        }, {
+            threshold: .06,
+            rootMargin: "0px 0px -5% 0px"
+        });
+
+        observer.observe(target);
+    }
+
+    function initializeDynamicElements() {
+        root.querySelectorAll(".po-group").forEach(wireGroup);
+        root.querySelectorAll(".po-option").forEach(wireOption);
+        root.querySelectorAll(".po-btn").forEach(wireButton);
+
+        root.querySelectorAll(
+            ".po-head, .po-note, .po-toolbar, .po-alert, .po-group, .po-status"
+        ).forEach(revealOne);
+    }
+
+    function initializeMutationSupport() {
+        const groups = document.getElementById("po-groups");
+        if (!groups || !("MutationObserver" in window)) return;
+
+        const observer = new MutationObserver(function (records) {
+            const changed = records.some(function (record) {
+                return Boolean(record.addedNodes && record.addedNodes.length);
+            });
+            if (!changed) return;
+
+            window.requestAnimationFrame(function () {
+                initializeDynamicElements();
+                const newest = groups.querySelector(".po-group:last-child");
+                if (newest && !isReduced()) {
+                    newest.dataset.poLuxHighlight = "true";
+                    window.setTimeout(function () {
+                        delete newest.dataset.poLuxHighlight;
+                    }, 1150);
+                }
+            });
+        });
+
+        observer.observe(groups, {
+            childList: true,
+            subtree: true
+        });
+    }
+
+    function initializeSaveFeedback() {
+        const save = document.getElementById("po-save");
+        const status = document.getElementById("po-status");
+        if (!save) return;
+
+        const observer = new MutationObserver(function () {
+            const saving = save.disabled && /saving/i.test(save.textContent || "");
+            root.dataset.poSaving = saving ? "true" : "false";
+        });
+
+        observer.observe(save, {
+            childList: true,
+            characterData: true,
+            attributes: true,
+            subtree: true,
+            attributeFilter: ["disabled"]
+        });
+
+        if (status && "MutationObserver" in window) {
+            const statusObserver = new MutationObserver(function () {
+                if (!status.textContent.trim() || isReduced()) return;
+                status.animate(
+                    [
+                        { opacity: .55, transform: "translateY(2px)" },
+                        { opacity: 1, transform: "translateY(0)" }
+                    ],
+                    { duration: 260, easing: "ease-out" }
+                );
+            });
+            statusObserver.observe(status, {
+                childList: true,
+                characterData: true,
+                subtree: true
+            });
+        }
+    }
+
+    function initializeInputFeedback() {
+        root.addEventListener("focusin", function (event) {
+            const input = event.target.closest(".po-input");
+            if (!input) return;
+            const group = input.closest(".po-group");
+            if (group) group.dataset.poFieldActive = "true";
+        });
+
+        root.addEventListener("focusout", function (event) {
+            const input = event.target.closest(".po-input");
+            if (!input) return;
+            const group = input.closest(".po-group");
+            if (group) delete group.dataset.poFieldActive;
+        });
+    }
+
+    function initializeThemeSync() {
+        const html = document.documentElement;
+        root.dataset.poLuxuryTheme = html.dataset.theme || "dark";
+
+        if (!("MutationObserver" in window)) return;
+        const observer = new MutationObserver(function () {
+            root.dataset.poLuxuryTheme = html.dataset.theme || "dark";
+        });
+        observer.observe(html, {
+            attributes: true,
+            attributeFilter: ["data-theme"]
+        });
+    }
+
+    function initializePremiumProductOptions() {
+        initializeProgress();
+        initializePointerLight();
+        wireHead();
+        initializeDynamicElements();
+        initializeMutationSupport();
+        initializeSaveFeedback();
+        initializeInputFeedback();
+        initializeThemeSync();
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initializePremiumProductOptions, { once: true });
+    } else {
+        initializePremiumProductOptions();
+    }
+}());
+
+</script>
+{% endblock %}
