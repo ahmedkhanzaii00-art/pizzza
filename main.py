@@ -20,6 +20,7 @@ BUILD_TAG = "realistic_demo_easypaisa_request_flow_20260824"
 
 import hashlib
 import importlib
+import base64
 import json
 import logging
 import math
@@ -272,7 +273,12 @@ def initialize_firebase() -> None:
             if FIREBASE_DATABASE_URL:
                 options["databaseURL"] = FIREBASE_DATABASE_URL
 
-            if FIREBASE_CREDENTIALS:
+            credentials_json = os.getenv("FIREBASE_CREDENTIALS_JSON", "").strip()
+            if credentials_json:
+                if not credentials_json.startswith("{"):
+                    credentials_json = base64.b64decode(credentials_json).decode("utf-8")
+                cred = credentials.Certificate(json.loads(credentials_json))
+            elif FIREBASE_CREDENTIALS:
                 if not os.path.exists(FIREBASE_CREDENTIALS):
                     raise RuntimeError(
                         "FIREBASE_CREDENTIALS/GOOGLE_APPLICATION_CREDENTIALS points to a missing file."
