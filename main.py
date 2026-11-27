@@ -1756,6 +1756,26 @@ def require_verified_email() -> None:
 # Security headers
 # =============================================================================
 
+_LOCAL_STATIC_URL_RE = re.compile(rb"https?:(?:\\?/){2}(?:127\.0\.0\.1|localhost|0\.0\.0\.0)(?::\d+)?((?:\\?/)static(?:\\?/))")
+
+
+@app.after_request
+def rewrite_local_static_urls(response: Response):
+    """Media saved while running locally stores absolute localhost URLs; serve them as same-site paths."""
+    if response.direct_passthrough or response.is_streamed:
+        return response
+    mimetype = response.mimetype or ""
+    if mimetype not in {"text/html", "application/json"}:
+        return response
+    body = response.get_data()
+    if b"127.0.0.1" not in body and b"localhost" not in body and b"0.0.0.0" not in body:
+        return response
+    new_body = _LOCAL_STATIC_URL_RE.sub(rb"\1", body)
+    if new_body != body:
+        response.set_data(new_body)
+    return response
+
+
 @app.after_request
 def security_headers(response: Response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
